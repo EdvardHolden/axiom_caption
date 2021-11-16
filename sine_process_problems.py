@@ -7,9 +7,9 @@ The result is outputed to the approrpiate folder
 import argparse
 import os
 import sys
-import pickle
 import multiprocessing
 import subprocess
+import glob
 
 CLAUSIFIER = "~/bin/vclausify_rel"
 TIMELIMIT = 30
@@ -17,7 +17,6 @@ TIMELIMIT = 30
 # Input arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('problem_dir', help='Directory containing the problems to process')
-parser.add_argument('meta_dict', help='Path to dict containing the meta info')
 parser.add_argument('--results_dir', help='Directory for storing the result', default='data/processed/jjt_sine_1_0/')
 parser.add_argument('--sine_tolerance', default=1)
 parser.add_argument('--sine_depth', default=0)
@@ -27,7 +26,7 @@ args = parser.parse_args()
 
 def preprocess_sine(path, problem, res_dir):
 
-    # Assume that if the problem contains underscore it is in tff
+    # Assume that if the problem contains underscore it is in tff - this doesn't seem to matter anymore
     if '_' in problem:
         mode = 'tclausify'
     else:
@@ -36,9 +35,10 @@ def preprocess_sine(path, problem, res_dir):
     # Build SiNE command
     cmd = f'{CLAUSIFIER} -t {TIMELIMIT} --mode {mode} -ss axioms -sd {args.sine_depth} -st {args.sine_tolerance}'
     # Append problem
-    cmd += f' {os.path.join(path, problem)}.p'
+    cmd += f' {os.path.join(path, problem)}'
     # Append output direction
-    cmd += f'  >{os.path.join(res_dir, problem)}.p'
+    cmd += f'  >{os.path.join(res_dir, problem)}'
+    print(cmd)
 
     # Run process
     proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid)
@@ -53,17 +53,6 @@ def preprocess_sine(path, problem, res_dir):
         print(f'Clausification error for {problem} exitcode: {proc.returncode} error: {errs}')
 
 
-# Get the problems used in proofs from the meta (annoying twist here that E 'attempts' nearly all)
-def get_problems_versions(meta):
-    problem_versions = set()
-    for prover in meta.keys():
-        for problem in meta[prover].values():
-            version = problem['version']
-            if problem['version'] is not None:
-                problem_versions.add(version)
-    return problem_versions
-
-
 def main():
 
     # Check problem dir existence
@@ -71,19 +60,17 @@ def main():
         print("Error - problem dir does not exist")
         sys.exit(0)
 
-    # Extract all the problem names from the meta
-    with open(args.meta_dict, 'rb') as f:
-        meta = pickle.load(f)
-
-    # Find the problem versions to process
-    problem_versions = get_problems_versions(meta)
+    # Get list of all problems in the directory
+    problems = [prob.split('/')[-1] for prob in glob.glob(args.problem_dir + '/*')]
+    # Keep only tff and fof problems
+    problems = [prob for prob in problems if '_1' in prob or '+' in prob]
 
     # Check existence of results path
     if not os.path.exists(args.results_dir):
         os.mkdir(args.results_dir)
 
     # Process the problems
-    proc_args = [(args.problem_dir, prob, args.results_dir) for prob in problem_versions]
+    proc_args = [(args.problem_dir, prob, args.results_dir) for prob in problems]
 
     # Multiprocess
     pool = multiprocessing.Pool(processes=5)
