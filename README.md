@@ -8,15 +8,14 @@ are given to an ML model, which along with a \<start\> token start generating ax
 
 ### Downloading the proof data
 
-1. First download the axioms used in a proof from the CASC competition by using `python3 download_axioms.py` (change the settings as appropriate).
-2. Next, find the problem versions which was used in each proof in CASC by running `python3 download_casc_mety.py`. This results in a meta-dictionarr which contains a mapping between the problem names and version of each prover.
-3. (Optional) pre-process the problems with sine using `sine_process_problems.py`
+1. First download the proof data with axioms from the CASC competitions by running `python3 download_axioms.py` (This will download all the viable proof data specified in the config).
+2. (Optional) pre-process the problems with sine using `sine_process_problems.py`
 
 ### Creating datasets
 
 Run `create_train_test_split.py` over a given axiom dict. This will split the ids into train/test/val sets.
 
-# Computing conjecture embeddings
+## Computing conjecture embeddings
 
 TODO
 

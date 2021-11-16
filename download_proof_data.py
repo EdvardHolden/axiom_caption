@@ -1,40 +1,29 @@
+''' Downloads proof data from the CASC competitions
+
+This script takes the result entries in config.COMPETITION_RESULTS amd downloads
+the proof data of each attempt and store it as a pickle. The data contains the
+problem version, the solving time reported in the attempt and the axioms used
+in the proof. It can handle iProver, Vampire and E proofs. The resulting pickle
+is stored in data/raw with a pickle object for each competition-prover.
 '''
-TODO write documentation
-'''
-
-
-
 
 
 from bs4 import BeautifulSoup
 import requests
 import re
-from tqdm import tqdm
 from pickle import dump
 import os
 import multiprocessing
+import argparse
+from dataclasses import dataclass
+import config
 
+RESULT_DIR = 'data/raw/'
 
-# TODO tasklist
-# Do not load things that already exists.
-# But can force download!
+parser = argparse.ArgumentParser()
+parser.add_argument('--force_download_all', default=False, action='store_true',
+                    help='Force (re-)download the proof data from each competition.')
 
-
-"""
-fof(f4,axiom,(
-  ~p(s(tyop_2Emin_2Ebool,c_2Ebool_2EF_2E0))),
-  file('/export/starexec/sandbox/benchmark/Problems/HL400003+4.p',unknown)).
-"""
-
-
-# Get list of all problem links
-#BASE_URL = "http://www.tptp.org/CASC/J10/WWWFiles/Results/HL4/iProver---LTB-3.3/"
-##BASE_URL = "http://www.tptp.org/CASC/28/WWWFiles/Results/JJT/iProver---LTB-3.5/"
-#BASE_URL = "http://www.tptp.org/CASC/J10/WWWFiles/Results/HL4/E---LTB-2.5/"
-BASE_URL = "http://www.tptp.org/CASC/28/WWWFiles/Results/JJT/E---LTB-2.6/"
-
-# Vampire
-#BASE_URL = "http://www.tptp.org/CASC/28/WWWFiles/Results/JJT/Vampire---LTB-4.6/"
 
 def get_proof_links(url):
 
@@ -53,20 +42,25 @@ def get_proof_links(url):
     links = [url + link for link in links]
     return links
 
+
 def get_proof_from_link(proof_url):
 
     # Get html content
     try:
         x = requests.get(proof_url)
-    except Exception:
-        # Chance of requests.exceptions.ConnectionError
+    except requests.exceptions.ConnectionError:
         return None
+    except Exception as err:
+        print(f"Unexpected exception for {proof_url}: {err}")
+        return None
+
     return x.text
+
 
 def get_axioms_from_proof(proof, e_prover_proof):
     if e_prover_proof:
         # For E
-        axiom_regex = "^(fof|cnf|tff)\(\w+, axiom,(.*)$"
+        axiom_regex = "^(fof|cnf|tff)\\(\\w+, axiom,(.*)$"
         result = re.findall(axiom_regex, proof, re.MULTILINE)
         axioms = [r[1].split("file")[0] for r in result]
     else:
@@ -106,7 +100,6 @@ def get_problem_version(proof):
         return None
 
 
-
 def compute_proof_data(proof_url, e_prover_proof):
     # Extract problem name from the link
     problem = proof_url.split('/')[-1]
@@ -135,7 +128,6 @@ def get_proof_data(results_url, e_prover_proof):
     # Get list of all problems with an iProver proof
     proof_links = get_proof_links(results_url)
     print("Number of problems: ", len(proof_links))
-    proof_links = proof_links[:10] # TODO
 
     # Make a process pool
     pool = multiprocessing.Pool(processes=os.cpu_count() - 1)
@@ -153,44 +145,65 @@ def get_proof_data(results_url, e_prover_proof):
     axioms = dict()
     for problem, data in res:
         # Check if problems are worth keeping
-        if problem is None or data is None: # Faulty result
-           continue
-        elif data['version'] is None: # No problem version
-           continue
+        if problem is None or data is None:  # Faulty result
+            continue
+        elif data['version'] is None:  # No problem version
+            continue
         # Checks passed, keep proof
         axioms[problem] = data
 
     return axioms
 
 
+@dataclass
+class Entry:
+    competition: str
+    prover: str
+    url: str
+
+    def get_pickle_path(self):
+        return f'{self.prover}_{self.competition}.pkl'
+
+    def __repr__(self):
+        return f'{self.prover}_{self.competition}'
+
+
+def get_all_competition_entries():
+    # Extract all entries from the results dict
+    entries = []
+    for competition, systems in config.COMPETITION_RESULTS.items():
+        for prover, url in systems.items():
+            entries += [Entry(competition, prover, url)]
+
+    return entries
 
 
 def main():
 
-    # Force all + force only some
-    # TODO
-    # Handle input arguments and prover
-    # Get hold of links from config
-    # For each link, run the script
-    # Save the pickle in this script??
-    URL = "http://www.tptp.org/CASC/J10/WWWFiles/Results/HL4/iProver---LTB-3.3/"
-    prover = 'iprover'
-    competition = 'hl4'
+    args = parser.parse_args()
 
-    print("Running: ", URL)
-    e_prover_proof = False
-    data = get_proof_data(URL, e_prover_proof) # TODO set
-    print(data)
+    # Get all links and competitions
+    entries = get_all_competition_entries()
 
-    # Save the dict
-    with open(f'data/raw/{prover}_{competition}.pkl', 'wb') as f:
-        dump(data, f)
-    del data
+    if args.force_download_all:
+        print(f'Downloading all {len(entries)} competition entries')
+
+    for entry in entries:
+        if not args.force_download_all and os.path.exists(RESULT_DIR + entry.get_pickle_path()):
+            print(f'Proof data already exists for {entry}. Skipping...')
+            continue
+
+        print("Downloading the results from: ", entry)
+        e_prover_proof = entry.prover == 'e'
+        data = get_proof_data(entry.url, e_prover_proof)
+
+        # Save the dict
+        save_path = f'{RESULT_DIR}{entry.get_pickle_path()}'
+        with open(save_path, 'wb') as f:
+            dump(data, f)
+        print(f'Saved to: {save_path}')
+        del data
 
 
 if __name__ == "__main__":
     main()
-
-    # Testing links
-    #proof_url = "http://www.tptp.org/CASC/J10/WWWFiles/Results/HL4/iProver---LTB-3.3/HL400003"
-    # proof_url = "http://www.tptp.org/CASC/J10/WWWFiles/Results/HL4/iProver---LTB-3.3/HL400013" # Where is the axiom?
