@@ -1,6 +1,5 @@
 """
-Given a problem folder and an meta file
-this program preprocess problems using the sine algorithm.
+This program preprocesses the fof and tff problems in a directory using the SiNE algorithm.
 The result is outputed to the approrpiate folder
 """
 
