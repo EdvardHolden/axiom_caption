@@ -60,6 +60,7 @@ def get_proof_from_link(proof_url):
 def get_axioms_from_proof(proof, e_prover_proof):
     if e_prover_proof:
         # For E
+        # TODO am I getting the correct group???
         axiom_regex = "^(fof|cnf|tff)\\(\\w+, axiom,(.*)$"
         result = re.findall(axiom_regex, proof, re.MULTILINE)
         axioms = [r[1].split("file")[0] for r in result]
