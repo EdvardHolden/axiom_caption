@@ -40,7 +40,6 @@ def load_ids(filename):
     return sorted(dataset)
 
 
-# TODO supply
 def load_clean_descriptions(filename, ids, order):
     # Load the descriptions of the images in the set and append start/end tokens
     with open(filename, 'rb') as f:
@@ -77,13 +76,12 @@ def load_photo_features(filename, dataset):
     with open(filename, 'rb') as f:
         all_features = pickle.load(f)
     # FIXME Adding the .p extension in the name for now - should be made more uniform
-    features = {k: all_features[k+'.p'] for k in dataset}
+    features = {k: all_features[k + '.p'] for k in dataset}
     return features
 
 
 def get_dataset(image_ids, image_descriptions, image_features, tokenizer=None,
                 max_cap_len=None, batch_size=config.BATCH_SIZE, order=None):
-    # TODO orders should be handled within this function!
 
     # Load the necessary data for the id set
     ids = load_ids(image_ids)
