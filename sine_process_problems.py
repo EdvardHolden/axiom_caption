@@ -19,6 +19,7 @@ parser.add_argument('problem_dir', help='Directory containing the problems to pr
 parser.add_argument('--results_dir', help='Directory for storing the result', default='data/processed/jjt_sine_1_0/')
 parser.add_argument('--sine_tolerance', default=1)
 parser.add_argument('--sine_depth', default=0)
+parser.add_argument('--no_processes', default=5, type=int, help='Number of processes for running SiNE')
 
 args = parser.parse_args()
 
@@ -37,7 +38,6 @@ def preprocess_sine(path, problem, res_dir):
     cmd += f' {os.path.join(path, problem)}'
     # Append output direction
     cmd += f'  >{os.path.join(res_dir, problem)}'
-    print(cmd)
 
     # Run process
     proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid)
@@ -72,7 +72,7 @@ def main():
     proc_args = [(args.problem_dir, prob, args.results_dir) for prob in problems]
 
     # Multiprocess
-    pool = multiprocessing.Pool(processes=5)
+    pool = multiprocessing.Pool(processes=args.no_processes)
     pool.starmap(preprocess_sine, proc_args)
     pool.close()
     pool.join()
