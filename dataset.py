@@ -40,7 +40,8 @@ def load_ids(filename):
     return sorted(dataset)
 
 
-def load_clean_descriptions(filename, ids):
+# TODO supply
+def load_clean_descriptions(filename, ids, order):
     # Load the descriptions of the images in the set and append start/end tokens
     with open(filename, 'rb') as f:
         proof_data = pickle.load(f)
@@ -49,9 +50,21 @@ def load_clean_descriptions(filename, ids):
     for data in proof_data.values():
         # skip images not in the set
         if data['version'] in ids:
-            # Store axioms
+
+            # Extract axioms and manipulate the delimiter
             axioms = data['axioms']
             axioms = [ax.replace(config.TOKEN_DELIMITER, ' ') for ax in axioms]
+
+            # Sort the list of axioms if set
+            if order is not None:
+                if order == 'lexicographic':
+                    axioms = sorted(axioms)
+                elif order == 'length':
+                    axioms = sorted(axioms, key=len)
+                else:
+                    raise ValueError(f'Incorrect value given for order: \'{order}\'')
+
+            # Build the caption string and save in dict
             descriptions[data['version']] = f'{config.TOKEN_START}{config.TOKEN_DELIMITER}' \
                                             + f'{config.TOKEN_DELIMITER}'.join(axioms) \
                                             + f'{config.TOKEN_DELIMITER}{config.TOKEN_END}'
@@ -68,25 +81,18 @@ def load_photo_features(filename, dataset):
     return features
 
 
-def compute_max_length(image_ids, image_descriptions):
-    ids = load_ids(image_ids)
-    captions = load_clean_descriptions(image_descriptions, ids)
-    max_len = max(len(s.split()) for s in list(captions.values()))
-    return max_len
-
-
 def get_dataset(image_ids, image_descriptions, image_features, tokenizer=None,
-                max_cap_len=None, batch_size=config.BATCH_SIZE):
+                max_cap_len=None, batch_size=config.BATCH_SIZE, order=None):
     # TODO orders should be handled within this function!
 
     # Load the necessary data for the id set
     ids = load_ids(image_ids)
-    captions = load_clean_descriptions(image_descriptions, ids)
+    captions = load_clean_descriptions(image_descriptions, ids, order=order)
     img_features = load_photo_features(image_features, ids)
 
     # Compute the longest caption if value not provided
     if max_cap_len is None:
-        max_cap_len = max(len(s.split()) for s in list(captions.values()))
+        max_cap_len = max(len(s.split(config.TOKEN_DELIMITER)) for s in list(captions.values()))
 
     # Cheat - for now we just extract and store in memory
     captions = [captions[i] for i in ids]
@@ -112,15 +118,22 @@ def get_dataset(image_ids, image_descriptions, image_features, tokenizer=None,
 
 def main():
 
+    # Set order for testing purposes
+    #order = None
+    #order = 'lexicographic'
+    order = 'length'
+
     # Function for testing the dataset creation
     tokenizer_path = os.path.join(os.path.dirname(config.train_id_file), 'tokenizer.json')
     tokenizer, _ = get_tokenizer(tokenizer_path)
 
     train_data, max_len_train = get_dataset(config.train_id_file, config.proof_data,
-                                            config.problem_features, tokenizer=tokenizer)
+                                            config.problem_features, tokenizer=tokenizer,
+                                            order=order)
 
     test_data, max_len_test = get_dataset(config.test_id_file, config.proof_data,
-                                          config.problem_features, tokenizer=tokenizer, max_cap_len=max_len_train)
+                                          config.problem_features, tokenizer=tokenizer,
+                                          max_cap_len=max_len_train, order=order)
 
     print(train_data)
     print(test_data)
