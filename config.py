@@ -15,15 +15,20 @@ COMPETITION_RESULTS ={'jjt': {
 
 
 
+
 # #############
+DEVELOPING = True
+
 BATCH_SIZE = 32
 BUFFER_SIZE = 1000
-EPOCHS = 150
+EPOCHS = 5
 ES_PATIENCE = 10
 
 
 train_id_file = 'data/vampire_jjt_fof/train.txt'
 test_id_file = 'data/vampire_jjt_fof/test.txt'
+val_id_file = 'data/vampire_jjt_fof/val.txt'
+
 proof_data = 'data/raw/vampire_jjt.pkl'
 problem_features = 'data/embeddings/jjt_fof_sine_1_0.pkl'
 

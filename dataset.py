@@ -25,6 +25,16 @@ def load_doc(filename):
     return text
 
 
+def max_caption_length(captions):
+    return max(len(s.split(config.TOKEN_DELIMITER)) for s in list(captions.values()))
+
+
+def compute_max_length(image_ids, image_descriptions):
+    ids = load_ids(image_ids)
+    captions = load_clean_descriptions(image_descriptions, ids, order=None) # Order does not matter for this purpose
+    return max_caption_length(captions)
+
+
 def load_ids(filename):
     # Load the image ids of a file
     doc = load_doc(filename)
@@ -55,7 +65,7 @@ def load_clean_descriptions(filename, ids, order):
             axioms = [ax.replace(config.TOKEN_DELIMITER, ' ') for ax in axioms]
 
             # Sort the list of axioms if set
-            if order is not None:
+            if order is not None and order != 'default':
                 if order == 'lexicographic':
                     axioms = sorted(axioms)
                 elif order == 'length':
@@ -90,7 +100,7 @@ def get_dataset(image_ids, image_descriptions, image_features, tokenizer=None,
 
     # Compute the longest caption if value not provided
     if max_cap_len is None:
-        max_cap_len = max(len(s.split(config.TOKEN_DELIMITER)) for s in list(captions.values()))
+        max_cap_len = max_caption_length(captions)
 
     # Cheat - for now we just extract and store in memory
     captions = [captions[i] for i in ids]

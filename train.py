@@ -22,6 +22,8 @@ parser.add_argument('--proof_data', default=config.proof_data,
                     help="File containing the image features")
 parser.add_argument('--problem_features', default=config.problem_features,
                     help="File containing the image descriptions")
+parser.add_argument('--axiom_order', default=None, choices=[None, 'default', 'length', 'lexicographic'],
+                    help='The order of the axioms in caption')
 
 parser.add_argument('--model_dir', default='experiments/base_model',
                     help="Directory containing params.json")
@@ -48,7 +50,7 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     model.reset_states()
 
     # Initialise input vector with the start token
-    dec_input = tf.expand_dims([tokenizer.word_index['startseq']] * target.shape[0], 1)
+    dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * target.shape[0], 1)
 
     with tf.GradientTape() as tape:
         for i in range(1, target.shape[1]):
@@ -142,6 +144,17 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return {"train_loss": loss_plot_train, "val_loss": loss_plot_val}
 
 
+def initialise_model(model_type, max_len, vocab_size, model_params):
+    if model_type == "merge_inject":
+        model = MergeInjectModel(max_len, vocab_size, model_params)
+    elif model_type == "inject":
+        model = InjectModel(max_len, vocab_size, model_params)
+    else:
+        print("Unrecognised model type: ", model_type, file=sys.stderr)
+        sys.exit(1)
+    return model
+
+
 def main():
 
     # TODO add caption order argument!
@@ -154,29 +167,22 @@ def main():
     tokenizer, vocab_size = get_tokenizer(tokenizer_path)
     print("Number of words: ", vocab_size)
     import sys
-    print(args)
 
     # Get the training dataset
     train_data, max_len = get_dataset(args.train_id_file, args.proof_data,
-                                      args.problem_features, tokenizer=tokenizer)
-    sys.exit(0)
+                                      args.problem_features, tokenizer=tokenizer,
+                                      order=args.axiom_order)
     print("Max len: ", max_len)
     # Compute validation dataset based on the max length of the training data
     val_data, _ = get_dataset(args.val_id_file, args.proof_data,
-                              args.problem_features, tokenizer=tokenizer, max_cap_len=max_len)
+                              args.problem_features, tokenizer=tokenizer,
+                              max_cap_len=max_len, order=args.axiom_order)
 
     # Load model params from model file
     model_params = get_model_params(args.model_dir)
 
-    # TODO Make into a separate function!
-    # Define the model
-    if model_params.model_type == "merge_inject":
-        model = MergeInjectModel(max_len, vocab_size, model_params)
-    elif model_params.model_type == "inject":
-        model = InjectModel(max_len, vocab_size, model_params)
-    else:
-        print("Unrecognised model type: ", model_params.model_type, file=sys.stderr)
-        sys.exit(1)
+    # Initialise the model
+    model = initialise_model(model_params.model_type, max_len, vocab_size, model_params)
     print("Training on: ", model)
 
     # Initialise the optimiser
