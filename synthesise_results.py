@@ -24,7 +24,6 @@ def aggregate_metrics(parent_dir, metrics):
         metrics: (dict) subdir -> {'accuracy': ..., ...}
     """
     # Get the metrics for the folder if it has results from an experiment
-    #metrics_file = os.path.join(parent_dir, 'metrics_eval_best_weights.json')
     metrics_file = os.path.join(parent_dir, 'history.pkl')
     if os.path.isfile(metrics_file):
         with open(metrics_file, 'rb') as f:
