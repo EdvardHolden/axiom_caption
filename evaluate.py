@@ -3,6 +3,7 @@ import argparse
 from nltk.translate.bleu_score import corpus_bleu
 import os
 import tensorflow as tf
+from tqdm import tqdm
 
 from dataset import get_dataset, get_tokenizer, compute_max_length
 from model import load_model
@@ -11,13 +12,15 @@ from model import load_model
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_dir', default='experiments/base_model',
                     help="Directory containing params.json")
-parser.add_argument('--image_ids', default=config.test_id_file,
+parser.add_argument('--problem_ids', default=config.test_id_file,
                     help='File containing IDs for evaluation')
 
-parser.add_argument('--image_features', default=config.image_features,
+parser.add_argument('--problem_features', default=config.problem_features,
                     help="File containing the image features")
-parser.add_argument('--image_descriptions', default=config.image_descriptions,
+parser.add_argument('--proof_data', default=config.proof_data,
                     help="File containing the image descriptions")
+parser.add_argument('--axiom_order', default=None, choices=[None, 'default', 'length', 'lexicographic'],
+                    help='The order of the axioms in caption')
 
 parser.add_argument('--max_length', default=None, type=int,
                     help='The maximum length of the predictions')
@@ -33,7 +36,7 @@ def generate_step(tokenizer, model, max_len, img_tensor):
     model.reset_states()
 
     # Get start token
-    dec_input = tf.expand_dims([tokenizer.word_index['startseq']], 0)
+    dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]], 0)
 
     # Run the model until we reach the max length or the end token
     for i in range(max_len):
@@ -42,7 +45,7 @@ def generate_step(tokenizer, model, max_len, img_tensor):
         predicted_id = tf.random.categorical(predictions, 1)[0][0].numpy()
 
         # Return sequence if we predicted the end token
-        if tokenizer.index_word[predicted_id] == 'endseq':
+        if tokenizer.index_word[predicted_id] == config.TOKEN_END:
             return result
 
         # Add predicted ID to the result
@@ -59,8 +62,9 @@ def evaluate_model(tokenizer, model, test_data, max_len, verbose=0):
 
     # Initialise results
     actual, predicted = list(), list()
-    #
-    for (_, (img_tensor, caption)) in enumerate(test_data):
+
+    # Predict for each problem in the data
+    for (_, (img_tensor, caption)) in tqdm(enumerate(test_data)):
         # Generate caption based on the image tensor
         yhat = generate_step(tokenizer, model, max_len, img_tensor)
 
@@ -86,20 +90,21 @@ def main():
     args = parser.parse_args()
 
     # Get pre-trained tokenizer
-    tokenizer, _ = get_tokenizer(config.tokenizer_path)
+    tokenizer_path = os.path.join(os.path.dirname(args.problem_ids), 'tokenizer.json')
+    tokenizer, _ = get_tokenizer(tokenizer_path)
 
     # If maximum length is not provided, we compute it based on the training set in config
     if args.max_length is None:
-        max_len = compute_max_length(config.train_id_file, config.image_descriptions)
+        max_len = compute_max_length(config.train_id_file, args.proof_data)
     else:
         max_len = args.max_length
     print("Max caption length: ", max_len)
 
     # Get the test dataset with batch 1 as we need to treat each caption separately
     # Also, we want the raw text so not providing a tokenizer
-    test_data, _ = get_dataset(args.image_ids, args.image_descriptions,
-                               config.image_features,
-                               batch_size=1)
+    test_data, _ = get_dataset(args.problem_ids, args.proof_data,
+                               args.problem_features, batch_size=1,
+                               order=args.axiom_order)
 
     # Load model
     model_dir = os.path.join(args.model_dir, 'ckpt_dir')
