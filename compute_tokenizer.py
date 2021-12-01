@@ -29,14 +29,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     train_descriptions = load_clean_descriptions(
-        args.proof_data, load_ids(args.id_file))
+        args.proof_data, load_ids(args.id_file), order=None) # The order is irrelevant for this purpose
     tokenizer = create_tokenizer(train_descriptions, args.vocab_word_limit)
 
     # Add padding token
     tokenizer.word_index[config.TOKEN_PAD] = 0
     tokenizer.index_word[0] = config.TOKEN_PAD
 
-    print('Vocabulary Size: {0}'.format(len(tokenizer.word_index) + 1))
+    #print('Vocabulary Size: {0}'.format(len(tokenizer.word_index) + 1))
+    print('Vocabulary Size: {0}'.format(len(tokenizer.word_index)))
 
     # Save the tokenizer
     save_path = os.path.join(os.path.dirname(args.id_file), 'tokenizer.json')

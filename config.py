@@ -18,10 +18,11 @@ COMPETITION_RESULTS ={'jjt': {
 
 # #############
 DEVELOPING = True
+#DEVELOPING = False
 
 BATCH_SIZE = 32
 BUFFER_SIZE = 1000
-EPOCHS = 5
+EPOCHS = 2
 ES_PATIENCE = 10
 
 
@@ -35,5 +36,6 @@ problem_features = 'data/embeddings/jjt_fof_sine_1_0.pkl'
 TOKEN_PAD = '<pad>'
 TOKEN_START = '<start>'
 TOKEN_END = '<end>'
-TOKEN_OOV = '<pad>'
+#TOKEN_OOV = '<pad>'
+TOKEN_OOV = '<unk>'
 TOKEN_DELIMITER = '\n'
