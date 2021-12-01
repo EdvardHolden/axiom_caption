@@ -87,6 +87,19 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
         es_wait = 0
         es_best_loss = np.inf
 
+    # Compute the initial loss of the model as a sanity check
+    print('# Computing initial loss for the model')
+    # Compute the loss over the validation set
+    num_initial_steps = 0
+    total_initial_loss = 0
+    for (batch, (img_tensor, caption)) in enumerate(val_data):
+        num_initial_steps += 1
+        batch_loss, s_loss = train_step(
+            tokenizer, model, optimizer, img_tensor, caption, training=False)
+        total_initial_loss += s_loss
+    print(f'Initial model loss: {total_initial_loss.numpy() / num_initial_steps:.2f}')
+    print()
+
     # Loop through each epoch
     for epoch in range(0, config.EPOCHS):
         start = time.time()
@@ -205,5 +218,6 @@ def main():
 
 
 if __name__ == "__main__":
+
     tf.config.run_functions_eagerly(config.DEVELOPING)
     main()
