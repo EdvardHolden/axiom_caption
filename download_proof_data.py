@@ -1,11 +1,11 @@
-''' Downloads proof data from the CASC competitions
+""" Downloads proof data from the CASC competitions
 
 This script takes the result entries in config.COMPETITION_RESULTS amd downloads
 the proof data of each attempt and store it as a pickle. The data contains the
 problem version, the solving time reported in the attempt and the axioms used
 in the proof. It can handle iProver, Vampire and E proofs. The resulting pickle
 is stored in data/raw with a pickle object for each competition-prover.
-'''
+"""
 
 
 from bs4 import BeautifulSoup
@@ -18,11 +18,16 @@ import argparse
 from dataclasses import dataclass
 import config
 
-RESULT_DIR = 'data/raw/'
+RESULT_DIR = "data/raw/"
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--force_download_all', default=False, action='store_true',
-                    help='Force (re-)download the proof data from each competition.')
+parser.add_argument(
+    "--force_download_all",
+    default=False,
+    action="store_true",
+    help="Force (re-)download the proof data from each competition.",
+)
+
 
 
 def get_proof_links(url):
@@ -32,10 +37,10 @@ def get_proof_links(url):
     html_content = x.text
 
     # Extract the hrefs in the table
-    soup = BeautifulSoup(html_content, 'html.parser')
+    soup = BeautifulSoup(html_content, "html.parser")
     links = []
-    for link in soup.findAll('a'):
-        links.append(link.get('href'))
+    for link in soup.findAll("a"):
+        links.append(link.get("href"))
 
     print("Number of links retrieved: ", len(links))
     # Append the base link
@@ -92,8 +97,8 @@ def get_problem_version(proof):
         if len(version) < 1:
             return None
         # Get the match and format into name_v
-        version = version[0].split()[-1].split('/')[-1]
-        if '.p' in version:
+        version = version[0].split()[-1].split("/")[-1]
+        if ".p" in version:
             version = version[:-2]
 
         return version
@@ -103,8 +108,8 @@ def get_problem_version(proof):
 
 def compute_proof_data(proof_url, e_prover_proof):
     # Extract problem name from the link
-    problem = proof_url.split('/')[-1]
-    if problem == '':
+    problem = proof_url.split("/")[-1]
+    if problem == "":
         return problem, None
 
     # Get the proof output of the attempt
@@ -117,9 +122,7 @@ def compute_proof_data(proof_url, e_prover_proof):
     version = get_problem_version(proof)
     time = get_solving_time(proof)
 
-    result = {'axioms': axioms,
-              'version': version,
-              'time': time}
+    result = {"axioms": axioms, "version": version, "time": time}
 
     return problem, result
 
@@ -148,7 +151,7 @@ def get_proof_data(results_url, e_prover_proof):
         # Check if problems are worth keeping
         if problem is None or data is None:  # Faulty result
             continue
-        elif data['version'] is None:  # No problem version
+        elif data["version"] is None:  # No problem version
             continue
         # Checks passed, keep proof
         axioms[problem] = data
@@ -163,10 +166,10 @@ class Entry:
     url: str
 
     def get_pickle_path(self):
-        return f'{self.prover}_{self.competition}.pkl'
+        return f"{self.prover}_{self.competition}.pkl"
 
     def __repr__(self):
-        return f'{self.prover}_{self.competition}'
+        return f"{self.prover}_{self.competition}"
 
 
 def get_all_competition_entries():
@@ -187,22 +190,22 @@ def main():
     entries = get_all_competition_entries()
 
     if args.force_download_all:
-        print(f'Downloading all {len(entries)} competition entries')
+        print(f"Downloading all {len(entries)} competition entries")
 
     for entry in entries:
         if not args.force_download_all and os.path.exists(RESULT_DIR + entry.get_pickle_path()):
-            print(f'Proof data already exists for {entry}. Skipping...')
+            print(f"Proof data already exists for {entry}. Skipping...")
             continue
 
         print("Downloading the results from: ", entry)
-        e_prover_proof = entry.prover == 'e'
+        e_prover_proof = entry.prover == "e"
         data = get_proof_data(entry.url, e_prover_proof)
 
         # Save the dict
-        save_path = f'{RESULT_DIR}{entry.get_pickle_path()}'
-        with open(save_path, 'wb') as f:
+        save_path = f"{RESULT_DIR}{entry.get_pickle_path()}"
+        with open(save_path, "wb") as f:
             dump(data, f)
-        print(f'Saved to: {save_path}')
+        print(f"Saved to: {save_path}")
         del data
 
 
