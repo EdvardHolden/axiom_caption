@@ -1,5 +1,6 @@
 {
   "model_type": ["merge_inject"],
+  "normalize": [true],
   "no_lstm_units": [50],
   "embedding_size": [50],
   "no_dense_units": [32, 64, 128],
