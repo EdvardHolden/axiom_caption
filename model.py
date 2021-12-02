@@ -11,6 +11,7 @@ from keras.layers import Dropout
 from keras.layers import RepeatVector
 from keras.layers import TimeDistributed
 from keras.layers import Embedding
+from keras.layers import Normalization
 from keras.layers.merge import concatenate
 from keras.layers.pooling import GlobalMaxPooling2D
 from tensorflow.keras.utils import plot_model
@@ -18,20 +19,31 @@ from argparse import Namespace
 import json
 import os
 
+import numpy as np
+
 
 class ImageEncoder(layers.Layer):
 
-    def __init__(self, no_dense_units, dropout_rate, name="image_encoder", **kwargs):
+    def __init__(self, no_dense_units, dropout_rate, normalize, name="image_encoder", **kwargs):
         super(ImageEncoder, self).__init__(name=name, **kwargs)
-        #self.fe1 = GlobalMaxPooling2D()  # TODO - change to flatten or other pooling?
-        #self.d1 = Dropout(dropout_rate)
+        # TODO maybe add some sort of BatchNormalisation?
+
+        if normalize:
+            self.normalize = Normalization()
+        else:
+            self.normalize = None
+
         self.fe2 = Dense(no_dense_units, activation='relu')
         self.d2 = Dropout(dropout_rate)
 
     def call(self, inputs, training=None):
         x = inputs
-        #x = self.fe1(x)
-        #x = self.d1(x, training=training)
+
+        # Apply normalization if set
+        if self.normalize:
+            assert self.normalize.is_adapted, "Need to adapt the normalisation layer before using"
+            x = self.normalize(x)
+
         x = self.fe2(x)
         x = self.d2(x, training=training)
         return x
@@ -103,7 +115,10 @@ class InjectModel(tf.keras.Model):
         self.vocab_size = vocab_size
 
         self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
-        self.image_encoder = ImageEncoder(model_params.no_dense_units, model_params.dropout_rate)
+        self.image_encoder = ImageEncoder(
+            model_params.no_dense_units,
+            model_params.dropout_rate,
+            model_params.normalize)
         self.word_decoder = WordDecoder(vocab_size, model_params.no_lstm_units,
                                         model_params.no_dense_units, model_params.dropout_rate)
 
@@ -142,7 +157,10 @@ class MergeInjectModel(tf.keras.Model):
         super(MergeInjectModel, self).__init__(name=name, **kwargs)
         self.max_length = max_length
         self.vocab_size = vocab_size
-        self.image_encoder = ImageEncoder(model_params.no_dense_units, model_params.dropout_rate)
+        self.image_encoder = ImageEncoder(
+            model_params.no_dense_units,
+            model_params.dropout_rate,
+            model_params.normalize)
         self.word_encoder = WordEncoder(vocab_size, model_params.embedding_size, model_params.no_lstm_units,
                                         model_params.no_dense_units, model_params.dropout_rate)
         self.word_decoder = WordDecoder(vocab_size, model_params.no_lstm_units,
@@ -178,7 +196,8 @@ class MergeInjectModel(tf.keras.Model):
         return Model(inputs=x, outputs=self.call(x))
 
 
-def get_model(model_type, max_length, vocab_size, params):
+# TODO possibly refractor??
+def get_model(model_type, max_length, vocab_size, params, data=None):
     if model_type == "merge_inject":
         model = MergeInjectModel(max_length, vocab_size, params)
     elif model_type == "inject":
