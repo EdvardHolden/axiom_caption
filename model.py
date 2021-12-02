@@ -12,6 +12,7 @@ from keras.layers import RepeatVector
 from keras.layers import TimeDistributed
 from keras.layers import Embedding
 from keras.layers import Normalization
+from keras.layers import BatchNormalization
 from keras.layers.merge import concatenate
 from keras.layers.pooling import GlobalMaxPooling2D
 from tensorflow.keras.utils import plot_model
@@ -24,14 +25,18 @@ import numpy as np
 
 class ImageEncoder(layers.Layer):
 
-    def __init__(self, no_dense_units, dropout_rate, normalize, name="image_encoder", **kwargs):
+    def __init__(self, no_dense_units, dropout_rate, normalize, batch_norm, name="image_encoder", **kwargs):
         super(ImageEncoder, self).__init__(name=name, **kwargs)
-        # TODO maybe add some sort of BatchNormalisation?
 
         if normalize:
             self.normalize = Normalization()
         else:
             self.normalize = None
+
+        if batch_norm:
+            self.batch_norm = BatchNormalization()
+        else:
+            self.batch_norm = None
 
         self.fe2 = Dense(no_dense_units, activation='relu')
         self.d2 = Dropout(dropout_rate)
@@ -43,6 +48,10 @@ class ImageEncoder(layers.Layer):
         if self.normalize:
             assert self.normalize.is_adapted, "Need to adapt the normalisation layer before using"
             x = self.normalize(x)
+
+        # Apply batch norm if set
+        if self.batch_norm:
+            x = self.batch_norm(x, training=training)
 
         x = self.fe2(x)
         x = self.d2(x, training=training)
@@ -118,7 +127,8 @@ class InjectModel(tf.keras.Model):
         self.image_encoder = ImageEncoder(
             model_params.no_dense_units,
             model_params.dropout_rate,
-            model_params.normalize)
+            model_params.normalize,
+            model_params.batch_norm)
         self.word_decoder = WordDecoder(vocab_size, model_params.no_lstm_units,
                                         model_params.no_dense_units, model_params.dropout_rate)
 
@@ -160,7 +170,8 @@ class MergeInjectModel(tf.keras.Model):
         self.image_encoder = ImageEncoder(
             model_params.no_dense_units,
             model_params.dropout_rate,
-            model_params.normalize)
+            model_params.normalize,
+            model_params.batch_norm)
         self.word_encoder = WordEncoder(vocab_size, model_params.embedding_size, model_params.no_lstm_units,
                                         model_params.no_dense_units, model_params.dropout_rate)
         self.word_decoder = WordDecoder(vocab_size, model_params.no_lstm_units,
