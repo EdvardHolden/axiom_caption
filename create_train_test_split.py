@@ -6,6 +6,7 @@ directory in 'data/'.
 import argparse
 import pickle
 import os
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 
 parser = argparse.ArgumentParser()
@@ -66,8 +67,7 @@ def main():
     print(f'Resulting datasets train:{len(train_id)}, test:{len(test_id)}, val:{len(val_id)}')
 
     # Create directory
-    # TODO this could be improved
-    dir_path = 'data/' + args.data_file.split("/")[-1][:-4]
+    dir_path = os.path.join('data', Path(args.data_file).stem)
     if args.fof_only:
         dir_path += '_fof'
     dir_path += '/'
