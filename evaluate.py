@@ -2,6 +2,8 @@ import config
 import argparse
 from nltk.translate.bleu_score import corpus_bleu
 import os
+from itertools import starmap
+import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
@@ -25,6 +27,14 @@ parser.add_argument('--axiom_order', default=None, choices=[None, 'default', 'le
 parser.add_argument('--max_length', default=None, type=int,
                     help='The maximum length of the predictions')
 parser.add_argument('-v', '--verbose', action='count', default=0)
+
+# TODO maybe add some BeamSearch in here?
+
+
+def coverage_score(actual, predicted):
+
+    scores = [*starmap(lambda a, p: len(set(a).intersection(set(p))) / len(set(a)), zip(actual, predicted))]
+    return np.average(scores)
 
 
 def generate_step(tokenizer, model, max_len, img_tensor):
@@ -70,9 +80,10 @@ def evaluate_model(tokenizer, model, test_data, max_len, verbose=0):
 
         # Extract the string value from the tensor, remove start/end tokens,
         # convert to utf-8 and make into array
-        caption = str(caption.numpy()[0]).split()[1:-1]
+        caption = caption.numpy()[0].split(bytes(config.TOKEN_DELIMITER, 'utf-8'))[1:-1]
+
         # Store the actual token
-        actual.append([caption])
+        actual.append(caption)
         predicted.append(yhat)
 
         if verbose:
@@ -81,7 +92,11 @@ def evaluate_model(tokenizer, model, test_data, max_len, verbose=0):
 
     # Calculate BLEU score
     bleu = corpus_bleu(actual, predicted)
-    return bleu
+    # Compute the set coverage
+    coverage = coverage_score(actual, predicted)
+
+    return {'bleu': bleu, 'coverage': coverage}
+
 
 
 def main():
@@ -111,9 +126,13 @@ def main():
     loaded_model = load_model(model_dir)
 
     # Run evaluation
-    score = evaluate_model(tokenizer, loaded_model, test_data, max_len, verbose=args.verbose)
-    print("Score: ", score)
+    scores = evaluate_model(tokenizer, loaded_model, test_data, max_len, verbose=args.verbose)
+    print("# Scores ")
+    for score in sorted(scores):
+        print(f'{score:<8}: {scores[score]:.2f}')
+
 
 
 if __name__ == "__main__":
     main()
+
