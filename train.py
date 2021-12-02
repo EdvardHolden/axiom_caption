@@ -88,16 +88,15 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
         es_best_loss = np.inf
 
     # Compute the initial loss of the model as a sanity check
-    print('# Computing initial loss for the model')
     # Compute the loss over the validation set
     num_initial_steps = 0
     total_initial_loss = 0
-    for (batch, (img_tensor, caption)) in enumerate(val_data):
+    for (batch, (img_tensor, caption)) in enumerate(train_data):
         num_initial_steps += 1
         batch_loss, s_loss = train_step(
             tokenizer, model, optimizer, img_tensor, caption, training=False)
         total_initial_loss += s_loss
-    print(f'Initial model loss: {total_initial_loss.numpy() / num_initial_steps:.2f}')
+    print(f'Initial model training loss: {total_initial_loss.numpy() / num_initial_steps:.2f}')
     print()
 
     # Loop through each epoch
@@ -157,7 +156,8 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return {"train_loss": loss_plot_train, "val_loss": loss_plot_val}
 
 
-def initialise_model(model_type, max_len, vocab_size, model_params):
+# TODO how should this be combined with get model??
+def initialise_model(model_type, max_len, vocab_size, model_params, training_data=None):
     if model_type == "merge_inject":
         model = MergeInjectModel(max_len, vocab_size, model_params)
     elif model_type == "inject":
@@ -165,6 +165,15 @@ def initialise_model(model_type, max_len, vocab_size, model_params):
     else:
         print("Unrecognised model type: ", model_type, file=sys.stderr)
         sys.exit(1)
+
+    # If normalisation on the embedding graph is set, we have to adapt the
+    # layer before compiling (or re-compile) the model
+    if model_params.normalize:
+        if training_data is None:
+            raise ValueError('Cannot get model with normalization layer without supplying training data')
+        # Adapt the normalisation layer to the embedding vector
+        model.image_encoder.normalize.adapt(training_data.map(lambda x1, x2: x1))
+
     return model
 
 
@@ -176,7 +185,7 @@ def main():
     args = parser.parse_args()
 
     # Get pre-trained tokenizer
-    tokenizer_path = os.path.join(os.path.dirname(args.train_id_file), 'tokenizer.json') # FIXME
+    tokenizer_path = os.path.join(os.path.dirname(args.train_id_file), 'tokenizer.json')  # FIXME
     tokenizer, vocab_size = get_tokenizer(tokenizer_path)
     print("Number of words: ", vocab_size)
     import sys
@@ -195,7 +204,9 @@ def main():
     model_params = get_model_params(args.model_dir)
 
     # Initialise the model
-    model = initialise_model(model_params.model_type, max_len, vocab_size, model_params)
+    print('Train type ', type(train_data))  # TODO remvoe
+    model = initialise_model(model_params.model_type, max_len, vocab_size, model_params,
+                             training_data=train_data)
     print("Training on: ", model)
 
     # Initialise the optimiser
@@ -207,7 +218,14 @@ def main():
     ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
 
     # Call training loop
-    history = train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, es_patience=config.ES_PATIENCE)
+    history = train_loop(
+        tokenizer,
+        model,
+        ckpt_manager,
+        optimizer,
+        train_data,
+        val_data,
+        es_patience=config.ES_PATIENCE)
 
     # Save the model
     model.save(checkpoint_path)
@@ -218,6 +236,10 @@ def main():
 
 
 if __name__ == "__main__":
+
+    physical_devices = tf.config.list_physical_devices('GPU')
+    for device in physical_devices:
+        tf.config.experimental.set_memory_growth(device, True)
 
     tf.config.run_functions_eagerly(config.DEVELOPING)
     main()
