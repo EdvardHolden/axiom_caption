@@ -1,0 +1,10 @@
+{
+    "model_type": "merge_inject",
+    "normalize": true,
+    "batch_norm": true,
+    "no_lstm_units": 50,
+    "embedding_size": 50,
+    "no_dense_units" : 128,
+    "dropout_rate": 0.2,
+    "learning_rate": 0.001
+}
