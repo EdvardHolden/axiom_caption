@@ -98,7 +98,6 @@ def evaluate_model(tokenizer, model, test_data, max_len, verbose=0):
     return {'bleu': bleu, 'coverage': coverage}
 
 
-
 def main():
 
     # Get the arguments
@@ -132,7 +131,5 @@ def main():
         print(f'{score:<8}: {scores[score]:.2f}')
 
 
-
 if __name__ == "__main__":
     main()
-
