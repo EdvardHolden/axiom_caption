@@ -73,6 +73,7 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
         gradients = tape.gradient(loss, trainable_variables)
         optimizer.apply_gradients(zip(gradients, trainable_variables))
 
+
     return loss, sequence_loss
 
 
@@ -87,17 +88,18 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
         es_wait = 0
         es_best_loss = np.inf
 
-    # Compute the initial loss of the model as a sanity check
-    # Compute the loss over the validation set
-    num_initial_steps = 0
-    total_initial_loss = 0
-    for (batch, (img_tensor, caption)) in enumerate(train_data):
-        num_initial_steps += 1
-        batch_loss, s_loss = train_step(
-            tokenizer, model, optimizer, img_tensor, caption, training=False)
-        total_initial_loss += s_loss
-    print(f'Initial model training loss: {total_initial_loss.numpy() / num_initial_steps:.2f}')
-    print()
+    # If in developing mode, compute the initial loss of the model as a sanity check
+    # This only works in developing mode as we need to call training=True on the train_step
+    # first in order to build the graph correctly.
+    if config.DEVELOPING:
+        num_initial_steps = 0
+        total_initial_loss = 0
+        for (batch, (img_tensor, caption)) in enumerate(train_data):
+            num_initial_steps += 1
+            batch_loss, s_loss = train_step(
+                tokenizer, model, optimizer, img_tensor, caption, training=False)
+            total_initial_loss += s_loss
+        print(f'Initial model training loss: {total_initial_loss.numpy() / num_initial_steps:.2f}')
 
     # Loop through each epoch
     for epoch in range(0, config.EPOCHS):
@@ -158,6 +160,8 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
 
 # TODO how should this be combined with get model??
 def initialise_model(model_type, max_len, vocab_size, model_params, training_data=None):
+
+    # Replace with get model maybe?
     if model_type == "merge_inject":
         model = MergeInjectModel(max_len, vocab_size, model_params)
     elif model_type == "inject":
@@ -170,7 +174,7 @@ def initialise_model(model_type, max_len, vocab_size, model_params, training_dat
     # layer before compiling (or re-compile) the model
     if model_params.normalize:
         if training_data is None:
-            raise ValueError('Cannot get model with normalization layer without supplying training data')
+            raise ValueError('Cannot initialize model with normalization layer without supplying training data')
         # Adapt the normalisation layer to the embedding vector
         model.image_encoder.normalize.adapt(training_data.map(lambda x1, x2: x1))
 
@@ -243,3 +247,4 @@ if __name__ == "__main__":
 
     tf.config.run_functions_eagerly(config.DEVELOPING)
     main()
+    print('# Finito')
