@@ -3,12 +3,11 @@ import time
 import tensorflow as tf
 import argparse
 from pickle import dump
-import sys
 import numpy as np
 
 import config
 from dataset import get_dataset, get_tokenizer
-from model import MergeInjectModel, InjectModel, get_model_params
+from model import get_model_params, get_model
 
 
 # TODO only give folder to ids?
@@ -154,19 +153,9 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return {"train_loss": loss_plot_train, "val_loss": loss_plot_val}
 
 
-# TODO move to model.py
-# TODO how should this be combined with get model??
 def initialise_model(model_type, max_len, vocab_size, model_params, training_data=None):
 
-    # Replace with get model maybe?
-    if model_type == "merge_inject":
-        model = MergeInjectModel(max_len, vocab_size, model_params)
-    elif model_type == "inject":
-        model = InjectModel(max_len, vocab_size, model_params)
-    else:
-        print("Unrecognised model type: ", model_type, file=sys.stderr)
-        sys.exit(1)
-
+    model = get_model(model_type, max_len, vocab_size, model_params)
     # If normalisation on the embedding graph is set, we have to adapt the
     # layer before compiling (or re-compile) the model
     if model_params.normalize:

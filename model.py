@@ -229,8 +229,7 @@ class MergeInjectModel(tf.keras.Model):
         return Model(inputs=x, outputs=self.call(x))
 
 
-# TODO possibly refractor??
-def get_model(model_type, max_length, vocab_size, params, data=None):
+def get_model(model_type, max_length, vocab_size, params):
     if model_type == "merge_inject":
         model = MergeInjectModel(max_length, vocab_size, params)
     elif model_type == "inject":
@@ -239,7 +238,6 @@ def get_model(model_type, max_length, vocab_size, params, data=None):
         print("Unrecognised model type: ", model_type, file=sys.stderr)
         sys.exit(1)
 
-    model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
     return model
 
 
@@ -283,13 +281,16 @@ if __name__ == "__main__":
     # Function for testing the script
     # Load base model parameters
     params = get_model_params("experiments/base_model")
+    params.normalize = False  # Quick hack
     print("Model params: ", params)
     print("# # # MergeInject # # #")
     m = get_model("merge_inject", 123, 20, params)
+    m.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
     print(m)
     print(m.build_graph().summary())
     print()
     print("# # # Inject # # #")
     m = get_model("inject", 123, 20, params)
+    m = get_model("merge_inject", 123, 20, params)
     print(m)
     print(m.build_graph().summary())
