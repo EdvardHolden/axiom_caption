@@ -20,11 +20,10 @@ from argparse import Namespace
 import json
 import os
 
-import numpy as np
+from dataset import AxiomOrder
 
 
 class ImageEncoder(layers.Layer):
-
     def __init__(self, no_dense_units, dropout_rate, normalize, batch_norm, name="image_encoder", **kwargs):
         super(ImageEncoder, self).__init__(name=name, **kwargs)
 
@@ -38,7 +37,7 @@ class ImageEncoder(layers.Layer):
         else:
             self.batch_norm = None
 
-        self.fe2 = Dense(no_dense_units, activation='relu')
+        self.fe2 = Dense(no_dense_units, activation="relu")
         self.d2 = Dropout(dropout_rate)
 
     def call(self, inputs, training=None):
@@ -64,16 +63,23 @@ class ImageEncoder(layers.Layer):
 
 
 class WordEncoder(layers.Layer):
-
-    def __init__(self, vocab_size, embedding_size, no_lstm_units,
-                 no_dense_units, dropout_rate, name="word_encoder", **kwargs):
+    def __init__(
+        self,
+        vocab_size,
+        embedding_size,
+        no_lstm_units,
+        no_dense_units,
+        dropout_rate,
+        name="word_encoder",
+        **kwargs,
+    ):
         super(WordEncoder, self).__init__(name=name, **kwargs)
         self.vocab_size = vocab_size
         self.emb1 = Embedding(vocab_size, embedding_size, mask_zero=True)
         self.d1 = Dropout(dropout_rate)
         self.emb2 = LSTM(no_lstm_units, return_sequences=True, dropout=dropout_rate)
         # TODO need to understand the use of this?
-        self.emb3 = TimeDistributed(Dense(no_dense_units, activation='relu'))
+        self.emb3 = TimeDistributed(Dense(no_dense_units, activation="relu"))
         self.d2 = Dropout(dropout_rate)
 
     def call(self, inputs, training=None):
@@ -92,13 +98,13 @@ class WordEncoder(layers.Layer):
 
 
 class WordDecoder(layers.Layer):
-
-    def __init__(self, vocab_size, no_lstm_units, no_dense_units,
-                 dropout_rate, name="word_decoder", **kwargs):
+    def __init__(
+        self, vocab_size, no_lstm_units, no_dense_units, dropout_rate, name="word_decoder", **kwargs
+    ):
         super(WordDecoder, self).__init__(name=name, **kwargs)
         self.lm = LSTM(no_lstm_units, dropout=dropout_rate)
         self.d1 = Dropout(dropout_rate)
-        self.fc = Dense(no_dense_units, activation='relu')
+        self.fc = Dense(no_dense_units, activation="relu")
         self.d2 = Dropout(dropout_rate)
         self.out = Dense(vocab_size)
 
@@ -113,7 +119,12 @@ class WordDecoder(layers.Layer):
 
     def build_graph(self):
         # Input shape of a single word
-        x = Input(shape=(22, 256,))
+        x = Input(
+            shape=(
+                22,
+                256,
+            )
+        )
         return Model(inputs=x, outputs=self.call(x))
 
 
@@ -123,14 +134,18 @@ class InjectModel(tf.keras.Model):
         self.max_length = max_length
         self.vocab_size = vocab_size
 
+        self.axiom_order = model_params.axiom_order
+
         self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
         self.image_encoder = ImageEncoder(
             model_params.no_dense_units,
             model_params.dropout_rate,
             model_params.normalize,
-            model_params.batch_norm)
-        self.word_decoder = WordDecoder(vocab_size, model_params.no_lstm_units,
-                                        model_params.no_dense_units, model_params.dropout_rate)
+            model_params.batch_norm,
+        )
+        self.word_decoder = WordDecoder(
+            vocab_size, model_params.no_lstm_units, model_params.no_dense_units, model_params.dropout_rate
+        )
 
         self.repeat = RepeatVector(1)
 
@@ -152,8 +167,7 @@ class InjectModel(tf.keras.Model):
 
     def get_config(self):
         config = super(InjectModel, self).get_config()
-        config.update({"max_length": self.max_length,
-                      "vocab_size": self.vocab_size, "name": self.name})
+        config.update({"max_length": self.max_length, "vocab_size": self.vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -162,20 +176,29 @@ class InjectModel(tf.keras.Model):
 
 
 class MergeInjectModel(tf.keras.Model):
-
     def __init__(self, max_length, vocab_size, model_params, name="merge_inject", **kwargs):
         super(MergeInjectModel, self).__init__(name=name, **kwargs)
         self.max_length = max_length
         self.vocab_size = vocab_size
+
+        self.axiom_order = model_params.axiom_order
+
         self.image_encoder = ImageEncoder(
             model_params.no_dense_units,
             model_params.dropout_rate,
             model_params.normalize,
-            model_params.batch_norm)
-        self.word_encoder = WordEncoder(vocab_size, model_params.embedding_size, model_params.no_lstm_units,
-                                        model_params.no_dense_units, model_params.dropout_rate)
-        self.word_decoder = WordDecoder(vocab_size, model_params.no_lstm_units,
-                                        model_params.no_dense_units, model_params.dropout_rate)
+            model_params.batch_norm,
+        )
+        self.word_encoder = WordEncoder(
+            vocab_size,
+            model_params.embedding_size,
+            model_params.no_lstm_units,
+            model_params.no_dense_units,
+            model_params.dropout_rate,
+        )
+        self.word_decoder = WordDecoder(
+            vocab_size, model_params.no_lstm_units, model_params.no_dense_units, model_params.dropout_rate
+        )
 
         # Add repeat vector for avoid calling the image encoder all the time
         # QUICKFIX - setting length to 1 to expand the dimension of the output for concat
@@ -196,8 +219,7 @@ class MergeInjectModel(tf.keras.Model):
 
     def get_config(self):
         config = super(MergeInjectModel, self).get_config()
-        config.update({"max_length": self.max_length,
-                      "vocab_size": self.vocab_size, "name": self.name})
+        config.update({"max_length": self.max_length, "vocab_size": self.vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -217,8 +239,7 @@ def get_model(model_type, max_length, vocab_size, params, data=None):
         print("Unrecognised model type: ", model_type, file=sys.stderr)
         sys.exit(1)
 
-    model.compile(loss='categorical_crossentropy',
-                  optimizer='adam', metrics=['accuracy'])
+    model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
     return model
 
 
@@ -226,7 +247,9 @@ def load_model(ckpt_dir):
     loaded_model = tf.keras.models.load_model(ckpt_dir)
     latest_checkpoint = tf.train.latest_checkpoint(ckpt_dir)
     load_status = loaded_model.load_weights(latest_checkpoint)
-    print(f'Restored from {latest_checkpoint}.')
+    print(f"Restored from {latest_checkpoint}.")
+
+    # TODO add axiom ordering here?
 
     return loaded_model
 
@@ -234,16 +257,32 @@ def load_model(ckpt_dir):
 def get_model_params(model_dir):
 
     # Load parameters from model directory and create namespace
-    with open(os.path.join(model_dir, 'params.json'), 'r') as f:
+    with open(os.path.join(model_dir, "params.json"), "r") as f:
         params = json.load(f)
         params = Namespace(**params)
+
+    if params.axiom_order:
+        params.axiom_order = _axiom_order_string_to_type(params.axiom_order)
+
     return params
+
+
+def _axiom_order_string_to_type(string_value):
+
+    if string_value == "original":
+        return AxiomOrder.ORIGINAL
+    elif string_value == "lexicographic":
+        return AxiomOrder.LEXICOGRAPHIC
+    elif string_value == AxiomOrder.LENGTH:
+        return AxiomOrder.LENGTH
+    else:
+        raise ValueError(f"No string mapping between '{string_value}' and enum in AxiomOrder")
 
 
 if __name__ == "__main__":
     # Function for testing the script
     # Load base model parameters
-    params = get_model_params('experiments/base_model')
+    params = get_model_params("experiments/base_model")
     print("Model params: ", params)
     print("# # # MergeInject # # #")
     m = get_model("merge_inject", 123, 20, params)

@@ -158,6 +158,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return {"train_loss": loss_plot_train, "val_loss": loss_plot_val}
 
 
+# TODO move to model.py
 # TODO how should this be combined with get model??
 def initialise_model(model_type, max_len, vocab_size, model_params, training_data=None):
 
