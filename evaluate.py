@@ -6,27 +6,23 @@ from itertools import starmap
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
+from model import get_model_params
 
 from dataset import get_dataset, get_tokenizer, compute_max_length
 from model import load_model
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model_dir', default='experiments/base_model',
-                    help="Directory containing params.json")
-parser.add_argument('--problem_ids', default=config.test_id_file,
-                    help='File containing IDs for evaluation')
+parser.add_argument("--model_dir", default="experiments/base_model", help="Directory containing params.json")
+parser.add_argument("--problem_ids", default=config.test_id_file, help="File containing IDs for evaluation")
 
-parser.add_argument('--problem_features', default=config.problem_features,
-                    help="File containing the image features")
-parser.add_argument('--proof_data', default=config.proof_data,
-                    help="File containing the image descriptions")
-parser.add_argument('--axiom_order', default=None, choices=[None, 'default', 'length', 'lexicographic'],
-                    help='The order of the axioms in caption')
+parser.add_argument(
+    "--problem_features", default=config.problem_features, help="File containing the image features"
+)
+parser.add_argument("--proof_data", default=config.proof_data, help="File containing the image descriptions")
 
-parser.add_argument('--max_length', default=None, type=int,
-                    help='The maximum length of the predictions')
-parser.add_argument('-v', '--verbose', action='count', default=0)
+parser.add_argument("--max_length", default=None, type=int, help="The maximum length of the predictions")
+parser.add_argument("-v", "--verbose", action="count", default=0)
 
 # TODO maybe add some BeamSearch in here?
 
@@ -80,22 +76,22 @@ def evaluate_model(tokenizer, model, test_data, max_len, verbose=0):
 
         # Extract the string value from the tensor, remove start/end tokens,
         # convert to utf-8 and make into array
-        caption = caption.numpy()[0].split(bytes(config.TOKEN_DELIMITER, 'utf-8'))[1:-1]
+        caption = caption.numpy()[0].split(bytes(config.TOKEN_DELIMITER, "utf-8"))[1:-1]
 
         # Store the actual token
         actual.append(caption)
         predicted.append(yhat)
 
         if verbose:
-            print('Actual:    %s' % ' '.join(caption))
-            print('Predicted: %s' % ' '.join(yhat))
+            print("Actual:    %s" % " ".join(caption))
+            print("Predicted: %s" % " ".join(yhat))
 
     # Calculate BLEU score
     bleu = corpus_bleu(actual, predicted)
     # Compute the set coverage
     coverage = coverage_score(actual, predicted)
 
-    return {'bleu': bleu, 'coverage': coverage}
+    return {"bleu": bleu, "coverage": coverage}
 
 
 def main():
@@ -104,7 +100,7 @@ def main():
     args = parser.parse_args()
 
     # Get pre-trained tokenizer
-    tokenizer_path = os.path.join(os.path.dirname(args.problem_ids), 'tokenizer.json')
+    tokenizer_path = os.path.join(os.path.dirname(args.problem_ids), "tokenizer.json")
     tokenizer, _ = get_tokenizer(tokenizer_path)
 
     # If maximum length is not provided, we compute it based on the training set in config
@@ -114,21 +110,27 @@ def main():
         max_len = args.max_length
     print("Max caption length: ", max_len)
 
+
+    # Get the axiom ordering from the model parameter file
+    axiom_order = get_model_params("experiments/base_model").axiom_order
+    print('Using axiom order: ', axiom_order)
+
     # Get the test dataset with batch 1 as we need to treat each caption separately
     # Also, we want the raw text so not providing a tokenizer
-    test_data, _ = get_dataset(args.problem_ids, args.proof_data,
-                               args.problem_features, batch_size=1,
-                               order=args.axiom_order)
+    test_data, _ = get_dataset(
+        args.problem_ids, args.proof_data, args.problem_features, batch_size=1, order=axiom_order
+    )
 
     # Load model
-    model_dir = os.path.join(args.model_dir, 'ckpt_dir')
+    model_dir = os.path.join(args.model_dir, "ckpt_dir")
     loaded_model = load_model(model_dir)
+
 
     # Run evaluation
     scores = evaluate_model(tokenizer, loaded_model, test_data, max_len, verbose=args.verbose)
     print("# Scores ")
     for score in sorted(scores):
-        print(f'{score:<8}: {scores[score]:.2f}')
+        print(f"{score:<8}: {scores[score]:.2f}")
 
 
 if __name__ == "__main__":
