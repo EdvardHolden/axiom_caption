@@ -7,7 +7,7 @@ import numpy as np
 
 import config
 from dataset import get_dataset, get_tokenizer
-from model import get_model_params, get_model
+from model import get_model_params,initialise_model
 
 
 # TODO only give folder to ids?
@@ -152,21 +152,6 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     # Return training history
     return {"train_loss": loss_plot_train, "val_loss": loss_plot_val}
 
-
-def initialise_model(model_type, max_len, vocab_size, model_params, training_data=None):
-
-    model = get_model(model_type, max_len, vocab_size, model_params)
-    # If normalisation on the embedding graph is set, we have to adapt the
-    # layer before compiling (or re-compile) the model
-    if model_params.normalize:
-        if training_data is None:
-            raise ValueError(
-                "Cannot initialize model with normalization layer without supplying training data"
-            )
-        # Adapt the normalisation layer to the embedding vector
-        model.image_encoder.normalize.adapt(training_data.map(lambda x1, x2: x1))
-
-    return model
 
 
 def main():
