@@ -23,6 +23,27 @@ import os
 from dataset import AxiomOrder
 
 
+def adapt_normalization_layer(model, embedding_vectors):
+    if embedding_vectors is None:
+        raise ValueError("Cannot initialize model with normalization layer without supplying training data")
+    # Adapt the normalisation layer to the embedding vector
+    model.image_encoder.normalize.adapt(embedding_vectors)
+    return model
+
+
+def initialise_model(model_type, max_len, vocab_size, model_params, training_data=None):
+
+    model = get_model(model_type, max_len, vocab_size, model_params)
+
+    # If normalisation on the embedding graph is set, we have to adapt the
+    # layer before compiling (or re-compile) the model
+    if model_params.normalize:
+        # Only supply the embedding vectors
+        model = adapt_normalization_layer(model, training_data.map(lambda x1, x2: x1))
+
+    return model
+
+
 class ImageEncoder(layers.Layer):
     def __init__(self, no_dense_units, dropout_rate, normalize, batch_norm, name="image_encoder", **kwargs):
         super(ImageEncoder, self).__init__(name=name, **kwargs)
@@ -246,8 +267,6 @@ def load_model(ckpt_dir):
     latest_checkpoint = tf.train.latest_checkpoint(ckpt_dir)
     load_status = loaded_model.load_weights(latest_checkpoint)
     print(f"Restored from {latest_checkpoint}.")
-
-    # TODO add axiom ordering here?
 
     return loaded_model
 
