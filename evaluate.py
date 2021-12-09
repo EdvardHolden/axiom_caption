@@ -23,6 +23,7 @@ parser.add_argument("--proof_data", default=config.proof_data, help="File contai
 
 parser.add_argument("--max_length", default=None, type=int, help="The maximum length of the predictions")
 parser.add_argument("-v", "--verbose", action="count", default=0)
+parser.add_argument('-k', '--top_k', default=1, type=int, help='The top k words to extract at each loop iteration')
 
 # TODO maybe add some BeamSearch in here?
 
@@ -33,7 +34,7 @@ def coverage_score(actual, predicted):
     return np.average(scores)
 
 
-def generate_step(tokenizer, model, max_len, img_tensor):
+def generate_step(tokenizer, model, max_len, top_k, img_tensor):
 
     # List for storing predicted sequence
     result = []
@@ -48,23 +49,26 @@ def generate_step(tokenizer, model, max_len, img_tensor):
     for i in range(max_len):
         # Predict probabilities
         predictions = model([img_tensor, dec_input])
-        predicted_id = tf.random.categorical(predictions, 1)[0][0].numpy()
+
+        # Get the top K predictions (negate values as argsort is ascending)
+        top_predictions = np.argsort(-predictions)[0][0:top_k]
 
         # Return sequence if we predicted the end token
-        if tokenizer.index_word[predicted_id] == config.TOKEN_END:
+        if tokenizer.index_word[top_predictions[0]] == config.TOKEN_END:
             return result
 
-        # Add predicted ID to the result
-        result.append(tokenizer.index_word[predicted_id])
+        # Add predicted IDs to the result
+        for pred_id in top_predictions:
+            result.append(tokenizer.index_word[pred_id])
 
-        # Set predicted word as the next model input
-        dec_input = tf.expand_dims([predicted_id], 0)
+        # Set the top predicted word as the next model input
+        dec_input = tf.expand_dims([top_predictions[0]], 0)
 
     # Reached max length, returning the sequence
     return result
 
 
-def evaluate_model(tokenizer, model, test_data, max_len, verbose=0):
+def evaluate_model(tokenizer, model, test_data, max_len, top_k, verbose=0):
 
     # Initialise results
     actual, predicted = list(), list()
@@ -72,7 +76,7 @@ def evaluate_model(tokenizer, model, test_data, max_len, verbose=0):
     # Predict for each problem in the data
     for (_, (img_tensor, caption)) in tqdm(enumerate(test_data)):
         # Generate caption based on the image tensor
-        yhat = generate_step(tokenizer, model, max_len, img_tensor)
+        yhat = generate_step(tokenizer, model, max_len, top_k, img_tensor)
 
         # Extract the string value from the tensor, remove start/end tokens,
         # convert to utf-8 and make into array
@@ -127,7 +131,7 @@ def main():
 
 
     # Run evaluation
-    scores = evaluate_model(tokenizer, loaded_model, test_data, max_len, verbose=args.verbose)
+    scores = evaluate_model(tokenizer, loaded_model, test_data, max_len, args.top_k, verbose=args.verbose)
     print("# Scores ")
     for score in sorted(scores):
         print(f"{score:<8}: {scores[score]:.2f}")
