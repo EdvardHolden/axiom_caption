@@ -7,7 +7,7 @@ import numpy as np
 
 import config
 from dataset import get_dataset, get_tokenizer
-from model import get_model_params,initialise_model
+from model import get_model_params, initialise_model
 
 
 # TODO only give folder to ids?
@@ -151,7 +151,6 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
 
     # Return training history
     return {"train_loss": loss_plot_train, "val_loss": loss_plot_val}
-
 
 
 def main():
