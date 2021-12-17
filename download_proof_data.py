@@ -29,7 +29,6 @@ parser.add_argument(
 )
 
 
-
 def get_proof_links(url):
 
     # Get html content

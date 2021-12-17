@@ -12,10 +12,15 @@ from tqdm import tqdm
 
 PYTHON = sys.executable
 parser = argparse.ArgumentParser()
-parser.add_argument('--parent_dir', default='experiments/learning_rate',
-                    help="Directory for reporting the model experiments")
-parser.add_argument('--parameter_space', type=str, default='hyperparameter_space/example.json',
-                    help="Path to json file describing the parameter space")
+parser.add_argument(
+    "--parent_dir", default="experiments/learning_rate", help="Directory for reporting the model experiments"
+)
+parser.add_argument(
+    "--parameter_space",
+    type=str,
+    default="hyperparameter_space/example.json",
+    help="Path to json file describing the parameter space",
+)
 
 
 def launch_training_job(parent_dir, job_name, params):
@@ -32,8 +37,8 @@ def launch_training_job(parent_dir, job_name, params):
         os.makedirs(model_dir)
 
     # Write parameters in json file
-    json_path = os.path.join(model_dir, 'params.json')
-    with open(json_path, 'w') as f:
+    json_path = os.path.join(model_dir, "params.json")
+    with open(json_path, "w") as f:
         json.dump(params, f)
 
     # Launch training with this config
@@ -45,10 +50,9 @@ def launch_training_job(parent_dir, job_name, params):
 def main():
     # Load the "reference" parameters from parent_dir json file
     args = parser.parse_args()
-    json_path = os.path.join(args.parent_dir, 'params.json')
 
     # Define the hyper-parameter space
-    with open(args.parameter_space, 'r') as f:
+    with open(args.parameter_space, "r") as f:
         hp_space = json.load(f)
 
     # Cartesian product of the parameter space
