@@ -42,7 +42,7 @@ def launch_training_job(parent_dir, job_name, params):
     check_call(cmd, shell=True, stdout=subprocess.DEVNULL)
 
 
-if __name__ == "__main__":
+def main():
     # Load the "reference" parameters from parent_dir json file
     args = parser.parse_args()
     json_path = os.path.join(args.parent_dir, 'params.json')
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     with open(args.parameter_space, 'r') as f:
         hp_space = json.load(f)
 
-    # Cartesion product of the parameter space
+    # Cartesian product of the parameter space
     hp_parameters = [dict(zip(hp_space, v)) for v in itertools.product(*hp_space.values())]
 
     # Iterate over each param config
@@ -64,3 +64,8 @@ if __name__ == "__main__":
 
         # Launch job
         launch_training_job(args.parent_dir, job_name, param_config)
+
+
+if __name__ == "__main__":
+
+    main()
