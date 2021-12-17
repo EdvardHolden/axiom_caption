@@ -9,8 +9,7 @@ from tabulate import tabulate
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--parent_dir', default='experiments',
-                    help='Directory containing results of experiments')
+parser.add_argument("--parent_dir", default="experiments", help="Directory containing results of experiments")
 
 
 def aggregate_metrics(parent_dir, metrics):
@@ -24,9 +23,9 @@ def aggregate_metrics(parent_dir, metrics):
         metrics: (dict) subdir -> {'accuracy': ..., ...}
     """
     # Get the metrics for the folder if it has results from an experiment
-    metrics_file = os.path.join(parent_dir, 'history.pkl')
+    metrics_file = os.path.join(parent_dir, "history.pkl")
     if os.path.isfile(metrics_file):
-        with open(metrics_file, 'rb') as f:
+        with open(metrics_file, "rb") as f:
             data = pickle.load(f)
 
         # Extract then final evaluation of each step
@@ -45,7 +44,7 @@ def metrics_to_table(metrics):
     # Get the headers from the first subdir. Assumes everything has the same metrics
     headers = metrics[list(metrics.keys())[0]].keys()
     table = [[subdir] + [values[h] for h in headers] for subdir, values in metrics.items()]
-    res = tabulate(table, headers, tablefmt='pipe')
+    res = tabulate(table, headers, tablefmt="pipe")
 
     return res
 
@@ -65,5 +64,5 @@ if __name__ == "__main__":
 
     # Save results in parent_dir/results.md
     save_file = os.path.join(args.parent_dir, "results.md")
-    with open(save_file, 'w') as f:
+    with open(save_file, "w") as f:
         f.write(table)

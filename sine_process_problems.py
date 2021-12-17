@@ -15,11 +15,13 @@ TIMELIMIT = 30
 
 # Input arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('problem_dir', help='Directory containing the problems to process')
-parser.add_argument('--results_dir', help='Directory for storing the result', default='data/processed/jjt_sine_1_0/')
-parser.add_argument('--sine_tolerance', default=1)
-parser.add_argument('--sine_depth', default=0)
-parser.add_argument('--no_processes', default=5, type=int, help='Number of processes for running SiNE')
+parser.add_argument("problem_dir", help="Directory containing the problems to process")
+parser.add_argument(
+    "--results_dir", help="Directory for storing the result", default="data/processed/jjt_sine_1_0/"
+)
+parser.add_argument("--sine_tolerance", default=1)
+parser.add_argument("--sine_depth", default=0)
+parser.add_argument("--no_processes", default=5, type=int, help="Number of processes for running SiNE")
 
 args = parser.parse_args()
 
@@ -27,17 +29,17 @@ args = parser.parse_args()
 def preprocess_sine(path, problem, res_dir):
 
     # Assume that if the problem contains underscore it is in tff - this doesn't seem to matter anymore
-    if '_' in problem:
-        mode = 'tclausify'
+    if "_" in problem:
+        mode = "tclausify"
     else:
-        mode = 'clausify'
+        mode = "clausify"
 
     # Build SiNE command
-    cmd = f'{CLAUSIFIER} -t {TIMELIMIT} --mode {mode} -ss axioms -sd {args.sine_depth} -st {args.sine_tolerance}'
+    cmd = f"{CLAUSIFIER} -t {TIMELIMIT} --mode {mode} -ss axioms -sd {args.sine_depth} -st {args.sine_tolerance}"
     # Append problem
-    cmd += f' {os.path.join(path, problem)}'
+    cmd += f" {os.path.join(path, problem)}"
     # Append output direction
-    cmd += f'  >{os.path.join(res_dir, problem)}'
+    cmd += f"  >{os.path.join(res_dir, problem)}"
 
     # Run process
     proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid)
@@ -48,8 +50,8 @@ def preprocess_sine(path, problem, res_dir):
         _, errs = proc.communicate()
 
     # Check for errors
-    if proc.returncode != 0 or errs != b'':
-        print(f'Clausification error for {problem} exitcode: {proc.returncode} error: {errs}')
+    if proc.returncode != 0 or errs != b"":
+        print(f"Clausification error for {problem} exitcode: {proc.returncode} error: {errs}")
 
 
 def main():
@@ -60,9 +62,9 @@ def main():
         sys.exit(0)
 
     # Get list of all problems in the directory
-    problems = [prob.split('/')[-1] for prob in glob.glob(args.problem_dir + '/*')]
+    problems = [prob.split("/")[-1] for prob in glob.glob(args.problem_dir + "/*")]
     # Keep only tff and fof problems
-    problems = [prob for prob in problems if '_1' in prob or '+' in prob]
+    problems = [prob for prob in problems if "_1" in prob or "+" in prob]
 
     # Check existence of results path
     if not os.path.exists(args.results_dir):
