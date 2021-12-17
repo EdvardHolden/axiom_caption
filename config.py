@@ -1,3 +1,7 @@
+import sys
+PYTHON = sys.executable
+
+
 # TODO are these needed?
 PROVERS = ["iprover", "e", "vampire"]
 COMPETITIONS = ["hl4", "jjt"]
