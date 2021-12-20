@@ -11,6 +11,7 @@ from model import get_model_params, initialise_model
 
 
 # TODO only give folder to ids?
+# Would be nice to have some compositive Argument parser so scripts that uses this function doesn't have to duplicate this
 parser = argparse.ArgumentParser()
 parser.add_argument("--train_id_file", default=config.train_id_file, help="File containing the training ids")
 parser.add_argument("--val_id_file", default=config.val_id_file, help="File containing the validation ids")
@@ -46,17 +47,34 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     # Initialise input vector with the start token
     dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * target.shape[0], 1)
 
+    predictions = []
+
     with tf.GradientTape() as tape:
         for i in range(1, target.shape[1]):
             # Predict the next token - slightly expensive way of doing it as it
             # encodes the image each time
-            predictions = model([img_tensor, dec_input], training=training)
+            y_hat = model([img_tensor, dec_input], training=training)
+
+            # TODO: Could argmax the predictions and return them?
+            # What about padding token and start/stop?
+            predictions.append(np.argmax(y_hat, axis=1))
 
             # Compute loss of predictions
-            loss += loss_function(target[:, i], predictions)
+            loss += loss_function(target[:, i], y_hat)
 
             # Use teacher forcing to decide next model input
             dec_input = tf.expand_dims(target[:, i], 1)
+
+    # TESTY
+    # TODO
+    """
+    # Looks good from here
+    predictions = np.array(predictions)
+    print(predictions.T)
+    print(len(predictions.T))
+    sys.exit(0)
+    """
+    # Might need to exclude all the zeroes?
 
     # Compute the total loss for the sequence
     sequence_loss = loss / int(target.shape[1])
@@ -68,6 +86,36 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
         optimizer.apply_gradients(zip(gradients, trainable_variables))
 
     return loss, sequence_loss
+
+
+"""
+Runs one epoch of data over the model. Used to train/validate the model.
+
+If the epoch is not None we report the loss of each batch.
+"""
+def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
+
+    # Need to keep track of the number of steps to compute the loss correctly.
+    num_steps = 0
+    total_loss = 0
+
+    # Train on each batch in the data
+    for (batch, (img_tensor, caption)) in enumerate(data):
+        num_steps += 1
+        batch_loss, s_loss = train_step(tokenizer, model, optimizer, img_tensor, caption, training=training)
+        total_loss += s_loss
+
+        # Check if reporting batch
+        if epoch is not None and batch % 10 == 0:
+            average_batch_loss = batch_loss.numpy() / int(caption.shape[1])
+            print(f"Epoch {epoch + 1} Batch {batch} Train Loss {average_batch_loss:.4f}")
+
+    # Store the training loss for plotting
+    loss_epoch = total_loss.numpy() / num_steps
+
+    # TODO: Need to return some stuff
+    # Maybe a 'stats' dict?
+    return loss_epoch
 
 
 def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, es_patience=None):
@@ -85,45 +133,19 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     # This only works in developing mode as we need to call training=True on the train_step
     # first in order to build the graph correctly.
     if config.DEVELOPING:
-        num_initial_steps = 0
-        total_initial_loss = 0
-        for (batch, (img_tensor, caption)) in enumerate(train_data):
-            num_initial_steps += 1
-            batch_loss, s_loss = train_step(tokenizer, model, optimizer, img_tensor, caption, training=False)
-            total_initial_loss += s_loss
-        print(f"Initial model training loss: {total_initial_loss.numpy() / num_initial_steps:.2f}")
+        initial_loss = epoch_step(model, tokenizer, optimizer, train_data, training=False)
+        print(f"Initial model training loss: {initial_loss:.2f}")
 
     # Loop through each epoch
     for epoch in range(0, config.EPOCHS):
         start = time.time()
-        num_train_steps = 0  # Compute this on the fly for each epoch
-        num_val_steps = 0  # Compute this on the fly for each epoch
-        total_train_loss = 0
-        total_val_loss = 0
 
-        # Train on each batch in the data
-        for (batch, (img_tensor, caption)) in enumerate(train_data):
-            num_train_steps += 1
-            batch_loss, s_loss = train_step(tokenizer, model, optimizer, img_tensor, caption, training=True)
-            total_train_loss += s_loss
-
-            # Check if reporting batch
-            if batch % 10 == 0:
-                average_batch_loss = batch_loss.numpy() / int(caption.shape[1])
-                print(f"Epoch {epoch + 1} Batch {batch} Train Loss {average_batch_loss:.4f}")
-
-        # Store the training loss for plotting
-        train_loss_epoch = total_train_loss.numpy() / num_train_steps
+        # Train the model for one epoch
+        train_loss_epoch = epoch_step(model, tokenizer, optimizer, train_data, training=True, epoch=epoch)
         loss_plot_train.append(train_loss_epoch)
 
-        # Validate model after each epoch and validation data is provided
-        for (batch, (img_tensor, caption)) in enumerate(val_data):
-            num_val_steps += 1
-            batch_loss, s_loss = train_step(tokenizer, model, optimizer, img_tensor, caption, training=False)
-            total_val_loss += s_loss
-
-        # Store the training loss for plotting
-        val_loss_epoch = total_val_loss.numpy() / num_val_steps
+        # Run model over the validation data
+        val_loss_epoch = epoch_step(model, tokenizer, optimizer, train_data, training=False)
         loss_plot_val.append(val_loss_epoch)
 
         # Save the model after every epoch
@@ -177,7 +199,6 @@ def main():
         order=model_params.axiom_order,
     )
     print("Max len: ", max_len)
-    # TODO need to get axiom order from the model
     # Compute validation dataset based on the max length of the training data
     val_data, _ = get_dataset(
         args.val_id_file,
