@@ -10,23 +10,40 @@ from dataset import get_dataset, get_tokenizer
 from model import get_model_params, initialise_model
 from evaluate import jaccard_score, coverage_score
 
-# TODO only give folder to ids?
-# Would be nice to have some composite Argument parser so scripts that uses this function doesn't have to duplicate this
-parser = argparse.ArgumentParser()
-parser.add_argument("--train_id_file", default=config.train_id_file, help="File containing the training ids")
-parser.add_argument("--val_id_file", default=config.val_id_file, help="File containing the validation ids")
-
-parser.add_argument("--proof_data", default=config.proof_data, help="File containing the image features")
-parser.add_argument(
-    "--problem_features", default=config.problem_features, help="File containing the image descriptions"
-)
-
-parser.add_argument("--model_dir", default="experiments/base_model", help="Directory containing params.json")
 
 loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
 
 
+def get_train_parser(add_help=True):
+
+    # Get the parser, need to remove 'help' if being used as a parent parser
+    parser = argparse.ArgumentParser(add_help=add_help)
+
+    # Dataset ID options
+    # FIXME only add dataset folder and not full id path?
+    parser.add_argument(
+        "--train_id_file", default=config.train_id_file, help="File containing the training ids"
+    )
+    parser.add_argument(
+        "--val_id_file", default=config.val_id_file, help="File containing the validation ids"
+    )
+
+    # Feature options
+    parser.add_argument("--proof_data", default=config.proof_data, help="File containing the image features")
+    parser.add_argument(
+        "--problem_features", default=config.problem_features, help="File containing the image descriptions"
+    )
+
+    # Model options
+    parser.add_argument(
+        "--model_dir", default="experiments/base_model", help="Directory containing params.json"
+    )
+
+    return parser
+
+
 def loss_function(real, pred):
+
     mask = tf.math.logical_not(tf.math.equal(real, 0))
     loss_ = loss_object(real, pred)
 
@@ -200,33 +217,36 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return metrics
 
 
-def main():
+def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, **kwargs):
 
-    # Parse input arguments
-    args = parser.parse_args()
+    # Instantiate Tensorflow environment
+    physical_devices = tf.config.list_physical_devices("GPU")
+    for device in physical_devices:
+        tf.config.experimental.set_memory_growth(device, True)
+    tf.config.run_functions_eagerly(config.DEVELOPING)
 
     # Get pre-trained tokenizer
-    tokenizer_path = os.path.join(os.path.dirname(args.train_id_file), "tokenizer.json")  # FIXME
+    tokenizer_path = os.path.join(os.path.dirname(train_id_file), "tokenizer.json")  # FIXME
     tokenizer, vocab_size = get_tokenizer(tokenizer_path)
     print("Number of words: ", vocab_size)
 
     # Load model params from model file
-    model_params = get_model_params(args.model_dir)
+    model_params = get_model_params(model_dir)
 
     # Get the training dataset
     train_data, max_len = get_dataset(
-        args.train_id_file,
-        args.proof_data,
-        args.problem_features,
+        train_id_file,
+        proof_data,
+        problem_features,
         tokenizer=tokenizer,
         order=model_params.axiom_order,
     )
     print("Max len: ", max_len)
     # Compute validation dataset based on the max length of the training data
     val_data, _ = get_dataset(
-        args.val_id_file,
-        args.proof_data,
-        args.problem_features,
+        val_id_file,
+        proof_data,
+        problem_features,
         tokenizer=tokenizer,
         max_cap_len=max_len,
         order=model_params.axiom_order,
@@ -242,7 +262,7 @@ def main():
     optimizer = tf.keras.optimizers.Adam(learning_rate=model_params.learning_rate)
 
     # Initialise the checkpoint manager
-    checkpoint_path = os.path.join(args.model_dir, "ckpt_dir")
+    checkpoint_path = os.path.join(model_dir, "ckpt_dir")
     ckpt = tf.train.Checkpoint(model)
     ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
 
@@ -255,16 +275,28 @@ def main():
     model.save(checkpoint_path)
 
     # Save the training history
-    with open(os.path.join(args.model_dir, "history.pkl"), "wb") as f:
+    with open(os.path.join(model_dir, "history.pkl"), "wb") as f:
         dump(history, f)
+
+
+def run_main():
+    """
+    Helper function for running the main as a main script.
+    This helper function is needed to avoid shadowing any
+    of the names in the outer-scope.
+    """
+
+    # Get the parser and parse the arguments
+    parser = get_train_parser()
+    args = parser.parse_args()
+
+    # Run main with the arguments
+    main(**vars(args))
 
 
 if __name__ == "__main__":
 
-    physical_devices = tf.config.list_physical_devices("GPU")
-    for device in physical_devices:
-        tf.config.experimental.set_memory_growth(device, True)
+    # Call the helper function for running the main
+    run_main()
 
-    tf.config.run_functions_eagerly(config.DEVELOPING)
-    main()
     print("# Finito")
