@@ -217,7 +217,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return metrics
 
 
-def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, **kwargs):
+def main(model_dir, problem_features, proof_data, train_id_file, val_id_file):
 
     # Instantiate Tensorflow environment
     physical_devices = tf.config.list_physical_devices("GPU")
