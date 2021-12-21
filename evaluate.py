@@ -97,10 +97,28 @@ def top_k_sampler(pred, no_samples, k=10):
     return sampled_token
 
 
-def coverage_score(actual, predicted):
+def coverage_score(actual, predicted, avg=True):
 
     scores = [*starmap(lambda a, p: len(set(a).intersection(set(p))) / len(set(a)), zip(actual, predicted))]
-    return np.average(scores)
+    if avg:
+        return np.average(scores)
+    else:
+        return scores
+
+
+def jaccard_score(actual, predicted, avg=True):
+    """
+    Jaccard(A,B) = |A/\B|/|A\/B|
+    """
+    scores = [
+        *starmap(
+            lambda a, p: len(set(a).intersection(set(p))) / len(set(a).union(set(p))), zip(actual, predicted)
+        )
+    ]
+    if avg:
+        return np.average(scores)
+    else:
+        return scores
 
 
 def generate_step(
