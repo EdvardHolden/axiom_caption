@@ -11,7 +11,7 @@ from model import get_model_params, initialise_model
 from evaluate import jaccard_score, coverage_score
 
 # TODO only give folder to ids?
-# Would be nice to have some compositive Argument parser so scripts that uses this function doesn't have to duplicate this
+# Would be nice to have some composite Argument parser so scripts that uses this function doesn't have to duplicate this
 parser = argparse.ArgumentParser()
 parser.add_argument("--train_id_file", default=config.train_id_file, help="File containing the training ids")
 parser.add_argument("--val_id_file", default=config.val_id_file, help="File containing the validation ids")
@@ -55,7 +55,6 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
             # encodes the image each time
             y_hat = model([img_tensor, dec_input], training=training)
 
-            # TODO: Could argmax the predictions and return them?
             # What about padding token and start/stop?
             predictions.append(np.argmax(y_hat, axis=1))
 
@@ -203,8 +202,6 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
 
 def main():
 
-    # TODO add caption order argument!
-
     # Parse input arguments
     args = parser.parse_args()
 
@@ -236,7 +233,6 @@ def main():
     )
 
     # Initialise the model
-    print("Train type ", type(train_data))  # TODO remvoe
     model = initialise_model(
         model_params.model_type, max_len, vocab_size, model_params, training_data=train_data
     )
