@@ -8,7 +8,7 @@ import numpy as np
 import config
 from dataset import get_dataset, get_tokenizer
 from model import get_model_params, initialise_model
-
+from evaluate import jaccard_score, coverage_score
 
 # TODO only give folder to ids?
 # Would be nice to have some compositive Argument parser so scripts that uses this function doesn't have to duplicate this
@@ -65,17 +65,6 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
             # Use teacher forcing to decide next model input
             dec_input = tf.expand_dims(target[:, i], 1)
 
-    # TESTY
-    # TODO
-    """
-    # Looks good from here
-    predictions = np.array(predictions)
-    print(predictions.T)
-    print(len(predictions.T))
-    sys.exit(0)
-    """
-    # Might need to exclude all the zeroes?
-
     # Compute the total loss for the sequence
     sequence_loss = loss / int(target.shape[1])
 
@@ -85,43 +74,80 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
         gradients = tape.gradient(loss, trainable_variables)
         optimizer.apply_gradients(zip(gradients, trainable_variables))
 
-    return loss, sequence_loss
+    return loss, sequence_loss, np.array(predictions).T
 
 
-"""
-Runs one epoch of data over the model. Used to train/validate the model.
+def compute_pred_stats(captions, predictions):
+    # First need to remove pad and start tokens
+    FILTER = lambda x: x != 0 and x != 2
+    filtered_pred = []
+    filtered_cap = []
+    for pred, cap in zip(predictions, captions):
+        filtered_pred.append([*filter(FILTER, pred)])
+        filtered_cap.append([*filter(FILTER, cap.numpy())])
 
-If the epoch is not None we report the loss of each batch.
-"""
+    # Compute and return the stats for each prediction
+    cov_score = coverage_score(filtered_cap, filtered_pred, avg=False)
+    jac_score = jaccard_score(filtered_cap, filtered_pred, avg=False)
+    return cov_score, jac_score
+
+
 def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
+    """
+    Runs one epoch of data over the model. Used to train/validate the model.
+
+    If the epoch is not None we report the loss of each batch.
+    """
 
     # Need to keep track of the number of steps to compute the loss correctly.
     num_steps = 0
     total_loss = 0
+    jac_scores = []
+    cov_scores = []
 
     # Train on each batch in the data
-    for (batch, (img_tensor, caption)) in enumerate(data):
+    for (batch, (img_tensor, captions)) in enumerate(data):
         num_steps += 1
-        batch_loss, s_loss = train_step(tokenizer, model, optimizer, img_tensor, caption, training=training)
+        batch_loss, s_loss, predictions = train_step(
+            tokenizer, model, optimizer, img_tensor, captions, training=training
+        )
         total_loss += s_loss
 
         # Check if reporting batch
         if epoch is not None and batch % 10 == 0:
-            average_batch_loss = batch_loss.numpy() / int(caption.shape[1])
+            average_batch_loss = batch_loss.numpy() / int(captions.shape[1])
             print(f"Epoch {epoch + 1} Batch {batch} Train Loss {average_batch_loss:.4f}")
+
+        # Compute statistics
+        cov_batch, jac_batch = compute_pred_stats(captions, predictions)
+        jac_scores += jac_batch
+        cov_scores += cov_batch
 
     # Store the training loss for plotting
     loss_epoch = total_loss.numpy() / num_steps
+    jac_epoch = np.average(jac_scores)
+    cov_epoch = np.average(cov_scores)
 
-    # TODO: Need to return some stuff
-    # Maybe a 'stats' dict?
-    return loss_epoch
+    # Return metrics as a dict
+    return {"loss": loss_epoch, "coverage": cov_epoch, "jaccard": jac_epoch}
+
+
+def add_new_metrics(history, new_stats, prefix=""):
+
+    for stat in new_stats:
+        index = prefix + stat
+        if index in history:
+            history[index] += [new_stats[stat]]
+        else:
+            history[index] = [new_stats[stat]]
+
+    return history
 
 
 def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, es_patience=None):
 
-    loss_plot_train = []
-    loss_plot_val = []
+    # Dictionary to store all the metrics
+    metrics = {}
 
     # Initialise EarlyStopping wait variable
     if es_patience is not None:
@@ -133,35 +159,35 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     # This only works in developing mode as we need to call training=True on the train_step
     # first in order to build the graph correctly.
     if config.DEVELOPING:
-        initial_loss = epoch_step(model, tokenizer, optimizer, train_data, training=False)
-        print(f"Initial model training loss: {initial_loss:.2f}")
+        initial_stats = epoch_step(model, tokenizer, optimizer, train_data, training=False)
+        print(f"Initial model training loss: {initial_stats['loss']:.2f}")
 
     # Loop through each epoch
     for epoch in range(0, config.EPOCHS):
         start = time.time()
 
         # Train the model for one epoch
-        train_loss_epoch = epoch_step(model, tokenizer, optimizer, train_data, training=True, epoch=epoch)
-        loss_plot_train.append(train_loss_epoch)
+        train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=True, epoch=epoch)
+        metrics = add_new_metrics(metrics, train_epoch_metrics, prefix="train_")
 
         # Run model over the validation data
-        val_loss_epoch = epoch_step(model, tokenizer, optimizer, train_data, training=False)
-        loss_plot_val.append(val_loss_epoch)
+        val_epoch_metrics = epoch_step(model, tokenizer, optimizer, val_data, training=False)
+        metrics = add_new_metrics(metrics, val_epoch_metrics, prefix="val_")
 
         # Save the model after every epoch
         if epoch % 1 == 0:
             ckpt_manager.save()
 
-        print(f"Epoch {epoch + 1} Total Train Loss {train_loss_epoch:.6f}")
-        print(f"Epoch {epoch + 1} Total Val   Loss {val_loss_epoch:.6f}")
+        print(f"Epoch {epoch + 1} Total Train Loss {metrics['train_loss'][-1]:.6f}")
+        print(f"Epoch {epoch + 1} Total Val   Loss {metrics['val_loss'][-1]:.6f}")
         print(f"Time spent on epoch {time.time() - start:.2f} sec\n")
 
         # The early stopping strategy: stop the training if `val_loss` does not
         # decrease over a certain number of epochs.
         if es_patience is not None:
             es_wait += 1
-            if val_loss_epoch < es_best_loss:
-                es_best_loss = val_loss_epoch
+            if metrics["val_loss"][-1] < es_best_loss:
+                es_best_loss = metrics["val_loss"][-1]
                 es_wait = 0
             elif es_wait >= es_patience:
                 print(
@@ -172,7 +198,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
                 break
 
     # Return training history
-    return {"train_loss": loss_plot_train, "val_loss": loss_plot_val}
+    return metrics
 
 
 def main():
