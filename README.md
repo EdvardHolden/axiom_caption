@@ -19,6 +19,27 @@ Run `create_train_test_split.py` over a given axiom dict. This will split the id
 
 TODO
 
+# Experiments
+
+Overview of how to run the different experiments.
+
+## Experiment 1: Find the optimal graph embedding
+
+The goal of this experiment is to find the best performing problem embedding from a set of embeddings.
+The pre-requisite for this experiment is to compute different problem embeddings and place them in a folder (see above).
+
+The experiment takes three parameters:
+* model_config: The parameters for the base model used on all embedding configurations.
+* embedding_dir: The directory containing the problem embeddings to use in this experiment.
+* experiment_dir: The directory for storing the training results.
+
+
+Run `python3 run_experiment_graph_embedding.py` to run the experiment. This will train the base
+captioning model on the set dataset for each embedding configuration.
+To inspecting the results run: `python3 synthesise_results.py` on the experiment_dir.
+This will produce a 'results.md' containing the final model statistics.
+
+
 
 ## Testing
 No tests so far.
