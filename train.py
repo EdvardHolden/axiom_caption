@@ -36,7 +36,7 @@ def get_train_parser(add_help=True):
 
     # Model options
     parser.add_argument(
-        "--model_dir", default="experiments/base_model", help="Directory containing params.json"
+        "--model_dir", default=config.base_model, help="Directory containing params.json"
     )
 
     return parser

@@ -38,11 +38,6 @@ def get_embedding_exp_parser():
         help="Directory for reporting the embedding results",
     )
     parser.add_argument(
-        "--model_config",
-        default="experiments/base_model",
-        help="The model configuration used in the training experiments",
-    )
-    parser.add_argument(
         "--embedding_dir",
         default="data/embeddings",
         help="The directory containing the embeddings to use for this experiment",
@@ -75,7 +70,7 @@ def main():
     embeddings = glob.glob(os.path.join(args.embedding_dir, "*.pkl"))
 
     # Read the model config
-    with open(os.path.join(args.model_config, "params.json"), "r") as f:
+    with open(os.path.join(args.model_dir, "params.json"), "r") as f:
         model_params = json.load(f)
 
     # For each embedding
