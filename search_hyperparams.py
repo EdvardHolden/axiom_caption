@@ -23,7 +23,7 @@ parser.add_argument(
 )
 
 
-# FIXME maybe this could be refactored?
+# TODO this could be combined with the list of filtering arguments in a single function.
 def launch_training_job(job_dir):
     """
     Launch training of the model with a set of hyperparameters in parent_dir/job_name
