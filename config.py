@@ -1,3 +1,8 @@
+import sys
+
+PYTHON = sys.executable
+
+
 # TODO are these needed?
 PROVERS = ["iprover", "e", "vampire"]
 COMPETITIONS = ["hl4", "jjt"]
@@ -29,6 +34,9 @@ train_id_file = "data/vampire_jjt_fof/train.txt"
 test_id_file = "data/vampire_jjt_fof/test.txt"
 val_id_file = "data/vampire_jjt_fof/val.txt"
 
+base_model = "experiments/base_model"
+
+# TODO rename these variables as it is v confusing
 proof_data = "data/raw/vampire_jjt.pkl"
 problem_features = "data/embeddings/jjt_fof_sine_1_0.pkl"
 

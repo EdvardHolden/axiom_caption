@@ -3,14 +3,14 @@
 import argparse
 import itertools
 import json
-import os
 import subprocess
 from subprocess import check_call
-import sys
+import config
 from tqdm import tqdm
+import utils
 
 
-PYTHON = sys.executable
+# TODO should include options for including stuff about which embedding/dataset split to use here
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--parent_dir", default="experiments/learning_rate", help="Directory for reporting the model experiments"
@@ -23,32 +23,18 @@ parser.add_argument(
 )
 
 
-def launch_training_job(parent_dir, job_name, params):
-    """Launch training of the model with a set of hyperparameters in parent_dir/job_name
-
-    Args:
-        parent_dir: (string) directory containing config, weights and log
-        data_dir: (string) directory containing the dataset
-        params: (dict) containing hyperparameters
+# TODO this could be combined with the list of filtering arguments in a single function.
+def launch_training_job(job_dir):
     """
-    # Create a new folder in parent_dir with unique_name "job_name"
-    model_dir = os.path.join(parent_dir, job_name)
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
-
-    # Write parameters in json file
-    json_path = os.path.join(model_dir, "params.json")
-    with open(json_path, "w") as f:
-        json.dump(params, f)
-
-    # Launch training with this config
-    cmd = "{python} train.py --model_dir {model_dir}".format(python=PYTHON, model_dir=model_dir)
+    Launch training of the model with a set of hyperparameters in parent_dir/job_name
+    """
+    cmd = f"{config.PYTHON} train.py --model_dir {job_dir}"
     print(cmd)
     check_call(cmd, shell=True, stdout=subprocess.DEVNULL)
 
 
 def main():
-    # Load the "reference" parameters from parent_dir json file
+
     args = parser.parse_args()
 
     # Define the hyper-parameter space
@@ -66,8 +52,11 @@ def main():
         job_name = "_".join([p + "_" + str(v) for p, v in r])
         print(job_name)
 
+        # Create job dir
+        job_dir = utils.create_job_dir(args.parent_dir, job_name, params=param_config)
+
         # Launch job
-        launch_training_job(args.parent_dir, job_name, param_config)
+        launch_training_job(job_dir)
 
 
 if __name__ == "__main__":
