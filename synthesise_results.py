@@ -9,7 +9,7 @@ from tabulate import tabulate
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--parent_dir", default="experiments", help="Directory containing results of experiments")
+parser.add_argument("--result_dir", default="experiments", help="Directory containing results of experiments")
 
 
 def aggregate_metrics(parent_dir, metrics):
@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
     # Aggregate metrics from args.parent_dir directory
     metrics = dict()
-    aggregate_metrics(args.parent_dir, metrics)
+    aggregate_metrics(args.result_dir, metrics)
 
     # Create score table
     table = metrics_to_table(metrics)
@@ -63,6 +63,6 @@ if __name__ == "__main__":
     print(table)
 
     # Save results in parent_dir/results.md
-    save_file = os.path.join(args.parent_dir, "results.md")
+    save_file = os.path.join(args.result_dir, "results.md")
     with open(save_file, "w") as f:
         f.write(table)
