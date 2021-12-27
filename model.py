@@ -5,8 +5,7 @@ from keras.models import Model
 from tensorflow.keras import layers
 from keras.layers import Input
 from keras.layers import Dense
-from keras.layers import Flatten
-from keras.layers import LSTM
+from keras.layers import LSTM, GRU
 from keras.layers import Dropout
 from keras.layers import RepeatVector
 from keras.layers import TimeDistributed
@@ -14,8 +13,6 @@ from keras.layers import Embedding
 from keras.layers import Normalization
 from keras.layers import BatchNormalization
 from keras.layers.merge import concatenate
-from keras.layers.pooling import GlobalMaxPooling2D
-from tensorflow.keras.utils import plot_model
 from argparse import Namespace
 import json
 import os
@@ -88,7 +85,8 @@ class WordEncoder(layers.Layer):
         self,
         vocab_size,
         embedding_size,
-        no_lstm_units,
+        rnn_type,
+        no_rnn_units,
         no_dense_units,
         dropout_rate,
         name="word_encoder",
@@ -98,7 +96,11 @@ class WordEncoder(layers.Layer):
         self.vocab_size = vocab_size
         self.emb1 = Embedding(vocab_size, embedding_size, mask_zero=True)
         self.d1 = Dropout(dropout_rate)
-        self.emb2 = LSTM(no_lstm_units, return_sequences=True, dropout=dropout_rate)
+
+        rnn = get_rnn(rnn_type)
+
+        self.emb2 = rnn(no_rnn_units, return_sequences=True, dropout=dropout_rate)
+
         # TODO need to understand the use of this?
         self.emb3 = TimeDistributed(Dense(no_dense_units, activation="relu"))
         self.d2 = Dropout(dropout_rate)
@@ -120,10 +122,18 @@ class WordEncoder(layers.Layer):
 
 class WordDecoder(layers.Layer):
     def __init__(
-        self, vocab_size, no_lstm_units, no_dense_units, dropout_rate, name="word_decoder", **kwargs
+        self, vocab_size, rnn_type, no_rnn_units, no_dense_units, dropout_rate, name="word_decoder", **kwargs
     ):
         super(WordDecoder, self).__init__(name=name, **kwargs)
-        self.lm = LSTM(no_lstm_units, dropout=dropout_rate)
+        # self.lm = LSTM(no_lstm_units, dropout=dropout_rate, return_state=False, return_sequences=False)
+        # ADD type here
+
+        rnn = get_rnn(rnn_type)
+        self.lm = rnn(no_rnn_units, dropout=dropout_rate, return_state=True, return_sequences=False)
+
+        # self.lm = GRU(no_lstm_units, dropout=dropout_rate, return_state=True, return_sequences=False)
+        self.no_rnn_units = no_rnn_units
+
         self.d1 = Dropout(dropout_rate)
         self.fc = Dense(no_dense_units, activation="relu")
         self.d2 = Dropout(dropout_rate)
@@ -131,12 +141,22 @@ class WordDecoder(layers.Layer):
 
     def call(self, inputs, training=None):
         x = inputs
-        x = self.lm(x, training=training)
+
+        if isinstance(self.lm, LSTM):
+            # LSTM also returns the cell state, which we do not use
+            x, hidden, _ = self.lm(x, training=training)
+        else:
+            # GRU does not return the cell state
+            x, hidden = self.lm(x, training=training)
+
         x = self.d1(x, training=training)
         x = self.fc(x)
         x = self.d2(x, training=training)
         x = self.out(x)
-        return x
+        return x, hidden
+
+    def reset_state(self, batch_size):
+        return tf.zeros((batch_size, self.no_rnn_units))
 
     def build_graph(self):
         # Input shape of a single word
@@ -164,27 +184,41 @@ class InjectModel(tf.keras.Model):
             model_params.normalize,
             model_params.batch_norm,
         )
+
+        if model_params.attention:
+            self.attention = BahdanauAttention(model_params.no_rnn_units)
+        else:
+            self.attention = None
+
         self.word_decoder = WordDecoder(
-            vocab_size, model_params.no_lstm_units, model_params.no_dense_units, model_params.dropout_rate
+            vocab_size,
+            model_params.rnn_type,
+            model_params.no_rnn_units,
+            model_params.no_dense_units,
+            model_params.dropout_rate,
         )
 
         self.repeat = RepeatVector(1)
 
     def call(self, inputs, training=None):
-        input_image, input_word = inputs
+        input_image, input_word, hidden_state = inputs
 
         # Compute image embedding
         image_emb = self.image_encoder(input_image, training=training)
         # Pass word through embedding layer
         word_emb = self.word_embedder(input_word, training=training)
 
+        # Add attention embedding
+        if self.attention is not None:
+            image_emb, _ = self.attention(image_emb, hidden_state)
+
         # Concatenate the features - original paper passes attention vector instead
         image_emb = self.repeat(image_emb)  # Quickfix for expanding the dimension
         merged_emb = concatenate([image_emb, word_emb])
 
         # Give to decoder
-        output = self.word_decoder(merged_emb, training=training)
-        return output
+        output, hidden_state = self.word_decoder(merged_emb, training=training)
+        return output, hidden_state
 
     def get_config(self):
         config = super(InjectModel, self).get_config()
@@ -194,6 +228,37 @@ class InjectModel(tf.keras.Model):
     def build_graph(self):
         x = [Input(shape=(400,)), Input(shape=(1,))]
         return Model(inputs=x, outputs=self.call(x))
+
+
+class BahdanauAttention(tf.keras.Model):
+    def __init__(self, units):
+        super(BahdanauAttention, self).__init__()
+        self.W1 = tf.keras.layers.Dense(units)
+        self.W2 = tf.keras.layers.Dense(units)
+        self.V = tf.keras.layers.Dense(1)
+
+    def call(self, features, hidden):
+        # features(CNN_encoder output) shape == (batch_size, 64, embedding_dim)
+
+        # hidden shape == (batch_size, hidden_size)
+        # hidden_with_time_axis shape == (batch_size, 1, hidden_size)
+        hidden_with_time_axis = tf.expand_dims(hidden, 1)
+
+        # attention_hidden_layer shape == (batch_size, 64, units)
+        attention_hidden_layer = tf.nn.tanh(self.W1(features) + self.W2(hidden_with_time_axis))
+
+        # score shape == (batch_size, 64, 1)
+        # This gives you an unnormalized score for each image feature.
+        score = self.V(attention_hidden_layer)
+
+        # attention_weights shape == (batch_size, 64, 1)
+        attention_weights = tf.nn.softmax(score, axis=1)
+
+        # context_vector shape after sum == (batch_size, hidden_size)
+        context_vector = attention_weights * features
+        context_vector = tf.reduce_sum(context_vector, axis=1)
+
+        return context_vector, attention_weights
 
 
 class MergeInjectModel(tf.keras.Model):
@@ -213,12 +278,24 @@ class MergeInjectModel(tf.keras.Model):
         self.word_encoder = WordEncoder(
             vocab_size,
             model_params.embedding_size,
-            model_params.no_lstm_units,
+            model_params.rnn_type,
+            model_params.no_rnn_units,
             model_params.no_dense_units,
             model_params.dropout_rate,
         )
+
+        # Add attention
+        if model_params.attention:
+            self.attention = BahdanauAttention(model_params.no_rnn_units)
+        else:
+            self.attention = None
+
         self.word_decoder = WordDecoder(
-            vocab_size, model_params.no_lstm_units, model_params.no_dense_units, model_params.dropout_rate
+            vocab_size,
+            model_params.rnn_type,
+            model_params.no_rnn_units,
+            model_params.no_dense_units,
+            model_params.dropout_rate,
         )
 
         # Add repeat vector for avoid calling the image encoder all the time
@@ -226,17 +303,22 @@ class MergeInjectModel(tf.keras.Model):
         self.repeat = RepeatVector(1)
 
     def call(self, inputs, training=None):
-        input_image, input_word = inputs
+        input_image, input_word, hidden_state = inputs
+
         image_emb = self.image_encoder(input_image, training=training)
-        image_emb = self.repeat(image_emb)
         word_emb = self.word_encoder(input_word, training=training)
+
+        # Perform attention on the image embedding
+        if self.attention is not None:
+            image_emb, _ = self.attention(image_emb, hidden_state)
+        image_emb = self.repeat(image_emb)
 
         # Concatenate both inputs
         merged_emb = concatenate([image_emb, word_emb])
 
         # Decode the embedding
-        output = self.word_decoder(merged_emb, training=training)
-        return output
+        output, hidden = self.word_decoder(merged_emb, training=training)
+        return output, hidden_state
 
     def get_config(self):
         config = super(MergeInjectModel, self).get_config()
@@ -271,6 +353,17 @@ def load_model(ckpt_dir):
     return loaded_model
 
 
+def get_rnn(rnn_type):
+    if rnn_type == "lstm":
+        rnn = LSTM
+    elif rnn_type == "gru":
+        rnn = GRU
+    else:
+        raise ValueError(f'RNN type "{rnn_type}" not supported')
+
+    return rnn
+
+
 def get_model_params(model_dir):
 
     # Load parameters from model directory and create namespace
@@ -290,7 +383,7 @@ def _axiom_order_string_to_type(string_value):
         return AxiomOrder.ORIGINAL
     elif string_value == "lexicographic":
         return AxiomOrder.LEXICOGRAPHIC
-    elif string_value == AxiomOrder.LENGTH:
+    elif string_value == "length":
         return AxiomOrder.LENGTH
     else:
         raise ValueError(f"No string mapping between '{string_value}' and enum in AxiomOrder")
@@ -310,6 +403,13 @@ if __name__ == "__main__":
     print()
     print("# # # Inject # # #")
     m = get_model("inject", 123, 20, params)
-    m = get_model("merge_inject", 123, 20, params)
     print(m)
     print(m.build_graph().summary())
+
+"""
+    print("# # # Inject # # #")
+    m = get_model("inject", 123, 20, params)
+    m = get_model("attention_inject", 123, 20, params)
+    print(m)
+    print(m.build_graph().summary())
+"""
