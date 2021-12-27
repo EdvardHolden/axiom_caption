@@ -125,13 +125,13 @@ class WordDecoder(layers.Layer):
         self, vocab_size, rnn_type, no_rnn_units, no_dense_units, dropout_rate, name="word_decoder", **kwargs
     ):
         super(WordDecoder, self).__init__(name=name, **kwargs)
-        #self.lm = LSTM(no_lstm_units, dropout=dropout_rate, return_state=False, return_sequences=False)
+        # self.lm = LSTM(no_lstm_units, dropout=dropout_rate, return_state=False, return_sequences=False)
         # ADD type here
 
         rnn = get_rnn(rnn_type)
         self.lm = rnn(no_rnn_units, dropout=dropout_rate, return_state=True, return_sequences=False)
 
-        #self.lm = GRU(no_lstm_units, dropout=dropout_rate, return_state=True, return_sequences=False)
+        # self.lm = GRU(no_lstm_units, dropout=dropout_rate, return_state=True, return_sequences=False)
         self.no_rnn_units = no_rnn_units
 
         self.d1 = Dropout(dropout_rate)
@@ -141,20 +141,13 @@ class WordDecoder(layers.Layer):
 
     def call(self, inputs, training=None):
         x = inputs
-        #x, *hidden = self.lm(x, training=training)
-        #x, hidden, cell = self.lm(x, training=training)
-        #x = self.lm(x, training=training)
-        #x1, x2, x3 = self.lm(x, training=training)
-        # GRO returns 1 state, LSTM returns 2
-        #print(x)
-        #x = self.lm(x, training=training)
+
         if isinstance(self.lm, LSTM):
             # LSTM also returns the cell state, which we do not use
             x, hidden, _ = self.lm(x, training=training)
         else:
             # GRU does not return the cell state
             x, hidden = self.lm(x, training=training)
-
 
         x = self.d1(x, training=training)
         x = self.fc(x)
@@ -198,7 +191,11 @@ class InjectModel(tf.keras.Model):
             self.attention = None
 
         self.word_decoder = WordDecoder(
-            vocab_size, model_params.rnn_type, model_params.no_rnn_units, model_params.no_dense_units, model_params.dropout_rate
+            vocab_size,
+            model_params.rnn_type,
+            model_params.no_rnn_units,
+            model_params.no_dense_units,
+            model_params.dropout_rate,
         )
 
         self.repeat = RepeatVector(1)
@@ -294,7 +291,11 @@ class MergeInjectModel(tf.keras.Model):
             self.attention = None
 
         self.word_decoder = WordDecoder(
-            vocab_size, model_params.rnn_type, model_params.no_rnn_units, model_params.no_dense_units, model_params.dropout_rate
+            vocab_size,
+            model_params.rnn_type,
+            model_params.no_rnn_units,
+            model_params.no_dense_units,
+            model_params.dropout_rate,
         )
 
         # Add repeat vector for avoid calling the image encoder all the time
@@ -358,7 +359,7 @@ def get_rnn(rnn_type):
     elif rnn_type == "gru":
         rnn = GRU
     else:
-        raise ValueError(f"RNN type \"{rnn_type}\" not supported")
+        raise ValueError(f'RNN type "{rnn_type}" not supported')
 
     return rnn
 
