@@ -271,6 +271,13 @@ class MergeInjectModel(tf.keras.Model):
             model_params.no_dense_units,
             model_params.dropout_rate,
         )
+
+        # Add attention
+        if model_params.attention:
+            self.attention = BahdanauAttention(model_params.no_lstm_units)
+        else:
+            self.attention = None
+
         self.word_decoder = WordDecoder(
             vocab_size, model_params.no_lstm_units, model_params.no_dense_units, model_params.dropout_rate
         )
@@ -280,17 +287,23 @@ class MergeInjectModel(tf.keras.Model):
         self.repeat = RepeatVector(1)
 
     def call(self, inputs, training=None):
-        input_image, input_word, _ = inputs
+        input_image, input_word, hidden_state = inputs
+
+
         image_emb = self.image_encoder(input_image, training=training)
-        image_emb = self.repeat(image_emb)
         word_emb = self.word_encoder(input_word, training=training)
+
+        # Perform attention on the image embedding
+        if self.attention is not None:
+            image_emb, _ = self.attention(image_emb, hidden_state)
+        image_emb = self.repeat(image_emb)
 
         # Concatenate both inputs
         merged_emb = concatenate([image_emb, word_emb])
 
         # Decode the embedding
         output, hidden = self.word_decoder(merged_emb, training=training)
-        return output, hidden
+        return output, hidden_state
 
     def get_config(self):
         config = super(MergeInjectModel, self).get_config()
