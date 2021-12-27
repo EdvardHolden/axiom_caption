@@ -1,6 +1,7 @@
 {
     "model_type": "merge_inject",
     "axiom_order": "original",
+    "attention": true,
     "normalize": true,
     "batch_norm": true,
     "no_lstm_units": 50,

@@ -177,6 +177,12 @@ class InjectModel(tf.keras.Model):
             model_params.normalize,
             model_params.batch_norm,
         )
+
+        if model_params.attention:
+            self.attention = BahdanauAttention(model_params.no_lstm_units)
+        else:
+            self.attention = None
+
         self.word_decoder = WordDecoder(
             vocab_size, model_params.no_lstm_units, model_params.no_dense_units, model_params.dropout_rate
         )
@@ -184,20 +190,24 @@ class InjectModel(tf.keras.Model):
         self.repeat = RepeatVector(1)
 
     def call(self, inputs, training=None):
-        input_image, input_word, _ = inputs
+        input_image, input_word, hidden_state = inputs
 
         # Compute image embedding
         image_emb = self.image_encoder(input_image, training=training)
         # Pass word through embedding layer
         word_emb = self.word_embedder(input_word, training=training)
 
+        # Add attention embedding
+        if self.attention is not None:
+            image_emb, _ = self.attention(image_emb, hidden_state)
+
         # Concatenate the features - original paper passes attention vector instead
         image_emb = self.repeat(image_emb)  # Quickfix for expanding the dimension
         merged_emb = concatenate([image_emb, word_emb])
 
         # Give to decoder
-        output, hidden = self.word_decoder(merged_emb, training=training)
-        return output, hidden
+        output, hidden_state = self.word_decoder(merged_emb, training=training)
+        return output, hidden_state
 
     def get_config(self):
         config = super(InjectModel, self).get_config()
@@ -238,60 +248,6 @@ class BahdanauAttention(tf.keras.Model):
         context_vector = tf.reduce_sum(context_vector, axis=1)
 
         return context_vector, attention_weights
-
-
-class AttentionInjectModel(tf.keras.Model):
-    def __init__(self, max_length, vocab_size, model_params, name="attention_inject", **kwargs):
-        super(AttentionInjectModel, self).__init__(name=name, **kwargs)
-        self.max_length = max_length
-        self.vocab_size = vocab_size
-
-        self.axiom_order = model_params.axiom_order
-
-        self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
-        self.image_encoder = ImageEncoder(
-            model_params.no_dense_units,
-            model_params.dropout_rate,
-            model_params.normalize,
-            model_params.batch_norm,
-        )
-
-        self.attention = BahdanauAttention(model_params.no_lstm_units)
-
-        self.word_decoder = WordDecoder(
-            vocab_size, model_params.no_lstm_units, model_params.no_dense_units, model_params.dropout_rate
-        )
-
-        self.repeat = RepeatVector(1)
-
-    def call(self, inputs, training=None):
-        input_image, input_word, hidden_state = inputs
-
-        # Compute image embedding
-        image_emb = self.image_encoder(input_image, training=training)
-        # Pass word through embedding layer
-        word_emb = self.word_embedder(input_word, training=training)
-
-        ## TODO need to add checks later: does this keep for a re-saved model? - maybe keep some of this info in the params.json
-        image_emb, attention_weights = self.attention(image_emb, hidden_state)
-
-        # Concatenate the features - original paper passes attention vector instead
-        image_emb = self.repeat(image_emb)  # Quickfix for expanding the dimension
-        merged_emb = concatenate([image_emb, word_emb])
-
-        # Give to decoder
-        # TODO need to change for LSTM vs GRU
-        output, hidden = self.word_decoder(merged_emb, training=training)
-        return output, hidden
-
-    def get_config(self):
-        config = super(AttentionInjectModel, self).get_config()
-        config.update({"max_length": self.max_length, "vocab_size": self.vocab_size, "name": self.name})
-        return config
-
-    def build_graph(self):
-        x = [Input(shape=(400,)), Input(shape=(1,))]
-        return Model(inputs=x, outputs=self.call(x))
 
 
 class MergeInjectModel(tf.keras.Model):
@@ -353,8 +309,6 @@ def get_model(model_type, max_length, vocab_size, params):
         model = MergeInjectModel(max_length, vocab_size, params)
     elif model_type == "inject":
         model = InjectModel(max_length, vocab_size, params)
-    elif model_type == 'attention_inject':
-        model = AttentionInjectModel(max_length, vocab_size, params)
     else:
         print("Unrecognised model type: ", model_type, file=sys.stderr)
         sys.exit(1)
