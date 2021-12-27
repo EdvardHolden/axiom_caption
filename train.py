@@ -59,6 +59,9 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     # Reset the LSTM states between each batch
     model.reset_states()
 
+    # Initialise the hidden shape of the model - makes the above lines redundant
+    hidden = model.word_decoder.reset_state(batch_size=target.shape[0])
+
     # Initialise input vector with the start token
     dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * target.shape[0], 1)
 
@@ -68,7 +71,7 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
         for i in range(1, target.shape[1]):
             # Predict the next token - slightly expensive way of doing it as it
             # encodes the image each time
-            y_hat = model([img_tensor, dec_input], training=training)
+            y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
 
             # What about padding token and start/stop?
             predictions.append(np.argmax(y_hat, axis=1))
