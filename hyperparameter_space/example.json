@@ -1,11 +1,13 @@
 {
   "model_type": ["merge_inject"],
-  "axiom_order": ["original"],
+  "axiom_order": ["length"],
+  "attention": [true],
   "normalize": [true],
   "batch_norm": [false],
-  "no_lstm_units": [50],
+  "rnn_type": ["gru", "lstm"],
+  "no_rnn_units": [50],
   "embedding_size": [50],
-  "no_dense_units": [32, 64, 128],
+  "no_dense_units": [32, 64],
   "dropout_rate": [0],
   "learning_rate": [0.001]
 }
