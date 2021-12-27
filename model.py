@@ -5,8 +5,7 @@ from keras.models import Model
 from tensorflow.keras import layers
 from keras.layers import Input
 from keras.layers import Dense
-from keras.layers import Flatten
-from keras.layers import LSTM
+from keras.layers import LSTM, GRU
 from keras.layers import Dropout
 from keras.layers import RepeatVector
 from keras.layers import TimeDistributed
@@ -14,8 +13,6 @@ from keras.layers import Embedding
 from keras.layers import Normalization
 from keras.layers import BatchNormalization
 from keras.layers.merge import concatenate
-from keras.layers.pooling import GlobalMaxPooling2D
-from tensorflow.keras.utils import plot_model
 from argparse import Namespace
 import json
 import os
@@ -123,7 +120,11 @@ class WordDecoder(layers.Layer):
         self, vocab_size, no_lstm_units, no_dense_units, dropout_rate, name="word_decoder", **kwargs
     ):
         super(WordDecoder, self).__init__(name=name, **kwargs)
-        self.lm = LSTM(no_lstm_units, dropout=dropout_rate)
+        #self.lm = LSTM(no_lstm_units, dropout=dropout_rate, return_state=False, return_sequences=False)
+        self.lm = LSTM(no_lstm_units, dropout=dropout_rate, return_state=True, return_sequences=False)
+        #self.lm = GRU(no_lstm_units, dropout=dropout_rate, return_state=True, return_sequences=False)
+        self.no_lstm_units = no_lstm_units
+
         self.d1 = Dropout(dropout_rate)
         self.fc = Dense(no_dense_units, activation="relu")
         self.d2 = Dropout(dropout_rate)
@@ -131,12 +132,24 @@ class WordDecoder(layers.Layer):
 
     def call(self, inputs, training=None):
         x = inputs
-        x = self.lm(x, training=training)
+        #x, *hidden = self.lm(x, training=training)
+        #x, hidden, cell = self.lm(x, training=training)
+        #x = self.lm(x, training=training)
+        #x1, x2, x3 = self.lm(x, training=training)
+        # GRO returns 1 state, LSTM returns 2
+        #print(x)
+        #x = self.lm(x, training=training)
+        x, hidden, cell = self.lm(x, training=training)
+
+
         x = self.d1(x, training=training)
         x = self.fc(x)
         x = self.d2(x, training=training)
         x = self.out(x)
-        return x
+        return x, hidden
+
+    def reset_state(self, batch_size):
+        return tf.zeros((batch_size, self.no_lstm_units))
 
     def build_graph(self):
         # Input shape of a single word
@@ -171,7 +184,7 @@ class InjectModel(tf.keras.Model):
         self.repeat = RepeatVector(1)
 
     def call(self, inputs, training=None):
-        input_image, input_word = inputs
+        input_image, input_word, _ = inputs
 
         # Compute image embedding
         image_emb = self.image_encoder(input_image, training=training)
@@ -183,11 +196,96 @@ class InjectModel(tf.keras.Model):
         merged_emb = concatenate([image_emb, word_emb])
 
         # Give to decoder
-        output = self.word_decoder(merged_emb, training=training)
-        return output
+        output, hidden = self.word_decoder(merged_emb, training=training)
+        return output, hidden
 
     def get_config(self):
         config = super(InjectModel, self).get_config()
+        config.update({"max_length": self.max_length, "vocab_size": self.vocab_size, "name": self.name})
+        return config
+
+    def build_graph(self):
+        x = [Input(shape=(400,)), Input(shape=(1,))]
+        return Model(inputs=x, outputs=self.call(x))
+
+
+class BahdanauAttention(tf.keras.Model):
+    def __init__(self, units):
+        super(BahdanauAttention, self).__init__()
+        self.W1 = tf.keras.layers.Dense(units)
+        self.W2 = tf.keras.layers.Dense(units)
+        self.V = tf.keras.layers.Dense(1)
+
+    def call(self, features, hidden):
+        # features(CNN_encoder output) shape == (batch_size, 64, embedding_dim)
+
+        # hidden shape == (batch_size, hidden_size)
+        # hidden_with_time_axis shape == (batch_size, 1, hidden_size)
+        hidden_with_time_axis = tf.expand_dims(hidden, 1)
+
+        # attention_hidden_layer shape == (batch_size, 64, units)
+        attention_hidden_layer = tf.nn.tanh(self.W1(features) + self.W2(hidden_with_time_axis))
+
+        # score shape == (batch_size, 64, 1)
+        # This gives you an unnormalized score for each image feature.
+        score = self.V(attention_hidden_layer)
+
+        # attention_weights shape == (batch_size, 64, 1)
+        attention_weights = tf.nn.softmax(score, axis=1)
+
+        # context_vector shape after sum == (batch_size, hidden_size)
+        context_vector = attention_weights * features
+        context_vector = tf.reduce_sum(context_vector, axis=1)
+
+        return context_vector, attention_weights
+
+
+class AttentionInjectModel(tf.keras.Model):
+    def __init__(self, max_length, vocab_size, model_params, name="attention_inject", **kwargs):
+        super(AttentionInjectModel, self).__init__(name=name, **kwargs)
+        self.max_length = max_length
+        self.vocab_size = vocab_size
+
+        self.axiom_order = model_params.axiom_order
+
+        self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
+        self.image_encoder = ImageEncoder(
+            model_params.no_dense_units,
+            model_params.dropout_rate,
+            model_params.normalize,
+            model_params.batch_norm,
+        )
+
+        self.attention = BahdanauAttention(model_params.no_lstm_units)
+
+        self.word_decoder = WordDecoder(
+            vocab_size, model_params.no_lstm_units, model_params.no_dense_units, model_params.dropout_rate
+        )
+
+        self.repeat = RepeatVector(1)
+
+    def call(self, inputs, training=None):
+        input_image, input_word, hidden_state = inputs
+
+        # Compute image embedding
+        image_emb = self.image_encoder(input_image, training=training)
+        # Pass word through embedding layer
+        word_emb = self.word_embedder(input_word, training=training)
+
+        ## TODO need to add checks later: does this keep for a re-saved model? - maybe keep some of this info in the params.json
+        image_emb, attention_weights = self.attention(image_emb, hidden_state)
+
+        # Concatenate the features - original paper passes attention vector instead
+        image_emb = self.repeat(image_emb)  # Quickfix for expanding the dimension
+        merged_emb = concatenate([image_emb, word_emb])
+
+        # Give to decoder
+        # TODO need to change for LSTM vs GRU
+        output, hidden = self.word_decoder(merged_emb, training=training)
+        return output, hidden
+
+    def get_config(self):
+        config = super(AttentionInjectModel, self).get_config()
         config.update({"max_length": self.max_length, "vocab_size": self.vocab_size, "name": self.name})
         return config
 
@@ -226,7 +324,7 @@ class MergeInjectModel(tf.keras.Model):
         self.repeat = RepeatVector(1)
 
     def call(self, inputs, training=None):
-        input_image, input_word = inputs
+        input_image, input_word, _ = inputs
         image_emb = self.image_encoder(input_image, training=training)
         image_emb = self.repeat(image_emb)
         word_emb = self.word_encoder(input_word, training=training)
@@ -235,8 +333,8 @@ class MergeInjectModel(tf.keras.Model):
         merged_emb = concatenate([image_emb, word_emb])
 
         # Decode the embedding
-        output = self.word_decoder(merged_emb, training=training)
-        return output
+        output, hidden = self.word_decoder(merged_emb, training=training)
+        return output, hidden
 
     def get_config(self):
         config = super(MergeInjectModel, self).get_config()
@@ -255,6 +353,8 @@ def get_model(model_type, max_length, vocab_size, params):
         model = MergeInjectModel(max_length, vocab_size, params)
     elif model_type == "inject":
         model = InjectModel(max_length, vocab_size, params)
+    elif model_type == 'attention_inject':
+        model = AttentionInjectModel(max_length, vocab_size, params)
     else:
         print("Unrecognised model type: ", model_type, file=sys.stderr)
         sys.exit(1)
@@ -310,6 +410,13 @@ if __name__ == "__main__":
     print()
     print("# # # Inject # # #")
     m = get_model("inject", 123, 20, params)
-    m = get_model("merge_inject", 123, 20, params)
     print(m)
     print(m.build_graph().summary())
+
+"""
+    print("# # # Inject # # #")
+    m = get_model("inject", 123, 20, params)
+    m = get_model("attention_inject", 123, 20, params)
+    print(m)
+    print(m.build_graph().summary())
+"""
