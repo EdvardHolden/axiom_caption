@@ -131,13 +131,16 @@ def generate_step(
     # Reset LSTM states between each batch
     model.reset_states()
 
+    # Initialise the hidden shape of the model - makes the above lines redundant
+    hidden = tf.zeros((1, model.no_rnn_units))
+
     # Get start token
     dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]], 0)
 
     # Run the model until we reach the max length or the end token
     for i in range(max_len):
         # Predict probabilities
-        pred = model([img_tensor, dec_input])
+        pred, hidden = model([img_tensor, dec_input, hidden])
 
         # Sample the next token(s)
         if sampler == "greedy":
@@ -215,7 +218,8 @@ def main():
     print("Max caption length: ", max_len)
 
     # Get the axiom ordering from the model parameter file
-    axiom_order = get_model_params("experiments/base_model").axiom_order
+    model_params = get_model_params("experiments/base_model")
+    axiom_order = model_params.axiom_order
     print("Using axiom order: ", axiom_order)
 
     # Get the test dataset with batch 1 as we need to treat each caption separately
@@ -227,6 +231,7 @@ def main():
     # Load model
     model_dir = os.path.join(args.model_dir, "ckpt_dir")
     loaded_model = load_model(model_dir)
+    loaded_model.no_rnn_units = model_params.no_rnn_units
 
     # Run evaluation
     scores = evaluate_model(
