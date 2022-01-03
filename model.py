@@ -125,8 +125,6 @@ class WordDecoder(layers.Layer):
         self, vocab_size, rnn_type, no_rnn_units, no_dense_units, dropout_rate, name="word_decoder", **kwargs
     ):
         super(WordDecoder, self).__init__(name=name, **kwargs)
-        # self.lm = LSTM(no_lstm_units, dropout=dropout_rate, return_state=False, return_sequences=False)
-        # ADD type here
 
         rnn = get_rnn(rnn_type)
         self.lm = rnn(no_rnn_units, dropout=dropout_rate, return_state=True, return_sequences=False)
@@ -286,6 +284,7 @@ class MergeInjectModel(tf.keras.Model):
 
         # Add attention
         if model_params.attention:
+            print("Warning: Attention functionality not fully implemented for the merge architecture", file=sys.stderr)
             self.attention = BahdanauAttention(model_params.no_rnn_units)
         else:
             self.attention = None
@@ -306,7 +305,7 @@ class MergeInjectModel(tf.keras.Model):
         input_image, input_word, hidden_state = inputs
 
         image_emb = self.image_encoder(input_image, training=training)
-        word_emb = self.word_encoder(input_word, training=training)
+        word_emb = self.word_encoder(input_word, training=training) # TODO maybe this should return the state as well?
 
         # Perform attention on the image embedding
         if self.attention is not None:
