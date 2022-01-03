@@ -14,8 +14,10 @@ parser.add_argument(
     "--data_file", default="data/raw/vampire_jjt.pkl", help="Data file used to compute splits"
 )
 
-parser.add_argument("--min_axioms", default=1, help="Min axiom count for being included in the split")
-parser.add_argument("--max_axioms", default=100, help="Max axiom count for being included in the split")
+parser.add_argument("--min_axioms", default=1, type=int,
+                    help="Min axiom count for being included in the split")
+parser.add_argument("--max_axioms", default=100, type=int,
+                    help="Max axiom count for being included in the split")
 
 parser.add_argument(
     "--fof_only", default=False, action="store_true", help="Uses only FOF proofs if specified"
