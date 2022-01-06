@@ -22,12 +22,12 @@ COMPETITION_RESULTS = {
 
 # #############
 DEVELOPING = True
-#DEVELOPING = False
+# DEVELOPING = False
 
 BATCH_SIZE = 32
 BUFFER_SIZE = 1000
-EPOCHS = 1
-ES_PATIENCE = 10
+EPOCHS = 100
+ES_PATIENCE = 25
 
 
 train_id_file = "data/vampire_jjt_fof/train.txt"
@@ -38,7 +38,7 @@ base_model = "experiments/base_model"
 
 # TODO rename these variables as it is v confusing
 proof_data = "data/raw/vampire_jjt.pkl"
-problem_features = "data/embeddings/jjt_fof_sine_1_0.pkl"
+problem_features = "data/embeddings/graph_features_jjt_fof_sine_1_0_all.pkl"
 
 TOKEN_PAD = "<pad>"
 TOKEN_START = "<start>"
