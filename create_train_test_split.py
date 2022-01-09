@@ -14,15 +14,17 @@ parser.add_argument(
     "--data_file", default="data/raw/vampire_jjt.pkl", help="Data file used to compute splits"
 )
 
-parser.add_argument("--min_axioms", default=1, type=int,
-                    help="Min axiom count for being included in the split")
-parser.add_argument("--max_axioms", default=100, type=int,
-                    help="Max axiom count for being included in the split")
+parser.add_argument(
+    "--min_axioms", default=1, type=int, help="Min axiom count for being included in the split"
+)
+parser.add_argument(
+    "--max_axioms", default=100, type=int, help="Max axiom count for being included in the split"
+)
 
 parser.add_argument(
     "--fof_only", default=False, action="store_true", help="Uses only FOF proofs if specified"
 )
-parser.add_argument("--random_state", default=7, type=int, help="Set random set for the splitting")
+parser.add_argument("--random_state", default=7, type=int, help="Set random state for the splitting")
 
 parser.add_argument("--train_size", default=0.8)
 parser.add_argument("--val_size", default=0.1)
@@ -54,8 +56,10 @@ def main():
     if args.fof_only:
         print("Restricting problems to FOF")
         ids = [d["version"] for prob, d in data.items() if d["version"] and "+" in d["version"]]
-    else:
+    elif "version" in data[list(data.keys())[0]]:
         ids = [d["version"] for prob, d in data.items() if d["version"]]
+    else:
+        ids = sorted(data.keys())
 
     ids = sorted(ids)  # Sort the ids for good measure
     print("Number of problem ids: ", len(ids))
