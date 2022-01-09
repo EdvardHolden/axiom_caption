@@ -12,6 +12,9 @@ from dataset import get_dataset, get_tokenizer, compute_max_length
 from model import load_model
 
 
+from tensorflow.sets import size, intersection, union
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_dir", default="experiments/base_model", help="Directory containing params.json")
 parser.add_argument("--problem_ids", default=config.test_id_file, help="File containing IDs for evaluation")
@@ -99,7 +102,10 @@ def top_k_sampler(pred, no_samples, k=10):
 
 def coverage_score(actual, predicted, avg=True):
 
-    scores = [*starmap(lambda a, p: len(set(a).intersection(set(p))) / len(set(a)), zip(actual, predicted))]
+    actual = tf.sparse.from_dense(actual)
+    predicted = tf.sparse.from_dense(predicted)
+
+    scores = size(intersection(actual, predicted)) / size(actual)
     if avg:
         return np.average(scores)
     else:
@@ -107,6 +113,30 @@ def coverage_score(actual, predicted, avg=True):
 
 
 def jaccard_score(actual, predicted, avg=True):
+    """
+    Jaccard(A,B) = |A/\B|/|A\/B|
+    """
+
+    actual = tf.sparse.from_dense(actual)
+    predicted = tf.sparse.from_dense(predicted)
+
+    scores = size(intersection(actual, predicted)) / size(union(actual, predicted))
+    if avg:
+        return np.average(scores)
+    else:
+        return scores
+
+
+def coverage_score_np(actual, predicted, avg=True):
+
+    scores = [*starmap(lambda a, p: len(set(a).intersection(set(p))) / len(set(a)), zip(actual, predicted))]
+    if avg:
+        return np.average(scores)
+    else:
+        return scores
+
+
+def jaccard_score_np(actual, predicted, avg=True):
     """
     Jaccard(A,B) = |A/\B|/|A\/B|
     """

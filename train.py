@@ -73,8 +73,8 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
             # encodes the image each time
             y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
 
-            # What about padding token and start/stop?
-            predictions.append(np.argmax(y_hat, axis=1))
+            pred = tf.math.argmax(y_hat, axis=1)
+            predictions.append(pred)
 
             # Compute loss of predictions
             loss += loss_function(target[:, i], y_hat)
@@ -91,17 +91,23 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
         gradients = tape.gradient(loss, trainable_variables)
         optimizer.apply_gradients(zip(gradients, trainable_variables))
 
-    return loss, sequence_loss, np.array(predictions).T
+    return loss, sequence_loss, tf.transpose(predictions)
 
 
 def compute_pred_stats(captions, predictions):
-    # First need to remove pad and start tokens
-    FILTER = lambda x: x != 0 and x != 2
+    # First need to remove pad and start tokens, and end tokens
+    # <pad>: 0, <start>: 2, <end>: 3
+    # This will be converted to a sparse tensor where 0 is unrepresented
+    FILTER = lambda x: x if x != 2 and x != 3 else 0
+
     filtered_pred = []
     filtered_cap = []
     for pred, cap in zip(predictions, captions):
-        filtered_pred.append([*filter(FILTER, pred)])
-        filtered_cap.append([*filter(FILTER, cap.numpy())])
+        filtered_pred.append([*map(FILTER, pred)])
+        filtered_cap.append([*map(FILTER, cap)])
+
+    filtered_pred = tf.convert_to_tensor(filtered_pred, dtype=tf.int64)
+    filtered_cap = tf.convert_to_tensor(filtered_cap, dtype=tf.int64)
 
     # Compute and return the stats for each prediction
     cov_score = coverage_score(filtered_cap, filtered_pred, avg=False)
@@ -137,8 +143,8 @@ def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
 
         # Compute statistics
         cov_batch, jac_batch = compute_pred_stats(captions, predictions)
-        jac_scores += jac_batch
-        cov_scores += cov_batch
+        jac_scores.extend(jac_batch)
+        cov_scores.extend(cov_batch)
 
     # Store the training loss for plotting
     loss_epoch = total_loss.numpy() / num_steps
