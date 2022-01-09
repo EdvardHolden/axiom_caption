@@ -68,6 +68,8 @@ def main():
 
     # Get all embeddings in the embedding folder
     embeddings = glob.glob(os.path.join(args.embedding_dir, "*.pkl"))
+    if len(embeddings) == 0:
+        print("Warning: Could not find any embeddings in the provided directory")
 
     # Read the model config
     with open(os.path.join(args.model_dir, "params.json"), "r") as f:
@@ -75,6 +77,7 @@ def main():
 
     # For each embedding
     for emb in tqdm(embeddings):
+        print(f"Running experiment for: {emb}")
         # Create directory for placing the results and storing the parameters of the model
         job_dir = utils.create_job_dir(args.experiment_dir, Path(emb).stem, params=model_params)
 
