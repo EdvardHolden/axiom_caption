@@ -20,7 +20,7 @@ def get_tokenizer(tokenizer_path, verbose=0):
     # Function for loading the tokenizer from path
     with open(tokenizer_path) as f:
         tokenizer = tokenizer_from_json(json.load(f))
-    vocab_size = len(tokenizer.word_index)
+    vocab_size = len(tokenizer.word_index)  # TODO this is no longer correct
     if verbose > 0:
         print("Vocabulary Size: %d" % vocab_size)
     return tokenizer, vocab_size
@@ -66,9 +66,13 @@ def load_clean_descriptions(filename, ids, order):
         proof_data = pickle.load(f)
 
     descriptions = dict()
-    for data in proof_data.values():
-        # skip images not in the set
-        if data["version"] in ids:
+    for prob_id, data in proof_data.items():
+        # If we have versions, the id of the problem is the version name
+        if "version" in data:
+            prob_id = data["version"]
+
+        # Skip problems not in the ID set
+        if prob_id in ids:
 
             # Extract axioms and manipulate the delimiter
             axioms = data["axioms"]
@@ -92,7 +96,7 @@ def load_clean_descriptions(filename, ids, order):
                     raise ValueError(f"No ordering function implemented for order: '{order}'")
 
             # Build the caption string and save in dict
-            descriptions[data["version"]] = (
+            descriptions[prob_id] = (
                 f"{config.TOKEN_START}{config.TOKEN_DELIMITER}"
                 + f"{config.TOKEN_DELIMITER}".join(axioms)
                 + f"{config.TOKEN_DELIMITER}{config.TOKEN_END}"
@@ -106,7 +110,11 @@ def load_photo_features(filename, dataset):
     with open(filename, "rb") as f:
         all_features = pickle.load(f)
     # FIXME Adding the .p extension in the name for now - should be made more uniform
-    features = {k: all_features[k + ".p"] for k in dataset}
+    if ".p" == str(all_features[list(all_features.keys())[0]][-2:]):
+        features = {k: all_features[k + ".p"] for k in dataset}
+    else:
+        features = {k: all_features[k] for k in dataset}
+
     return features
 
 
