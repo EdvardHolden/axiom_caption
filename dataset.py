@@ -20,7 +20,7 @@ def get_tokenizer(tokenizer_path, verbose=0):
     # Function for loading the tokenizer from path
     with open(tokenizer_path) as f:
         tokenizer = tokenizer_from_json(json.load(f))
-    vocab_size = len(tokenizer.word_index)  # TODO this is no longer correct
+    vocab_size = tokenizer.num_words
     if verbose > 0:
         print("Vocabulary Size: %d" % vocab_size)
     return tokenizer, vocab_size
