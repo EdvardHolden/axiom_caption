@@ -1,13 +1,13 @@
 {
-    "model_type": "merge_inject",
+    "model_type": "inject",
     "axiom_order": "length",
-    "attention": true,
+    "attention": false,
     "normalize": true,
-    "batch_norm": true,
+    "batch_norm": false,
     "rnn_type": "gru",
     "no_rnn_units": 50,
     "embedding_size": 50,
-    "no_dense_units" : 128,
+    "no_dense_units" : 64,
     "dropout_rate": 0.2,
     "learning_rate": 0.001
 }

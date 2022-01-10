@@ -26,8 +26,8 @@ DEVELOPING = True
 
 BATCH_SIZE = 32
 BUFFER_SIZE = 1000
-EPOCHS = 100
-ES_PATIENCE = 25
+EPOCHS = 60
+ES_PATIENCE = 15
 
 
 train_id_file = "data/vampire_jjt_fof/train.txt"

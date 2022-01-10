@@ -4,11 +4,18 @@ import tensorflow as tf
 import argparse
 from pickle import dump
 import numpy as np
+import random
 
 import config
 from dataset import get_dataset, get_tokenizer
 from model import get_model_params, initialise_model
 from evaluate import jaccard_score, coverage_score
+
+# Make script deterministic to see if we can avoid the gpu issue
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+random.seed(42)
+np.random.seed(42)
+tf.random.set_seed(42)
 
 
 loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
@@ -227,9 +234,12 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
 def main(model_dir, problem_features, proof_data, train_id_file, val_id_file):
 
     # Instantiate Tensorflow environment
+    # TODO
+    """
     physical_devices = tf.config.list_physical_devices("GPU")
     for device in physical_devices:
         tf.config.experimental.set_memory_growth(device, True)
+    """
     tf.config.run_functions_eagerly(config.DEVELOPING)
 
     # Get pre-trained tokenizer

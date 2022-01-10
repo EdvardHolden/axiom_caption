@@ -56,7 +56,8 @@ def launch_training_job(job_dir, args, training_parameters):
         if param != "model_dir":
             cmd += f" --{param} {args.__dict__[param]} "
 
-    check_call(cmd, shell=True, stdout=subprocess.DEVNULL)
+    # check_call(cmd, shell=True, stdout=subprocess.DEVNULL) # FIXME
+    check_call(cmd, shell=True, stdout=None)
 
 
 def main():
@@ -77,6 +78,7 @@ def main():
 
         # Make config description
         job_name = "_".join([p + "_" + str(v) for p, v in sorted(param_config.items())])
+        print(f"\n### Processing job: {job_name}")
 
         # If we are not forcing reruns and the jobdir already exists, we skip this configuration
         if not args.rerun and os.path.exists(os.path.join(args.experiment_dir, job_name)):
