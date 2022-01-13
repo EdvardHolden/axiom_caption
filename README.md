@@ -11,13 +11,16 @@ are given to an ML model, which along with a \<start\> token start generating ax
 1. First download the proof data with axioms from the CASC competitions by running `python3 download_axioms.py` (This will download all the viable proof data specified in the config).
 2. (Optional) pre-process the problems with sine using `sine_process_problems.py`
 
-### Creating datasets
+### Creating datasets and tokenizer
 
 Run `create_train_test_split.py` over a given axiom dict. This will split the ids into train/test/val sets.
+To compute the tokenizer over the training set you run `python3 compute_tokenizer.py` with the appropriate parameters.
+Now, you are able to start training models over the dataset.
+
 
 ## Computing conjecture embeddings
 
-TODO
+TODO - look in the embedding repo
 
 # Experiments
 
