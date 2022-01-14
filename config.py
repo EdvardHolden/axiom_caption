@@ -30,15 +30,16 @@ EPOCHS = 60
 ES_PATIENCE = 15
 
 
-train_id_file = "data/vampire_jjt_fof/train.txt"
-test_id_file = "data/vampire_jjt_fof/test.txt"
-val_id_file = "data/vampire_jjt_fof/val.txt"
+# train_id_file = "data/deepmath/train.txt"
+train_id_file = "data/deepmath/val.txt"
+test_id_file = "data/deepmath/test.txt"
+val_id_file = "data/deepmath/val.txt"
 
 base_model = "experiments/base_model"
 
 # TODO rename these variables as it is v confusing
-proof_data = "data/raw/vampire_jjt.pkl"
-problem_features = "data/embeddings/graph_features_jjt_fof_sine_1_0_all.pkl"
+proof_data = "data/raw/deepmath.pkl"
+problem_features = "data/embeddings/deepmath/graph_features_deepmath_all.pkl"
 
 TOKEN_PAD = "<pad>"
 TOKEN_START = "<start>"
