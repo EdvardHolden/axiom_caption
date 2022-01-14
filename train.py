@@ -7,7 +7,7 @@ import numpy as np
 import random
 
 import config
-from dataset import get_dataset, get_tokenizer
+from dataset import get_dataset, get_tokenizer, compute_axiom_frequency, AxiomOrder
 from model import get_model_params, initialise_model
 from evaluate import jaccard_score, coverage_score
 
@@ -250,6 +250,12 @@ def main(model_dir, problem_features, proof_data, train_id_file, val_id_file):
     # Load model params from model file
     model_params = get_model_params(model_dir)
 
+    # Compute the axiom frequencies if required
+    if model_params.axiom_order is AxiomOrder.FREQUENCY:
+        axiom_frequency = compute_axiom_frequency(config.proof_data, config.val_id_file)
+    else:
+        axiom_frequency = None
+
     # Get the training dataset
     train_data, max_len = get_dataset(
         train_id_file,
@@ -257,6 +263,7 @@ def main(model_dir, problem_features, proof_data, train_id_file, val_id_file):
         problem_features,
         tokenizer=tokenizer,
         order=model_params.axiom_order,
+        axiom_frequency=axiom_frequency,
     )
     print("Max len: ", max_len)
     # Compute validation dataset based on the max length of the training data
@@ -267,6 +274,7 @@ def main(model_dir, problem_features, proof_data, train_id_file, val_id_file):
         tokenizer=tokenizer,
         max_cap_len=max_len,
         order=model_params.axiom_order,
+        axiom_frequency=axiom_frequency,
     )
 
     # Initialise the model

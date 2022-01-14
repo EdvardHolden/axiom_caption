@@ -1,5 +1,7 @@
 import pickle
+from collections import Counter
 import tensorflow as tf
+import random
 import os
 import json
 from keras.preprocessing.text import tokenizer_from_json
@@ -14,6 +16,8 @@ class AxiomOrder(Enum):
     ORIGINAL = auto()
     LEXICOGRAPHIC = auto()
     LENGTH = auto()
+    FREQUENCY = auto()
+    RANDOM = auto()
 
 
 def get_tokenizer(tokenizer_path, verbose=0):
@@ -60,7 +64,7 @@ def load_ids(filename):
     return sorted(dataset)
 
 
-def load_clean_descriptions(filename, ids, order):
+def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
     # Load the descriptions of the images in the set and append start/end tokens
     with open(filename, "rb") as f:
         proof_data = pickle.load(f)
@@ -92,6 +96,13 @@ def load_clean_descriptions(filename, ids, order):
                     axioms = sorted(axioms)
                 elif order is AxiomOrder.LENGTH:
                     axioms = sorted(axioms, key=len)
+                elif order is AxiomOrder.RANDOM:
+                    # Randomly mutates the list
+                    random.shuffle(axioms)
+                elif order is AxiomOrder.FREQUENCY:
+                    if axiom_frequency is None:
+                        raise ValueError("Order is set to frequency, but no frequency list is supplied")
+                    axioms = sorted(axioms, key=lambda x: -axiom_frequency[x])
                 else:
                     raise ValueError(f"No ordering function implemented for order: '{order}'")
 
@@ -126,11 +137,12 @@ def get_dataset(
     max_cap_len=None,
     batch_size=config.BATCH_SIZE,
     order=None,
+    axiom_frequency=None,
 ):
 
     # Load the necessary data for the id set
     ids = load_ids(image_ids)
-    captions = load_clean_descriptions(image_descriptions, ids, order=order)
+    captions = load_clean_descriptions(image_descriptions, ids, order=order, axiom_frequency=axiom_frequency)
     img_features = load_photo_features(image_features, ids)
 
     # Compute the longest caption if value not provided
@@ -159,19 +171,51 @@ def get_dataset(
     return dataset, max_cap_len
 
 
+def compute_axiom_frequency(proof_data_file, ids_file):
+    with open(proof_data_file, "rb") as f:
+        proof_data = pickle.load(f)
+
+    ids = load_ids(ids_file)
+
+    # Extract all the relevant axioms
+    axioms = []
+    for prob_id, data in proof_data.items():
+        if "version" in data:
+            prob_id = data["version"]
+
+        # Skip problems not in the ID set
+        if prob_id in ids:
+            axioms.extend(data["axioms"])
+
+    # Count the occurence of the axioms and return the result
+    counts = Counter(axioms)
+    return counts
+
+
 def main():
 
     # Set order for testing purposes
     # order = None
     # order = 'lexicographic'
-    order = AxiomOrder.LENGTH
+    order = AxiomOrder.FREQUENCY
 
     # Function for testing the dataset creation
     tokenizer_path = os.path.join(os.path.dirname(config.train_id_file), "tokenizer.json")
     tokenizer, _ = get_tokenizer(tokenizer_path)
 
+    # Test with validation file as we want this to run quicker
+    if order is AxiomOrder.FREQUENCY:
+        axiom_frequency = compute_axiom_frequency(config.proof_data, config.val_id_file)
+    else:
+        axiom_frequency = None
+
     train_data, max_len_train = get_dataset(
-        config.train_id_file, config.proof_data, config.problem_features, tokenizer=tokenizer, order=order
+        config.val_id_file,
+        config.proof_data,
+        config.problem_features,
+        tokenizer=tokenizer,
+        order=order,
+        axiom_frequency=axiom_frequency,
     )
 
     test_data, max_len_test = get_dataset(
@@ -181,6 +225,7 @@ def main():
         tokenizer=tokenizer,
         max_cap_len=max_len_train,
         order=order,
+        axiom_frequency=axiom_frequency,
     )
 
     print(train_data)

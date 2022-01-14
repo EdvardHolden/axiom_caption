@@ -284,7 +284,10 @@ class MergeInjectModel(tf.keras.Model):
 
         # Add attention
         if model_params.attention:
-            print("Warning: Attention functionality not fully implemented for the merge architecture", file=sys.stderr)
+            print(
+                "Warning: Attention functionality not fully implemented for the merge architecture",
+                file=sys.stderr,
+            )
             self.attention = BahdanauAttention(model_params.no_rnn_units)
         else:
             self.attention = None
@@ -305,7 +308,9 @@ class MergeInjectModel(tf.keras.Model):
         input_image, input_word, hidden_state = inputs
 
         image_emb = self.image_encoder(input_image, training=training)
-        word_emb = self.word_encoder(input_word, training=training) # TODO maybe this should return the state as well?
+        word_emb = self.word_encoder(
+            input_word, training=training
+        )  # TODO maybe this should return the state as well?
 
         # Perform attention on the image embedding
         if self.attention is not None:
@@ -384,6 +389,10 @@ def _axiom_order_string_to_type(string_value):
         return AxiomOrder.LEXICOGRAPHIC
     elif string_value == "length":
         return AxiomOrder.LENGTH
+    elif string_value == "random":
+        return AxiomOrder.RANDOM
+    elif string_value == "frequency":
+        return AxiomOrder.FREQUENY
     else:
         raise ValueError(f"No string mapping between '{string_value}' and enum in AxiomOrder")
 
