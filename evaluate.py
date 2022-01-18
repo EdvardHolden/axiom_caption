@@ -151,6 +151,7 @@ def jaccard_score_np(actual, predicted, avg=True):
         return scores
 
 
+# @tf.function
 def generate_step(
     tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k
 ):
@@ -170,7 +171,7 @@ def generate_step(
     # Run the model until we reach the max length or the end token
     for i in range(max_len):
         # Predict probabilities
-        pred, hidden = model([img_tensor, dec_input, hidden])
+        pred, hidden = model([img_tensor, dec_input, hidden], training=False)
 
         # Sample the next token(s)
         if sampler == "greedy":
@@ -211,6 +212,7 @@ def evaluate_model(
             tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k
         )
 
+        print(yhat)
         # Extract the string value from the tensor, remove start/end tokens,
         # convert to utf-8 and make into array
         caption = caption.numpy()[0].split(bytes(config.TOKEN_DELIMITER, "utf-8"))[1:-1]
@@ -226,15 +228,19 @@ def evaluate_model(
     # Calculate BLEU score
     bleu = corpus_bleu(actual, predicted)
     # Compute the set coverage
-    coverage = coverage_score(actual, predicted)
+    coverage = coverage_score_np(actual, predicted)
+    jaccard = jaccard_score_np(actual, predicted)
+    avg_size = np.mean([len(p) for p in predicted])
 
-    return {"bleu": bleu, "coverage": coverage}
+    return {"bleu": bleu, "coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
 
 
 def main():
 
     # Get the arguments
     args = parser.parse_args()
+
+    # TODO state the sampler!
 
     # Get pre-trained tokenizer
     tokenizer_path = os.path.join(os.path.dirname(args.problem_ids), "tokenizer.json")
@@ -248,7 +254,7 @@ def main():
     print("Max caption length: ", max_len)
 
     # Get the axiom ordering from the model parameter file
-    model_params = get_model_params("experiments/base_model")
+    model_params = get_model_params(args.model_dir)
     axiom_order = model_params.axiom_order
     print("Using axiom order: ", axiom_order)
 
