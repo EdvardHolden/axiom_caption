@@ -20,43 +20,54 @@ np.random.seed(42)
 tf.random.set_seed(42)
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--model_dir", default="experiments/base_model", help="Directory containing params.json")
-parser.add_argument("--problem_ids", default=config.test_id_file, help="File containing IDs for evaluation")
+def get_evaluate_parser(add_help=True):
 
-parser.add_argument(
-    "--problem_features", default=config.problem_features, help="File containing the image features"
-)
-parser.add_argument("--proof_data", default=config.proof_data, help="File containing the image descriptions")
+    # Get the parser, need to remove 'help' if being used as a parent parser
+    parser = argparse.ArgumentParser(add_help=add_help)
+    parser.add_argument(
+        "--model_dir", default="experiments/base_model", help="Directory containing params.json"
+    )
+    parser.add_argument(
+        "--problem_ids", default=config.test_id_file, help="File containing IDs for evaluation"
+    )
 
-# Sampling options
-parser.add_argument(
-    "--sampler",
-    default="greedy",
-    choices=["greedy", "temperature", "top_k"],
-    help="The method used to sample the next word in the prediction",
-)
-parser.add_argument(
-    "--no_samples",
-    default=1,
-    type=int,
-    help="The number of samples to draw at each iteration (only one is passed to the model)",
-)
-parser.add_argument(
-    "--sampler_temperature",
-    default=1.0,
-    type=float,
-    help="The temperature when using the temperature sampler (0, 1]",
-)
-parser.add_argument(
-    "--sampler_top_k",
-    default=10,
-    type=int,
-    help="The top k predictions to use when recomputing the prediction distributions",
-)
+    parser.add_argument(
+        "--problem_features", default=config.problem_features, help="File containing the image features"
+    )
+    parser.add_argument(
+        "--proof_data", default=config.proof_data, help="File containing the image descriptions"
+    )
 
-parser.add_argument("--max_length", default=None, type=int, help="The maximum length of the predictions")
-parser.add_argument("-v", "--verbose", action="count", default=0)
+    # Sampling options
+    parser.add_argument(
+        "--sampler",
+        default="greedy",
+        choices=["greedy", "temperature", "top_k"],
+        help="The method used to sample the next word in the prediction",
+    )
+    parser.add_argument(
+        "--no_samples",
+        default=1,
+        type=int,
+        help="The number of samples to draw at each iteration (only one is passed to the model)",
+    )
+    parser.add_argument(
+        "--sampler_temperature",
+        default=1.0,
+        type=float,
+        help="The temperature when using the temperature sampler (0, 1]",
+    )
+    parser.add_argument(
+        "--sampler_top_k",
+        default=10,
+        type=int,
+        help="The top k predictions to use when recomputing the prediction distributions",
+    )
+
+    parser.add_argument("--max_length", default=22, type=int, help="The maximum length of the predictions")
+    parser.add_argument("-v", "--verbose", action="count", default=0)
+
+    return parser
 
 
 # TODO maybe add some BeamSearch in here?
@@ -236,41 +247,53 @@ def evaluate_model(
     return {"coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
 
 
-def main():
+def main(
+    model_dir,
+    proof_data,
+    problem_features,
+    problem_ids,
+    max_length,
+    sampler,
+    no_samples,
+    sampler_temperature,
+    sampler_top_k,
+    verbose,
+):
 
     # Get the arguments
-    args = parser.parse_args()
-    print("Sampler configuration: ", [(arg, args.__dict__[arg]) for arg in args.__dict__ if "sampl" in arg])
+    print(
+        f"Sampler configuration: (sampler: {sampler}) (no_samples: {no_samples}) (sampler_temperature: {sampler_temperature}) (sampler_top_k: {sampler_top_k})"
+    )
 
     # Get pre-trained tokenizer
-    tokenizer_path = os.path.join(os.path.dirname(args.problem_ids), "tokenizer.json")
+    tokenizer_path = os.path.join(os.path.dirname(problem_ids), "tokenizer.json")
     tokenizer, _ = get_tokenizer(tokenizer_path, verbose=1)
 
     # If maximum length is not provided, we compute it based on the training set in config
-    if args.max_length is None:
-        max_len = compute_max_length(config.train_id_file, args.proof_data)
+    if max_length is None:
+        max_len = compute_max_length(config.train_id_file, proof_data)
     else:
-        max_len = args.max_length
+        max_len = max_length
     print("Max caption length: ", max_len)
 
     # Get the axiom ordering from the model parameter file
-    model_params = get_model_params(args.model_dir)
+    model_params = get_model_params(model_dir)
     axiom_order = model_params.axiom_order
     print("Using axiom order: ", axiom_order)
 
     # Get the test dataset with batch 1 as we need to treat each caption separately
     # Also, we want the raw text so not providing a tokenizer
     test_data, _ = get_dataset(
-        args.problem_ids,
-        args.proof_data,
-        args.problem_features,
+        problem_ids,
+        proof_data,
+        problem_features,
         batch_size=1,
         order=axiom_order,
         tokenizer=tokenizer,
     )
 
     # Load model
-    model_dir = os.path.join(args.model_dir, "ckpt_dir")
+    model_dir = os.path.join(model_dir, "ckpt_dir")
     loaded_model = load_model(model_dir)
     loaded_model.no_rnn_units = model_params.no_rnn_units
 
@@ -280,16 +303,30 @@ def main():
         loaded_model,
         test_data,
         max_len,
-        args.sampler,
-        args.no_samples,
-        args.sampler_temperature,
-        args.sampler_top_k,
-        verbose=args.verbose,
+        sampler,
+        no_samples,
+        sampler_temperature,
+        sampler_top_k,
+        verbose=verbose,
     )
     print("# Scores ")
     for score in sorted(scores):
         print(f"{score:<8}: {scores[score]:.2f}")
 
+    return scores
+
+
+def run_main():
+
+    # Get the parser and parse the arguments
+    parser = get_evaluate_parser()
+    args = parser.parse_args()
+
+    # Run main with the arguments
+    main(**vars(args))
+
 
 if __name__ == "__main__":
-    main()
+    run_main()
+    # main()
+    print("# Finished")
