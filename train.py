@@ -67,7 +67,8 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     model.reset_states()
 
     # Initialise the hidden shape of the model - makes the above lines redundant
-    hidden = model.word_decoder.reset_state(batch_size=target.shape[0])
+    # hidden = model.word_decoder.reset_state(batch_size=target.shape[0])
+    hidden = tf.zeros((1, model.no_rnn_units))
 
     # Initialise input vector with the start token
     dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * target.shape[0], 1)

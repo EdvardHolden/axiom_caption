@@ -10,6 +10,7 @@ from keras.layers import Dropout
 from keras.layers import RepeatVector
 from keras.layers import TimeDistributed
 from keras.layers import Embedding
+from keras.layers import Flatten
 from keras.layers import Normalization
 from keras.layers import BatchNormalization
 from keras.layers.merge import concatenate
@@ -167,11 +168,67 @@ class WordDecoder(layers.Layer):
         return Model(inputs=x, outputs=self.call(x))
 
 
+class DenseModel(tf.keras.Model):
+    def __init__(self, max_length, vocab_size, model_params, name="dense", **kwargs):
+        super(DenseModel, self).__init__(name=name, **kwargs)
+        self.max_length = max_length
+        self.vocab_size = vocab_size
+        self.no_rnn_units = model_params.no_rnn_units
+
+        self.axiom_order = model_params.axiom_order
+
+        self.image_encoder = ImageEncoder(
+            model_params.no_dense_units,
+            model_params.dropout_rate,
+            model_params.normalize,
+            model_params.batch_norm,
+        )
+
+        self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
+
+        # Define the dense model
+        self.fc = Dense(model_params.no_dense_units, activation="relu")
+        self.dropout = Dropout(model_params.dropout_rate)
+        self.out = Dense(vocab_size)
+
+        self.flatten = Flatten()
+
+    def call(self, inputs, training=None):
+        input_image, input_word, hidden_state = inputs
+
+        # Compute image embedding
+        image_emb = self.image_encoder(input_image, training=training)
+        # Pass word through embedding layer
+        # word_emb = tf.squeeze( self.word_embedder(input_word, training=training))  # TODO maybe use flatten instead?
+        word_emb = self.word_embedder(input_word, training=training)
+        # Flatten the embedding as we are not using LSTM
+        word_emb = self.flatten(word_emb)
+
+        x = concatenate([image_emb, word_emb])
+
+        # Pass through the dense layer
+        x = self.fc(x, training=training)
+        x = self.dropout(x, training=training)
+        output = self.out(x)
+
+        return output, output
+
+    def get_config(self):
+        config = super(DenseModel, self).get_config()
+        config.update({"max_length": self.max_length, "vocab_size": self.vocab_size, "name": self.name})
+        return config
+
+    def build_graph(self):
+        x = [Input(shape=(400,)), Input(shape=(1,)), Input(shape=(2,))]
+        return Model(inputs=x, outputs=self.call(x))
+
+
 class InjectModel(tf.keras.Model):
     def __init__(self, max_length, vocab_size, model_params, name="inject", **kwargs):
         super(InjectModel, self).__init__(name=name, **kwargs)
         self.max_length = max_length
         self.vocab_size = vocab_size
+        self.no_rnn_units = model_params.no_rnn_units
 
         self.axiom_order = model_params.axiom_order
 
@@ -224,7 +281,7 @@ class InjectModel(tf.keras.Model):
         return config
 
     def build_graph(self):
-        x = [Input(shape=(400,)), Input(shape=(1,))]
+        x = [Input(shape=(400,)), Input(shape=(1,)), Input(shape=(self.no_rnn_units,))]
         return Model(inputs=x, outputs=self.call(x))
 
 
@@ -264,6 +321,7 @@ class MergeInjectModel(tf.keras.Model):
         super(MergeInjectModel, self).__init__(name=name, **kwargs)
         self.max_length = max_length
         self.vocab_size = vocab_size
+        self.no_rnn_units = model_params.no_rnn_units
 
         self.axiom_order = model_params.axiom_order
 
@@ -332,7 +390,11 @@ class MergeInjectModel(tf.keras.Model):
     def build_graph(self):
         # TODO this does not show the submodels - needs more work
         # https://stackoverflow.com/questions/61427583/how-do-i-plot-a-keras-tensorflow-subclassing-api-model
-        x = [Input(shape=(400,)), Input(shape=(1,))]
+        x = [
+            Input(shape=(400,)),
+            Input(shape=(1,)),
+            Input(shape=(self.no_rnn_units,)),
+        ]
         return Model(inputs=x, outputs=self.call(x))
 
 
@@ -341,6 +403,8 @@ def get_model(model_type, max_length, vocab_size, params):
         model = MergeInjectModel(max_length, vocab_size, params)
     elif model_type == "inject":
         model = InjectModel(max_length, vocab_size, params)
+    elif model_type == "dense":
+        model = DenseModel(max_length, vocab_size, params)
     else:
         print("Unrecognised model type: ", model_type, file=sys.stderr)
         sys.exit(1)
@@ -409,8 +473,14 @@ if __name__ == "__main__":
     print(m)
     print(m.build_graph().summary())
     print()
+
     print("# # # Inject # # #")
     m = get_model("inject", 123, 20, params)
+    print(m)
+    print(m.build_graph().summary())
+
+    print("# # # Dense # # #")
+    m = get_model("dense", 123, 20, params)
     print(m)
     print(m.build_graph().summary())
 
