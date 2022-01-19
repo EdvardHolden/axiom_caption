@@ -1,18 +1,23 @@
 import config
 import argparse
-from nltk.translate.bleu_score import corpus_bleu
 import os
 from itertools import starmap
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 from model import get_model_params
+import random
 
 from dataset import get_dataset, get_tokenizer, compute_max_length
 from model import load_model
 
 
 from tensorflow.sets import size, intersection, union
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+random.seed(42)
+np.random.seed(42)
+tf.random.set_seed(42)
 
 
 parser = argparse.ArgumentParser()
@@ -35,7 +40,7 @@ parser.add_argument(
     "--no_samples",
     default=1,
     type=int,
-    help="The number of samples to draw at each iteration (only on is passed to the model)",
+    help="The number of samples to draw at each iteration (only one is passed to the model)",
 )
 parser.add_argument(
     "--sampler_temperature",
@@ -157,7 +162,7 @@ def generate_step(
 ):
 
     # List for storing predicted sequence
-    result = []
+    result = set()
 
     # Reset LSTM states between each batch
     model.reset_states()
@@ -183,13 +188,12 @@ def generate_step(
         else:
             raise ValueError(f"Unrecognised sampler '{sampler}'")
 
-        # Return sequence if we predicted the end token
-        if tokenizer.index_word[predictions[0]] == config.TOKEN_END:
-            return result
-
         # Add predicted IDs to the result
-        for pred_id in predictions:
-            result.append(tokenizer.index_word[pred_id])
+        result.update(predictions)
+
+        # Return sequence if we predicted the end token
+        if tokenizer.index_word[predictions[0]] == tokenizer.word_index[config.TOKEN_END]:
+            return result  # FIXME Unclear whether this is good or not
 
         # Set the top predicted word as the next model input
         dec_input = tf.expand_dims([predictions[0]], 0)
@@ -202,6 +206,8 @@ def evaluate_model(
     tokenizer, model, test_data, max_len, sampler, no_samples, sampler_temperature, sampler_top_k, verbose=0
 ):
 
+    # Create lambda expression for filtering start, end, and pad tokens
+    token_filter = lambda x: x != 0 and x != 2 and x != 3
     # Initialise results
     actual, predicted = list(), list()
 
@@ -212,39 +218,33 @@ def evaluate_model(
             tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k
         )
 
-        print(yhat)
-        # Extract the string value from the tensor, remove start/end tokens,
-        # convert to utf-8 and make into array
-        caption = caption.numpy()[0].split(bytes(config.TOKEN_DELIMITER, "utf-8"))[1:-1]
-
-        # Store the actual token
-        actual.append(caption)
-        predicted.append(yhat)
+        # Extract the string value from the tensor, remove start, end and pad tokens,
+        actual.append(list(filter(token_filter, caption[0].numpy())))
+        predicted.append(list(filter(token_filter, yhat)))
 
         if verbose:
             print("Actual:    %s" % " ".join(caption))
             print("Predicted: %s" % " ".join(yhat))
 
-    # Calculate BLEU score
-    bleu = corpus_bleu(actual, predicted)
-    # Compute the set coverage
+    # Compute decoding metrics
     coverage = coverage_score_np(actual, predicted)
     jaccard = jaccard_score_np(actual, predicted)
-    avg_size = np.mean([len(p) for p in predicted])
+    avg_size = np.mean([len(set(p)) for p in predicted])
 
-    return {"bleu": bleu, "coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
+    # Need to filter start, end and pad
+
+    return {"coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
 
 
 def main():
 
     # Get the arguments
     args = parser.parse_args()
-
-    # TODO state the sampler!
+    print("Sampler configuration: ", [(arg, args.__dict__[arg]) for arg in args.__dict__ if "sampl" in arg])
 
     # Get pre-trained tokenizer
     tokenizer_path = os.path.join(os.path.dirname(args.problem_ids), "tokenizer.json")
-    tokenizer, _ = get_tokenizer(tokenizer_path)
+    tokenizer, _ = get_tokenizer(tokenizer_path, verbose=1)
 
     # If maximum length is not provided, we compute it based on the training set in config
     if args.max_length is None:
@@ -261,7 +261,12 @@ def main():
     # Get the test dataset with batch 1 as we need to treat each caption separately
     # Also, we want the raw text so not providing a tokenizer
     test_data, _ = get_dataset(
-        args.problem_ids, args.proof_data, args.problem_features, batch_size=1, order=axiom_order
+        args.problem_ids,
+        args.proof_data,
+        args.problem_features,
+        batch_size=1,
+        order=axiom_order,
+        tokenizer=tokenizer,
     )
 
     # Load model
