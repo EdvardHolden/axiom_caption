@@ -23,6 +23,7 @@ TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 
 
 # TODO lets add some modes!
+# TODO need to add caption_sine -> What happens if I include clausified + not into the clausifier?
 # Maybe set the model decoding step as a static option?
 # mode = {clean, sine, caption, caption_sine}
 
@@ -31,7 +32,7 @@ parser.add_argument(
     "--mode",
     # default="clean",
     default="caption",
-    choices=["clean", "sine", "caption"],
+    choices=["clean", "sine", "caption", "caption_sine"],
     help="The mode used to generate the modified DeepMath problems",
 )
 parser.add_argument("--sine_sd", default=None)
@@ -164,10 +165,38 @@ def compute_caption(tokenizer, model, problem_feature):
     return axiom_caption
 
 
+def get_result_dir(result_dir, mode, sine_st, sine_sd):
+    if mode == "clean":
+        result_dir = os.path.join(result_dir, "clean")
+    elif mode == "sine":
+        result_dir = os.path.join(result_dir, f"sine_{sine_st}_{sine_sd}")
+    elif mode == "caption":
+        result_dir = os.path.join(result_dir, "caption")
+    elif mode == "caption_sine":
+        result_dir = os.path.join(result_dir, f"caption_sine_{sine_st}_{sine_sd}")
+    else:
+        raise ValueError(f'Generative mode "{mode}" not implemented')
+
+    # Create direcotry if not exist
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
+
+    return result_dir
+
+
 def main():
 
     # Parse input arguments
     args = parser.parse_args()
+
+    # Check if SiNE is set correctly
+    if args.mode in ["sine", "caption_sine"]:
+        if (
+            (args.sine_sd is not None and args.sine_st is None)
+            or (args.sine_sd is None and args.sine_st is not None)
+            or (args.sine_sd is None and args.sine_st is None)
+        ):
+            raise ValueError("Both sd and st must be set for the SiNE mode")
 
     # Get path to all problems
     problem_paths = glob.glob(PROBLEM_PATH + "*")
@@ -175,17 +204,10 @@ def main():
     print(f"Number of problems {len(problem_paths)}")
 
     # Set result dir based on the mode
-    if args.mode == "clean":
-        result_dir = os.path.join(args.result_dir, "clean")
-    elif args.mode == "sine":
-        if (args.sine_sd is not None and args.sine_st is None) or (
-            args.sine_sd is None and args.sine_st is not None
-        ):
-            raise ValueError("Both sd and st must be set for the SiNE mode")
-        result_dir = os.path.join(args.result_dir, f"sine_{args.sine_st}_{args.sine_sd}")
-    elif args.mode == "caption":
-        result_dir = os.path.join(args.result_dir, "caption")
+    result_dir = get_result_dir(args.result_dir, args.mode, args.sine_st, args.sine_sd)
 
+    # If captioning, load all the required resources
+    if args.mode in ["caption", "caption_sine"]:
         problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
 
         # Load the tokenizer
@@ -198,13 +220,6 @@ def main():
         model = load_model(model_dir)
         model.no_rnn_units = model_params.no_rnn_units
 
-    else:
-        raise ValueError(f'Generative mode "{args.mode}" not implemented')
-
-    # Create direcotry if not exist
-    if not os.path.exists(result_dir):
-        os.makedirs(result_dir)
-
     print(f"Writing problems to: {result_dir}")
 
     # For each problem
@@ -212,35 +227,44 @@ def main():
         prob = load_and_process_problem(prob_path)
 
         # Maybe use flag instead?
-        if args.mode == "caption":
-            # TODO should wrap this in a function?
+        if args.mode == "clean" or args.mode == "sine":
+            # Run clean/sine mode and clausify the problem
+            clausified_problem = clausify(prob, sine_st=args.sine_st, sine_sd=args.sine_sd)
+
+        elif args.mode in ["caption", "caption_sine"]:
 
             # Split the problem into initial axioms and conjecture
             conjecture, initial_axioms = prob[0], prob[1:]
             # Set the current problem to be the conjecture
-            prob = set([conjecture])
+            new_problem = set([conjecture])
 
             # Extract axioms that are found in proof but cannot be predicted
             rare_axioms = extract_rare_axioms(tokenizer, initial_axioms)
             # Add the rare axioms to the problem
-            prob.update(rare_axioms)
+            new_problem.update(rare_axioms)
 
             # Use the model to generate the axioms required for the proof
             axiom_caption = compute_caption(tokenizer, model, problem_features[Path(prob_path).stem])
-
             # Add the caption to the problem
-            prob.update(axiom_caption)
+            new_problem.update(axiom_caption)
 
             # Clausify the problem
-            prob = clausify(prob, sine_st=None, sine_sd=None)
+            clausified_problem = clausify(new_problem, sine_st=None, sine_sd=None)
+
+            # Check if we should also include clauses from sine
+            if args.mode == "caption_sine":
+                # Clausify with sine
+                sine_problem = clausify(new_problem, sine_st=args.sine_st, sine_sd=args.sine_sd)
+                # Combine the clausified axioms with the sine output
+                clausified_problem += b"\n" + sine_problem
         else:
-            # Run clean/sine mode and clausify the problem
-            prob = clausify(prob, sine_st=args.sine_st, sine_sd=args.sine_sd)
+            raise ValueError(f"Unrecognised mode '{args.mode}'")
 
         # Save to folder
-        save_problem(result_dir, Path(prob_path).stem, prob)
+        save_problem(result_dir, Path(prob_path).stem, clausified_problem)
 
 
 if __name__ == "__main__":
 
     main()
+    print("# Finished")
