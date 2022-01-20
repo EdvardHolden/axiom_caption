@@ -21,7 +21,11 @@ parser.add_argument(
 def create_tokenizer(descriptions, vocab_word_limit):
     lines = list(descriptions.values())
     tokenizer = Tokenizer(
-        num_words=vocab_word_limit, filters="", split=config.TOKEN_DELIMITER, oov_token=config.TOKEN_OOV
+        lower=False,
+        num_words=vocab_word_limit,
+        filters="",
+        split=config.TOKEN_DELIMITER,
+        oov_token=config.TOKEN_OOV,
     )
     tokenizer.fit_on_texts(lines)
     return tokenizer
@@ -39,7 +43,7 @@ def main():
     tokenizer.word_index[config.TOKEN_PAD] = 0
     tokenizer.index_word[0] = config.TOKEN_PAD
 
-    vocab_size = tokenizer.get_config()['num_words']
+    vocab_size = tokenizer.get_config()["num_words"]
     if vocab_size is None:
         vocab_size = len(tokenizer.word_index)
     print(f"Vocabulary Size: {vocab_size}")
