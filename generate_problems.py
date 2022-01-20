@@ -40,6 +40,17 @@ parser.add_argument(
     "--result_dir", default="generated_problems/", help="Base folder for writing generated problems"
 )
 
+parser.add_argument(
+    "--feature_path",
+    default="data/embeddings/deepmath/graph_features_deepmath_all.pkl",
+    help="Path to the problem embeddings",
+)
+parser.add_argument(
+    "--model_dir",
+    default="experiments/hyperparam/initial/attention_False_axiom_order_length_batch_norm_False_dropout_rate_0.1_embedding_size_200_learning_rate_0.001_model_type_merge_inject_no_dense_units_32_no_rnn_units_32_normalize_True_rnn_type_lstm/",
+    help="Path to the model used in the captioning modes",
+)
+
 
 @atexit.register
 def clean_tmp_folder():
@@ -126,6 +137,33 @@ def extract_rare_axioms(tokenizer, axioms):
     return rare
 
 
+def compute_caption(tokenizer, model, problem_feature):
+
+    # Run the model to get the predicted tokens
+    # axiom_caption = generate_step( tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k)
+    axiom_caption = generate_step(
+        tokenizer,
+        model,
+        22,
+        [problem_feature],
+        "greedy",
+        1,
+        None,
+        None,
+    )
+    # Remove non-axiom tokens
+    axiom_caption = filter(lambda x: x != 0 and x != 1 and x != 2 and x != 3, axiom_caption)
+    # If this is terminated to empty, set captions as the empty set
+    if len(list(axiom_caption)) > 0:
+        # Tokenize the output
+        axiom_caption = tokenizer.sequences_to_texts([axiom_caption])
+    else:
+        # No useful output, set to the empty set
+        axiom_caption = set()
+
+    return axiom_caption
+
+
 def main():
 
     # Parse input arguments
@@ -148,19 +186,15 @@ def main():
     elif args.mode == "caption":
         result_dir = os.path.join(args.result_dir, "caption")
 
-        problem_features = load_photo_features(
-            "data/embeddings/deepmath/graph_features_deepmath_all.pkl", [Path(p).stem for p in problem_paths]
-        )  # FIXME need to supply this path in argparse
+        problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
 
         # Load the tokenizer
         tokenizer, _ = get_tokenizer("data/deepmath/tokenizer.json")
 
         # Load model
-        model_dir = "experiments/hyperparam/initial/attention_False_axiom_order_length_batch_norm_False_dropout_rate_0.1_embedding_size_200_learning_rate_0.001_model_type_merge_inject_no_dense_units_32_no_rnn_units_32_normalize_True_rnn_type_lstm/"  # FIXME supply
-
         print("Loading the model")
-        model_params = get_model_params(model_dir)
-        model_dir = os.path.join(model_dir, "ckpt_dir")
+        model_params = get_model_params(args.model_dir)
+        model_dir = os.path.join(args.model_dir, "ckpt_dir")
         model = load_model(model_dir)
         model.no_rnn_units = model_params.no_rnn_units
 
@@ -177,7 +211,6 @@ def main():
     for prob_path in problem_paths:
         prob = load_and_process_problem(prob_path)
 
-        # FIXME
         # Maybe use flag instead?
         if args.mode == "caption":
             # TODO should wrap this in a function?
@@ -193,37 +226,13 @@ def main():
             prob.update(rare_axioms)
 
             # Use the model to generate the axioms required for the proof
-            # TODO lets add some additions here later
-            # axiom_caption = generate_step( tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k)
-            axiom_caption = generate_step(
-                tokenizer,
-                model,
-                22,
-                [problem_features[Path(prob_path).stem]],
-                "greedy",
-                1,
-                None,
-                None,
-            )
-            # Remove non-axiom tokens
-            axiom_caption = filter(lambda x: x != 0 and x != 1 and x != 2 and x != 3, axiom_caption)
-            # If this is terminated to empty, set captions as the empty set
-            if len(list(axiom_caption)) > 0:
-                # Tokenize the output
-                axiom_caption = tokenizer.sequences_to_texts([axiom_caption])
-            else:
-                # No useful output, set to the empty set
-                axiom_caption = set()
+            axiom_caption = compute_caption(tokenizer, model, problem_features[Path(prob_path).stem])
 
             # Add the caption to the problem
             prob.update(axiom_caption)
 
-            print("Full axiom set ", prob)
-            print()
-
             # Clausify the problem
             prob = clausify(prob, sine_st=None, sine_sd=None)
-            print(prob)
         else:
             # Run clean/sine mode and clausify the problem
             prob = clausify(prob, sine_st=args.sine_st, sine_sd=args.sine_sd)
