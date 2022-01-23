@@ -67,7 +67,7 @@ def main():
     args = parser.parse_args()
 
     # Get all embeddings in the embedding folder
-    embeddings = glob.glob(os.path.join(args.embedding_dir, "*.pkl"))
+    embeddings = sorted(glob.glob(os.path.join(args.embedding_dir, "*.pkl")))
     if len(embeddings) == 0:
         print("Warning: Could not find any embeddings in the provided directory")
 

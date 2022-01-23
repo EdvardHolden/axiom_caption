@@ -5,10 +5,10 @@ from itertools import starmap
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
-from model import get_model_params
 import random
 
 from dataset import get_dataset, get_tokenizer, compute_max_length
+from model import get_model_params
 from model import load_model
 
 
@@ -203,7 +203,9 @@ def generate_step(
         result.update(predictions)
 
         # Return sequence if we predicted the end token
-        if tokenizer.index_word[predictions[0]] == tokenizer.word_index[config.TOKEN_END]:
+        if (
+            tokenizer.index_word[predictions[0]] == tokenizer.word_index[config.TOKEN_END]
+        ):  # TODO add flag here
             return result  # FIXME Unclear whether this is good or not
 
         # Set the top predicted word as the next model input
