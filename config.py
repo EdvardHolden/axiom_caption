@@ -24,14 +24,18 @@ COMPETITION_RESULTS = {
 DEVELOPING = True
 # DEVELOPING = False
 
-BATCH_SIZE = 32
+# BATCH_SIZE = 128
+BATCH_SIZE = 256
 BUFFER_SIZE = 1000
-EPOCHS = 60
-ES_PATIENCE = 15
+EPOCHS = 80
+# EPOCHS = 2
+# ES_PATIENCE = 15
+ES_PATIENCE = 5
 
 
-# train_id_file = "data/deepmath/train.txt"
-train_id_file = "data/deepmath/val.txt"
+train_id_file = "data/deepmath/train.txt"
+# train_id_file = "data/deepmath/val.txt"
+# train_id_file = "data/deepmath/test.txt"
 test_id_file = "data/deepmath/test.txt"
 val_id_file = "data/deepmath/val.txt"
 
