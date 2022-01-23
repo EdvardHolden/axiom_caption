@@ -42,6 +42,12 @@ def get_embedding_exp_parser():
         default="data/embeddings",
         help="The directory containing the embeddings to use for this experiment",
     )
+    parser.add_argument(
+        "--rerun",
+        default=False,
+        action="store_true",
+        help="Force rerunning of a config even if the job dir already exists",
+    )
 
     return parser, train_parameters
 
@@ -67,7 +73,7 @@ def main():
     args = parser.parse_args()
 
     # Get all embeddings in the embedding folder
-    embeddings = sorted(glob.glob(os.path.join(args.embedding_dir, "*.pkl")))
+    embeddings = sorted(glob.glob(os.path.join(args.embedding_dir, "*.pkl")), reverse=True)
     if len(embeddings) == 0:
         print("Warning: Could not find any embeddings in the provided directory")
 
@@ -76,13 +82,25 @@ def main():
         model_params = json.load(f)
 
     # For each embedding
+    no_skipped_runs = 0
     for emb in tqdm(embeddings):
         print(f"Running experiment for: {emb}")
+
+        # If we are not forcing reruns and the jobdir already exists, we skip this configuration
+        if not args.rerun and os.path.exists(os.path.join(args.experiment_dir, Path(emb).stem)):
+            no_skipped_runs += 1
+            print(f"Skipping rerun of: {Path(emb).stem}")
+            continue
+
         # Create directory for placing the results and storing the parameters of the model
         job_dir = utils.create_job_dir(args.experiment_dir, Path(emb).stem, params=model_params)
 
         # Run the job on the directory and embedding
         launch_training_job_embedding(job_dir, emb, args, training_parameters)
+
+    # Report the number of skipped runs if any
+    if no_skipped_runs > 0:
+        print(f"Skipped a total of {no_skipped_runs} job runs")
 
     print("# Finito")
 
