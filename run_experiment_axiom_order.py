@@ -62,7 +62,8 @@ def launch_training_job_embedding(job_dir, args, training_parameters):
     for param in training_parameters:
         cmd += f" --{param} {args.__dict__[param]} "
 
-    check_call(cmd, shell=True, stdout=subprocess.DEVNULL)
+    # check_call(cmd, shell=True, stdout=subprocess.DEVNULL)
+    check_call(cmd, shell=True, stdout=None)
 
 
 def main():

@@ -65,7 +65,8 @@ def launch_training_job_embedding(job_dir, embedding, args, training_parameters)
         if param != "model_dir" and param != "problem_features":
             cmd += f" --{param} {args.__dict__[param]} "
 
-    check_call(cmd, shell=True, stdout=subprocess.DEVNULL)
+    # check_call(cmd, shell=True, stdout=subprocess.DEVNULL)
+    check_call(cmd, shell=True, stdout=None)
 
 
 def main():
