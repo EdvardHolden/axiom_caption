@@ -456,7 +456,7 @@ def _axiom_order_string_to_type(string_value):
     elif string_value == "random":
         return AxiomOrder.RANDOM
     elif string_value == "frequency":
-        return AxiomOrder.FREQUENY
+        return AxiomOrder.FREQUENCY
     else:
         raise ValueError(f"No string mapping between '{string_value}' and enum in AxiomOrder")
 
