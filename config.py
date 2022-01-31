@@ -27,10 +27,10 @@ DEVELOPING = True
 # BATCH_SIZE = 128
 BATCH_SIZE = 256
 BUFFER_SIZE = 1000
-EPOCHS = 80
+EPOCHS = 60
 # EPOCHS = 2
 # ES_PATIENCE = 15
-ES_PATIENCE = 5
+ES_PATIENCE = 3
 
 
 train_id_file = "data/deepmath/train.txt"

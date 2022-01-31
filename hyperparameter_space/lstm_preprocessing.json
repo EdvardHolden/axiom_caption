@@ -1,0 +1,13 @@
+{
+  "model_type": ["inject"],
+  "axiom_order": ["length"],
+  "attention": [false],
+  "normalize": [true, false],
+  "batch_norm": [false],
+  "rnn_type": ["lstm"],
+  "no_rnn_units": [32],
+  "embedding_size": [200],
+  "no_dense_units": [64],
+  "dropout_rate": [0, 0.1, 0.2, 0.3, 0.4],
+  "learning_rate": [0.1, 0.01, 0.001, 0.0001]
+}
