@@ -228,6 +228,10 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
                 )
                 break
 
+    # Add a final metric evaluation that ensures no drop out is ised (with training off)
+    train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=False, epoch=epoch)
+    metrics = add_new_metrics(metrics, train_epoch_metrics, prefix="train_")
+
     # Return training history
     return metrics
 
