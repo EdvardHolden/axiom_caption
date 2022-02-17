@@ -21,12 +21,6 @@ CLAUSIFIER = "~/bin/vclausify_rel"
 # Create temporary folder for storing clausifier results
 TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 
-
-# TODO lets add some modes!
-# TODO need to add caption_sine -> What happens if I include clausified + not into the clausifier?
-# Maybe set the model decoding step as a static option?
-# mode = {clean, sine, caption, caption_sine}
-
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--mode",
@@ -53,7 +47,7 @@ parser.add_argument(
 )
 
 
-# @atexit.register # TODO
+@atexit.register
 def clean_tmp_folder():
     # Clean tmp folder
     try:
@@ -145,7 +139,7 @@ def extract_rare_axioms(tokenizer, axioms):
     # For each axiom in the problem, if it occurs rarely, keep it
     for formula in axioms:
 
-        # Process the clause # TODO possible issue here as the formula gets processed in some manner (maybe only toLower)
+        # Process the clause
         formula = text_to_word_sequence(formula, tokenizer.filters, tokenizer.lower, tokenizer.split)[0]
 
         # If the clause is known to use, but not in the top words, it is positively rare
