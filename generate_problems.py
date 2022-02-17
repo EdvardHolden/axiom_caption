@@ -53,7 +53,7 @@ parser.add_argument(
 )
 
 
-@atexit.register
+# @atexit.register # TODO
 def clean_tmp_folder():
     # Clean tmp folder
     try:
@@ -86,30 +86,48 @@ def load_and_process_problem(path):
     return [conjecture] + axioms
 
 
-def clausify(prob, sine_st=None, sine_sd=None):
+def run_clausifier(prob, cmd, sine_st, sine_sd):
 
-    # Need to make file in tmp directory
+    # Build sine string
+    if sine_st is not None and sine_sd is not None:
+        cmd += f" -ss axioms -sd {sine_sd} -st {sine_st} "
+
+    # Put processed problem in a tmp file such that we can process it
     tmp_file = get_tmp_out_file()
     with open(tmp_file, "w") as f:
         f.write("\n".join(prob))
+    # Add file path to cmd
+    cmd += f" {tmp_file} "
 
-    cmd = f"{CLAUSIFIER} --mode clausify {tmp_file}"
-
-    if sine_st is not None and sine_sd is not None:
-        cmd += f" -ss axioms -sd {sine_sd} -st {sine_st} "
+    # Make subprocess
     proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
     try:
         outs, errs = proc.communicate(timeout=15)
     except subprocess.TimeoutExpired:
         proc.kill()
         outs, errs = proc.communicate()
 
-    if errs != b"" or proc.returncode != 0:
-        print(errs)
-        print(f"Clausifier finished with exitcode: {proc.returncode}")
+    if "--print_clausifier_premises" in cmd:
+        if proc.returncode != 0 and proc.returncode != 1:  # For some reason it returns 1 for this
+            print(f"Clausifier finished with exitcode: {proc.returncode}")
+    else:
+        if proc.returncode != 0 or errs != b"":
+            print(f"Clausifier finished with exitcode: {proc.returncode}")
+            print("Error: ", errs)
 
     return outs
+
+
+def clausify(prob, sine_st=None, sine_sd=None):
+
+    # Set clausifier mode and call clausifier
+    cmd = f"{CLAUSIFIER} --mode clausify "
+    return run_clausifier(prob, cmd, sine_st, sine_sd)
+
+
+def sine_process(prob, sine_st=None, sine_sd=None):
+    cmd = f"{CLAUSIFIER} --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 1 "
+    return run_clausifier(prob, cmd, sine_st, sine_sd)
 
 
 def save_problem(dir_name, prob_name, prob):
@@ -184,6 +202,18 @@ def get_result_dir(result_dir, mode, sine_st, sine_sd):
     return result_dir
 
 
+def get_problems_from_path(path=PROBLEM_PATH, limit=None):
+
+    # Get path to all problems
+    problem_paths = glob.glob(path + "*")
+    if limit is not None:
+        return_limit = min(limit, len(problem_paths))
+        problem_paths = problem_paths[:return_limit]
+    print(f"Number of problems {len(problem_paths)}")
+
+    return problem_paths
+
+
 def main():
 
     # Parse input arguments
@@ -197,14 +227,11 @@ def main():
             or (args.sine_sd is None and args.sine_st is None)
         ):
             raise ValueError("Both sd and st must be set for the SiNE mode")
-
-    # Get path to all problems
-    problem_paths = glob.glob(PROBLEM_PATH + "*")
-    problem_paths = [problem_paths[0]]  # FIXME
-    print(f"Number of problems {len(problem_paths)}")
-
     # Set result dir based on the mode
     result_dir = get_result_dir(args.result_dir, args.mode, args.sine_st, args.sine_sd)
+
+    # Get path to all problems
+    problem_paths = get_problems_from_path()
 
     # If captioning, load all the required resources
     if args.mode in ["caption", "caption_sine"]:
