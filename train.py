@@ -8,7 +8,7 @@ import random
 
 import config
 from dataset import get_dataset, get_tokenizer, compute_axiom_frequency, AxiomOrder
-from model import get_model_params, initialise_model
+from model import get_model_params, initialise_model, DenseModel
 from evaluate import jaccard_score, coverage_score
 
 # Make script deterministic to see if we can avoid the gpu issue
@@ -44,6 +44,9 @@ def get_train_parser(add_help=True):
     # Model options
     parser.add_argument("--model_dir", default=config.base_model, help="Directory containing params.json")
 
+    # FIXME this might not remove that much memory load due to the checkpoints
+    parser.add_argument("--save_model", default=False, action="store_true", help="Set if final model should be saved")
+
     return parser
 
 
@@ -67,8 +70,11 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     model.reset_states()
 
     # Initialise the hidden shape of the model - makes the above lines redundant
-    hidden = model.word_decoder.reset_state(batch_size=target.shape[0])
-    # hidden = tf.zeros((1, model.no_rnn_units))
+    if isinstance(model, DenseModel):
+        hidden = None # no hidden state in the dense model
+    else:
+        hidden = model.word_decoder.reset_state(batch_size=target.shape[0])
+        # hidden = tf.zeros((1, model.no_rnn_units))
 
     # Initialise input vector with the start token
     dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * target.shape[0], 1)
@@ -232,7 +238,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return metrics
 
 
-def main(model_dir, problem_features, proof_data, train_id_file, val_id_file):
+def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, save_model):
 
     # Instantiate Tensorflow environment
     # TODO
@@ -298,7 +304,8 @@ def main(model_dir, problem_features, proof_data, train_id_file, val_id_file):
     )
 
     # Save the model
-    model.save(checkpoint_path)
+    if save_model:
+        model.save(checkpoint_path)
 
     # Save the training history
     with open(os.path.join(model_dir, "history.pkl"), "wb") as f:
