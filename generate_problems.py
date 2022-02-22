@@ -28,7 +28,7 @@ parser.add_argument(
     default="caption",
     choices=["clean", "ideal", "sine", "caption", "caption_sine"],
     help="The mode used to generate the modified DeepMath problems",
-) # TODO: need to add a mode for "truth"
+)
 parser.add_argument("--sine_sd", default=None)
 parser.add_argument("--sine_st", default=None)
 parser.add_argument(
