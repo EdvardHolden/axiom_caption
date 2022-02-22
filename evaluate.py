@@ -280,7 +280,7 @@ def main(
 
     # Get the axiom ordering from the model parameter file
     model_params = get_model_params(model_dir)
-    axiom_order = model_params.axiom_order
+    axiom_order = None  # We do not care about the order in this case as all metrics are based on the set
     print("Using axiom order: ", axiom_order)
 
     # Get the test dataset with batch 1 as we need to treat each caption separately
