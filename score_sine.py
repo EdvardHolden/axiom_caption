@@ -1,16 +1,20 @@
 import argparse
 import re
+import os
 import sys
 import numpy as np
 from pathlib import Path
 from multiprocessing import Pool
 
 import generate_problems
+from model import get_model_params
+from model import load_model
 from generate_problems import (
     get_problems_from_path,
     load_and_process_problem,
     sine_process,
     extract_rare_axioms,
+    compute_caption,
 )
 from evaluate import jaccard_score_np, coverage_score_np
 from dataset import get_tokenizer
@@ -21,7 +25,14 @@ parser = argparse.ArgumentParser()
 # parser.add_argument("--sine_sd", default=None)
 # parser.add_argument("--sine_st", default=None)
 parser.add_argument("--model_dir", default=None, help="Path to sequence model, used if uncluding predictions")
+# experiments/model_size/attention_False_axiom_order_length_batch_norm_False_dropout_rate_0.1_embedding_size_50_learning_rate_0.001_model_type_inject_no_dense_units_512_no_rnn_units_32_normalize_True_rnn_type_lstm
 parser.add_argument("--include_rare_axioms", default=False, action="store_true", help="Include rare axioms")
+parser.add_argument(
+    "--feature_path",
+    default="data/embeddings/deepmath/graph_features_deepmath_premise.pkl",
+    help="Path to the problem embeddings",
+)
+
 
 NO_WORKERS = 8
 
@@ -33,9 +44,9 @@ clause_name_problem_re = "^fof\((\w+), axiom"
 # Wou ld be good with multiprocessing on the problems!
 DATASET_PATH = "/home/eholden/gnn-entailment-caption/nndata/"
 
-NUMBER_OF_SAMPLES = 10
-ST_VALUES = [1]  # , 2, 3]
-SD_VALUES = [0]  # [1, 2, 3, 4]
+NUMBER_OF_SAMPLES = None
+ST_VALUES = [1, 2, 3]
+SD_VALUES = [0, 1, 2, 3, 4]
 
 
 def get_sine_clause_names(prob):
@@ -119,6 +130,19 @@ def print_results_table(results):
         print_line()
 
 
+def get_rare_axioms(prob_path, tokenizer):
+    prob = load_and_process_problem(prob_path)
+    rare_axiom_clauses = extract_rare_axioms(tokenizer, prob)
+
+    # Extract the clause names
+    rare_axiom_names = get_clause_names("\n".join(rare_axiom_clauses))
+    assert len(rare_axiom_names) == len(rare_axiom_clauses)
+
+    # Convert to bytes
+    rare_axiom_names = {ax.encode() for ax in rare_axiom_names}
+    return Path(prob_path).stem, rare_axiom_names
+
+
 def main():
     # Parse input arguments
     args = parser.parse_args()
@@ -136,32 +160,31 @@ def main():
         rare_axioms = {}
         if args.include_rare_axioms:
             print("Extracting rare axioms")
+            map_args = [(prob_path, tokenizer) for prob_path in problem_paths]
+            pool = Pool(NO_WORKERS)
+            res = pool.starmap(get_rare_axioms, map_args)
+            pool.close()
+            pool.join()
+            rare_axioms = {prob: s for prob, s in res}
+
+        # Compute axioms with model if set
+        sequence_axioms = {}
+        if args.model_dir is not None:
+            print("Predicting axioms")
+            problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
+            model_params = get_model_params(args.model_dir)
+            model_dir = os.path.join(args.model_dir, "ckpt_dir")
+            model = load_model(model_dir)
+            model.no_rnn_units = model_params.no_rnn_units
+
             for prob_path in problem_paths:
-                # TODO could do multi processing here as well!
-                prob = load_and_process_problem(prob_path)
-                rare_axiom_clauses = extract_rare_axioms(tokenizer, prob)
+                axiom_caption = compute_caption(tokenizer, model, problem_features[Path(prob_path).stem])
+                sequence_axioms[Path(prob_path).stem] = axiom_caption
 
-                # Extract the clause names
-                rare_axiom_names = get_clause_names("\n".join(rare_axiom_clauses))
-                assert len(rare_axiom_names) == len(rare_axiom_clauses)
-
-                # Convert to bytes
-                rare_axiom_names = {ax.encode() for ax in rare_axiom_names}
-
-                # Store names
-                rare_axioms[Path(prob_path).stem] = rare_axiom_names
-
-        # FIXME HACK
-        selected_axioms_dict = rare_axioms
-    """ TODO
-    if args.model_dir is not None:
-        problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
-
-        model_params = get_model_params(args.model_dir)
-        model_dir = os.path.join(args.model_dir, "ckpt_dir")
-        model = load_model(model_dir)
-        model.no_rnn_units = model_params.no_rnn_units
-    """
+        # Join the two dicts
+        for prob_path in problem_paths:
+            prob = Path(prob_path).stem
+            selected_axioms_dict[prob] = rare_axioms.get(prob, set()).union(sequence_axioms.get(prob, set()))
 
     # Initialise results matrix
     results = [[-1] * len(ST_VALUES)] * len(SD_VALUES)
