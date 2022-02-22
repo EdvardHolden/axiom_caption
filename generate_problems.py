@@ -26,9 +26,9 @@ parser.add_argument(
     "--mode",
     # default="clean",
     default="caption",
-    choices=["clean", "sine", "caption", "caption_sine"],
+    choices=["clean", "ideal", "sine", "caption", "caption_sine"],
     help="The mode used to generate the modified DeepMath problems",
-)
+) # TODO: need to add a mode for "truth"
 parser.add_argument("--sine_sd", default=None)
 parser.add_argument("--sine_st", default=None)
 parser.add_argument(
@@ -183,6 +183,8 @@ def compute_caption(tokenizer, model, problem_feature):
 def get_result_dir(result_dir, mode, sine_st, sine_sd):
     if mode == "clean":
         result_dir = os.path.join(result_dir, "clean")
+    elif mode == "ideal":
+        result_dir = os.path.join(result_dir, "ideal")
     elif mode == "sine":
         result_dir = os.path.join(result_dir, f"sine_{sine_st}_{sine_sd}")
     elif mode == "caption":
@@ -251,7 +253,10 @@ def main():
         prob = load_and_process_problem(prob_path)
 
         # Maybe use flag instead?
-        if args.mode == "clean" or args.mode == "sine":
+        if args.mode in ["clean", "ideal", "sine"]:
+            # If the problem should be ideal, we just remove the last half of the axioms are they are false
+            prob = prob[:len(prob)//2 + 1]
+
             # Run clean/sine mode and clausify the problem
             clausified_problem = clausify(prob, sine_st=args.sine_st, sine_sd=args.sine_sd)
 
