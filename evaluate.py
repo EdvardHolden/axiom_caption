@@ -244,8 +244,6 @@ def evaluate_model(
     jaccard = jaccard_score_np(actual, predicted)
     avg_size = np.mean([len(set(p)) for p in predicted])
 
-    # Need to filter start, end and pad
-
     return {"coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
 
 
@@ -280,7 +278,7 @@ def main(
 
     # Get the axiom ordering from the model parameter file
     model_params = get_model_params(model_dir)
-    axiom_order = model_params.axiom_order
+    axiom_order = None  # We do not care about the order in this case as all metrics are based on the set
     print("Using axiom order: ", axiom_order)
 
     # Get the test dataset with batch 1 as we need to treat each caption separately
