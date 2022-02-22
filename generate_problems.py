@@ -15,7 +15,6 @@ from model import load_model
 from evaluate import generate_step
 
 
-PROBLEM_PATH = "/home/eholden/gnn-entailment-caption/nndata/"
 CLAUSIFIER = "~/bin/vclausify_rel"
 
 # Create temporary folder for storing clausifier results
@@ -34,6 +33,9 @@ parser.add_argument("--sine_st", default=None)
 parser.add_argument(
     "--result_dir", default="generated_problems/", help="Base folder for writing generated problems"
 )
+parser.add_argument("--problem_dir",
+                    default="/home/eholden/gnn-entailment-caption/nndata/",
+                    help="Directory containing the base problems")
 
 parser.add_argument(
     "--feature_path",
@@ -201,10 +203,10 @@ def get_result_dir(result_dir, mode, sine_st, sine_sd):
     return result_dir
 
 
-def get_problems_from_path(path=PROBLEM_PATH, limit=None):
+def get_problems_from_path(problem_dir, limit=None):
 
     # Get path to all problems
-    problem_paths = glob.glob(path + "*")
+    problem_paths = glob.glob(os.path.join(problem_dir, '') + "*")
     if limit is not None:
         return_limit = min(limit, len(problem_paths))
         problem_paths = problem_paths[:return_limit]
@@ -219,6 +221,7 @@ def main():
     args = parser.parse_args()
 
     # Check if SiNE is set correctly
+    # TODO make as a separate function
     if args.mode in ["sine", "caption_sine"]:
         if (
             (args.sine_sd is not None and args.sine_st is None)
@@ -230,10 +233,11 @@ def main():
     result_dir = get_result_dir(args.result_dir, args.mode, args.sine_st, args.sine_sd)
 
     # Get path to all problems
-    problem_paths = get_problems_from_path()
+    problem_paths = get_problems_from_path(args.problem_dir)
 
     # If captioning, load all the required resources
     if args.mode in ["caption", "caption_sine"]:
+        # TODO make as a separate function
         problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
 
         # Load the tokenizer
@@ -246,7 +250,6 @@ def main():
         model = load_model(model_dir)
         model.no_rnn_units = model_params.no_rnn_units
 
-    print(f"Writing problems to: {result_dir}")
 
     # For each problem
     for prob_path in problem_paths:
@@ -255,7 +258,8 @@ def main():
         # Maybe use flag instead?
         if args.mode in ["clean", "ideal", "sine"]:
             # If the problem should be ideal, we just remove the last half of the axioms are they are false
-            prob = prob[:len(prob)//2 + 1]
+            if args.mode == "ideal":
+                prob = prob[:len(prob)//2 + 1]
 
             # Run clean/sine mode and clausify the problem
             clausified_problem = clausify(prob, sine_st=args.sine_st, sine_sd=args.sine_sd)
