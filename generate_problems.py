@@ -152,6 +152,7 @@ def extract_rare_axioms(tokenizer, axioms):
 
 def compute_caption(tokenizer, model, problem_feature):
 
+    # TODO add sampling type?
     # Run the model to get the predicted tokens
     # axiom_caption = generate_step( tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k)
     axiom_caption = generate_step(
@@ -166,10 +167,12 @@ def compute_caption(tokenizer, model, problem_feature):
     )
     # Remove non-axiom tokens
     axiom_caption = filter(lambda x: x != 0 and x != 1 and x != 2 and x != 3, axiom_caption)
-    # If this is terminated to empty, set captions as the empty set
+    # If this is reduced to the empty list, set captions as the empty set
     if len(list(axiom_caption)) > 0:
         # Tokenize the output
         axiom_caption = tokenizer.sequences_to_texts([axiom_caption])
+        if axiom_caption == [""]:
+            axiom_caption = set()
     else:
         # No useful output, set to the empty set
         axiom_caption = set()
