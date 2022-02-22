@@ -244,8 +244,6 @@ def evaluate_model(
     jaccard = jaccard_score_np(actual, predicted)
     avg_size = np.mean([len(set(p)) for p in predicted])
 
-    # Need to filter start, end and pad
-
     return {"coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
 
 
