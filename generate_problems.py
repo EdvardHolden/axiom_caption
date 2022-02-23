@@ -3,6 +3,7 @@ import tempfile
 import atexit
 import shutil
 import os
+import re
 import subprocess
 from pathlib import Path
 import argparse
@@ -33,9 +34,11 @@ parser.add_argument("--sine_st", default=None)
 parser.add_argument(
     "--result_dir", default="generated_problems/", help="Base folder for writing generated problems"
 )
-parser.add_argument("--problem_dir",
-                    default="/home/eholden/gnn-entailment-caption/nndata/",
-                    help="Directory containing the base problems")
+parser.add_argument(
+    "--problem_dir",
+    default="/home/eholden/gnn-entailment-caption/nndata/",
+    help="Directory containing the base problems",
+)
 
 parser.add_argument(
     "--feature_path",
@@ -47,6 +50,18 @@ parser.add_argument(
     default="experiments/hyperparam/initial/attention_False_axiom_order_length_batch_norm_False_dropout_rate_0.1_embedding_size_200_learning_rate_0.001_model_type_merge_inject_no_dense_units_32_no_rnn_units_32_normalize_True_rnn_type_lstm/",
     help="Path to the model used in the captioning modes",
 )
+
+# Re pattern for finding each element in a clause
+ELEMENT_PATTERN = re.compile("([\(\),])")
+
+# Find an quote all numbers appearing in a formula
+def quote_number_in_formula(formula):
+    # Lambda function?
+    elements = ELEMENT_PATTERN.split(formula)
+    # Quote all the digits
+    elements = ["'" + e + "'" if e.strip().isdigit() else e for e in elements]
+    # Join back up and return
+    return "".join(elements)
 
 
 @atexit.register
@@ -206,7 +221,7 @@ def get_result_dir(result_dir, mode, sine_st, sine_sd):
 def get_problems_from_path(problem_dir, limit=None):
 
     # Get path to all problems
-    problem_paths = glob.glob(os.path.join(problem_dir, '') + "*")
+    problem_paths = glob.glob(os.path.join(problem_dir, "") + "*")
     if limit is not None:
         return_limit = min(limit, len(problem_paths))
         problem_paths = problem_paths[:return_limit]
@@ -250,17 +265,21 @@ def main():
         model = load_model(model_dir)
         model.no_rnn_units = model_params.no_rnn_units
 
-
     # For each problem
     for prob_path in problem_paths:
         prob = load_and_process_problem(prob_path)
+
+        # Ensure all numbers are quoted
+        prob = list(map(quote_number_in_formula, prob))
 
         # Maybe use flag instead?
         if args.mode in ["clean", "ideal", "sine"]:
             # If the problem should be ideal, we just remove the last half of the axioms are they are false
             if args.mode == "ideal":
-                prob = prob[:len(prob)//2 + 1]
+                prob = prob[: len(prob) // 2 + 1]
 
+            # TODO should run this as a pocess pool! Add number of workers to the argparser
+            # TODO flip the
             # Run clean/sine mode and clausify the problem
             clausified_problem = clausify(prob, sine_st=args.sine_st, sine_sd=args.sine_sd)
 
