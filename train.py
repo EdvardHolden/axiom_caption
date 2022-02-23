@@ -40,12 +40,19 @@ def get_train_parser(add_help=True):
     parser.add_argument(
         "--problem_features", default=config.problem_features, help="File containing the image descriptions"
     )
+    parser.add_arguments(
+        "--remove_unknown",
+        default=False,
+        help="Remove tokens mapped to oov. Can reduce the number of samples.",
+    )
 
     # Model options
     parser.add_argument("--model_dir", default=config.base_model, help="Directory containing params.json")
 
     # FIXME this might not remove that much memory load due to the checkpoints
-    parser.add_argument("--save_model", default=False, action="store_true", help="Set if final model should be saved")
+    parser.add_argument(
+        "--save_model", default=False, action="store_true", help="Set if final model should be saved"
+    )
 
     return parser
 
@@ -71,7 +78,7 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
 
     # Initialise the hidden shape of the model - makes the above lines redundant
     if isinstance(model, DenseModel):
-        hidden = None # no hidden state in the dense model
+        hidden = None  # no hidden state in the dense model
     else:
         hidden = model.word_decoder.reset_state(batch_size=target.shape[0])
         # hidden = tf.zeros((1, model.no_rnn_units))
@@ -242,7 +249,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return metrics
 
 
-def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, save_model):
+def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, save_model, remove_unknown):
 
     # Instantiate Tensorflow environment
     # TODO
@@ -275,6 +282,7 @@ def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, sa
         tokenizer=tokenizer,
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
+        remove_uknown=remove_unknown,
     )
     print("Max len: ", max_len)
     # Compute validation dataset based on the max length of the training data
@@ -286,6 +294,7 @@ def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, sa
         max_cap_len=max_len,
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
+        remove_uknown=remove_unknown,
     )
 
     # Initialise the model

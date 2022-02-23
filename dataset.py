@@ -82,6 +82,7 @@ def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
             axioms = data["axioms"]
             axioms = [ax.replace(config.TOKEN_DELIMITER, " ") for ax in axioms]
 
+            # TODO this should be a separate function
             # Sort the list of axioms if set
             if order is not None:
                 # We are expecting and order but want to chedck that the type is correct
@@ -138,6 +139,7 @@ def get_dataset(
     batch_size=config.BATCH_SIZE,
     order=None,
     axiom_frequency=None,
+    remove_unknown=False,
 ):
 
     # Load the necessary data for the id set
@@ -149,19 +151,33 @@ def get_dataset(
     if max_cap_len is None:
         max_cap_len = max_caption_length(captions)
 
-    # Cheat - for now we just extract and store in memory
-    captions = [captions[i] for i in ids]
-    img_features = [img_features[i] for i in ids]
-
     # Tokenize the sentences if provided
     if tokenizer is not None:
-        # Tokenize captions
-        captions = tokenizer.texts_to_sequences(captions)
-        # Pad the tokenised captions
-        captions = pad_sequences(captions, maxlen=max_cap_len, padding="post")
+        # Tokenize each caption and store it back in the dictionary
+        if remove_unknown:
+            tokenizer.oov_token = None  # This skips entries that maps to oov
+        for i in captions:
+            captions[i] = tokenizer.texts_to_sequences([captions[i]])[0]
+
+    # Build data lists
+    caption_data = []
+    feature_data = []
+    for i in ids:
+        # Remove captions that have reduced to start+end tokens due to unknown removal
+        if not remove_unknown or (remove_unknown and len(captions[i]) > 2):
+            caption_data.append(captions[i])
+            feature_data.append(img_features[i])
+
+    # Delete dict variables to save memory
+    del captions
+    del img_features
+
+    # Pad the tokenised captions
+    if tokenizer:
+        caption_data = pad_sequences(caption_data, maxlen=max_cap_len, padding="post")
 
     # Make dataset from data lists
-    dataset = tf.data.Dataset.from_tensor_slices((img_features, captions))
+    dataset = tf.data.Dataset.from_tensor_slices((feature_data, caption_data))
 
     # Shuffle and batch
     dataset = dataset.shuffle(config.BUFFER_SIZE).batch(batch_size)
@@ -226,6 +242,7 @@ def main():
         max_cap_len=max_len_train,
         order=order,
         axiom_frequency=axiom_frequency,
+        remove_unknown=True,
     )
 
     print(train_data)
