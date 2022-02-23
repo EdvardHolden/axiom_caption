@@ -16,3 +16,13 @@ def create_job_dir(root_dir, job_name, params=None):
             json.dump(params, f)
 
     return job_dir
+
+
+# Use as a decorator to debug functions
+def debug(func):
+    def _debug(*args, **kwargs):
+        result = func(*args, **kwargs)
+        print(f"{func.__name__}(args: {args}, kwargs: {kwargs}) -> {result}")
+        return result
+
+    return _debug
