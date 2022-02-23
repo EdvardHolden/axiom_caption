@@ -7,6 +7,7 @@ import json
 from keras.preprocessing.text import tokenizer_from_json
 from keras.preprocessing.sequence import pad_sequences
 from enum import Enum, auto
+from utils import debug
 
 import config
 
@@ -132,7 +133,7 @@ def load_photo_features(filename, dataset):
 
 def get_dataset(
     image_ids,
-    image_descriptions,
+    captions_path,
     image_features,
     tokenizer=None,
     max_cap_len=None,
@@ -144,7 +145,7 @@ def get_dataset(
 
     # Load the necessary data for the id set
     ids = load_ids(image_ids)
-    captions = load_clean_descriptions(image_descriptions, ids, order=order, axiom_frequency=axiom_frequency)
+    captions = load_clean_descriptions(captions_path, ids, order=order, axiom_frequency=axiom_frequency)
     img_features = load_photo_features(image_features, ids)
 
     # Compute the longest caption if value not provided

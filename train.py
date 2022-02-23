@@ -40,8 +40,9 @@ def get_train_parser(add_help=True):
     parser.add_argument(
         "--problem_features", default=config.problem_features, help="File containing the image descriptions"
     )
-    parser.add_arguments(
+    parser.add_argument(
         "--remove_unknown",
+        action="store_true",
         default=False,
         help="Remove tokens mapped to oov. Can reduce the number of samples.",
     )
@@ -282,7 +283,7 @@ def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, sa
         tokenizer=tokenizer,
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
-        remove_uknown=remove_unknown,
+        remove_unknown=remove_unknown,
     )
     print("Max len: ", max_len)
     # Compute validation dataset based on the max length of the training data
@@ -294,7 +295,7 @@ def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, sa
         max_cap_len=max_len,
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
-        remove_uknown=remove_unknown,
+        remove_unknown=remove_unknown,
     )
 
     # Initialise the model
