@@ -250,6 +250,8 @@ def main():
 
     # Get path to all problems
     problem_paths = get_problems_from_path(args.problem_dir)
+    if len(problem_paths) == 0:
+        raise ValueError(f"Error please check problem dir path, found no problem at \"{args.problem_dir}\"")
 
     # If captioning, load all the required resources
     if args.mode in ["caption", "caption_sine"]:
