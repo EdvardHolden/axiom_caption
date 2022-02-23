@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 import argparse
 from keras.preprocessing.text import text_to_word_sequence
+from tqdm import tqdm
 
 from dataset import get_tokenizer
 from dataset import load_photo_features
@@ -266,7 +267,7 @@ def main():
         model.no_rnn_units = model_params.no_rnn_units
 
     # For each problem
-    for prob_path in problem_paths:
+    for prob_path in tqdm(problem_paths):
         prob = load_and_process_problem(prob_path)
 
         # Ensure all numbers are quoted
