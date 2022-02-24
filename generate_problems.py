@@ -53,14 +53,14 @@ parser.add_argument(
 )
 
 # Re pattern for finding each element in a clause
-ELEMENT_PATTERN = re.compile("([\(\),])")
+ELEMENT_PATTERN = re.compile("([\(\),=&])")
 
 # Find an quote all numbers appearing in a formula
 def quote_number_in_formula(formula):
     # Lambda function?
     elements = ELEMENT_PATTERN.split(formula)
     # Quote all the digits
-    elements = ["'" + e + "'" if e.strip().isdigit() else e for e in elements]
+    elements = ["'" + e.strip() + "'" if e.strip().isdigit() else e for e in elements]
     # Join back up and return
     return "".join(elements)
 
