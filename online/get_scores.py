@@ -1,13 +1,11 @@
+# Compute metrics of experiments in the dictionary in EXPERIMENTS.
+# These scores are segmented based on the dataset provided
+# in DATA_SETS
 
 import mysql.connector as db
 import db_cred
 import traceback
 import os
-
-# _base_query_solved_problemrun_filter_collection
-# First get for a single experiment
-# Want numbr of problems solved (UNSAT) and average solving time
-# Then  want divided by sets
 
 LTB_PROBLEMS = True
 INCLUDE_INCORRECT = False
@@ -17,13 +15,9 @@ LIBRARY_VERSION = 64
 
 DATASET_DIR = "../data/deepmath/"
 
-EXPERIMENTS = {115360: 'test experiment'
-}
+EXPERIMENTS = {115360: "test experiment"}
 
-DATA_SETS = {'total': None,
-             'train': 'train.txt',
-             'test': 'test.txt'}
-
+DATA_SETS = {"total": None, "train": "train.txt", "test": "test.txt"}
 
 
 def _base_query_solved_problemrun(select, exp_id, upper_time_bound, problem_set=None):
@@ -33,27 +27,28 @@ def _base_query_solved_problemrun(select, exp_id, upper_time_bound, problem_set=
         conn = db.connect(**db_conn_details)
         curs = conn.cursor()
 
-        sql_query = '''
+        sql_query = """
             {0}
             FROM ProblemRun PR
-            '''.format(select)
+            """.format(
+            select
+        )
 
         # Join on appopriate tables to be able get status information
-        sql_query += '''
+        sql_query += """
             JOIN ProblemVersion PV ON PV.ProblemVersionID = PR.Problem
             JOIN SZSStatus SL ON PV.Status = SL.SZSStatusID
             JOIN SZSStatus SR ON PR.Status = SR.SZSStatusID
-            '''
+            """
 
-        sql_query += '''
+        sql_query += """
                 WHERE PR.Experiment={0}
-                '''.format(exp_id)
-
-        #SELECT ProblemID from Problem P INNER JOIN ProblemVersion PV ON P.ProblemID = PV.Problem WHERE ProblemName IN ("l13_euclid_8", "t23_waybel_4") and PV.Version=64
-        # TODO make if on this?
+                """.format(
+            exp_id
+        )
 
         if problem_set is not None:
-            sql_query += '''
+            sql_query += """
                          AND PR.Problem in
                          (
                             SELECT ProblemVersionID
@@ -61,30 +56,33 @@ def _base_query_solved_problemrun(select, exp_id, upper_time_bound, problem_set=
                             INNER JOIN ProblemVersion PV ON P.ProblemID = PV.Problem
                             WHERE ProblemName IN ({0}) and PV.Version={1}
                          )
-                        '''.format("\"" + "\", \"".join(problem_set) + "\"",
-                                   LIBRARY_VERSION)
+                        """.format(
+                '"' + '", "'.join(problem_set) + '"', LIBRARY_VERSION
+            )
 
         # Apply upper time bound if set
         if upper_time_bound is not None:
-            sql_query += '''
+            sql_query += """
                     AND PR.Runtime <= {0}
-                    '''.format(upper_time_bound)
+                    """.format(
+                upper_time_bound
+            )
 
         if LTB_PROBLEMS:
-            sql_query += '''
+            sql_query += """
                  AND (PR.SZS_Status = 'Theorem'
                  OR PR.SZS_Status = 'Unsatisfiable')
-                         '''
+                         """
         else:
-            sql_query += '''
+            sql_query += """
                  AND SR.Solved = 1
-                         '''
+                         """
 
         # Remove the incorrects by only including the correct
         if not INCLUDE_INCORRECT:
-            sql_query += '''
+            sql_query += """
                 AND ((SL.Unsat AND SR.Sat)
-                    OR (SL.Sat AND SR.Unsat)) = 0'''
+                    OR (SL.Sat AND SR.Unsat)) = 0"""
 
         # Execute
         sql_query += ";"
@@ -117,8 +115,9 @@ def get_avg_time_solved(exp_id, upper_time_bound=None, problem_set=None):
     res = _base_query_solved_problemrun(select, exp_id, upper_time_bound, problem_set)
     return float(res[0][0])
 
+
 def load_data_set(prob_set_file):
-    with open(os.path.join(DATASET_DIR, prob_set_file), 'r') as f:
+    with open(os.path.join(DATASET_DIR, prob_set_file), "r") as f:
         prob_set = f.readlines()
 
     prob_set = [prob.strip() for prob in prob_set]
@@ -128,7 +127,7 @@ def load_data_set(prob_set_file):
 def main():
 
     for exp, desc in EXPERIMENTS.items():
-        print(f'### {exp}: {desc}')
+        print(f"### {exp}: {desc}")
 
         results = {}
         for name, prob_set in DATA_SETS.items():
@@ -139,7 +138,7 @@ def main():
 
             solved = get_no_solved(exp, problem_set=prob_set)
             time = get_avg_time_solved(exp, problem_set=prob_set)
-            results[name] = {'solved': solved, 'time': time}
+            results[name] = {"solved": solved, "time": time}
 
         for name, res in results.items():
             print(name)
@@ -150,5 +149,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
