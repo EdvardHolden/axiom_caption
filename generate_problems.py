@@ -9,6 +9,7 @@ from pathlib import Path
 import argparse
 from keras.preprocessing.text import text_to_word_sequence
 from tqdm import tqdm
+from multiprocessing import Pool
 
 from dataset import get_tokenizer
 from dataset import load_photo_features
@@ -50,6 +51,12 @@ parser.add_argument(
     "--model_dir",
     default="experiments/hyperparam/initial/attention_False_axiom_order_length_batch_norm_False_dropout_rate_0.1_embedding_size_200_learning_rate_0.001_model_type_merge_inject_no_dense_units_32_no_rnn_units_32_normalize_True_rnn_type_lstm/",
     help="Path to the model used in the captioning modes",
+)
+parser.add_argument(
+    "--workers",
+    type=int,
+    default=max(os.cpu_count() - 2, 1),
+    help="Number of workers for multiprocessing (used in some modes)",
 )
 
 # Re pattern for finding each element in a clause
@@ -231,13 +238,7 @@ def get_problems_from_path(problem_dir, limit=None):
     return problem_paths
 
 
-def main():
-
-    # Parse input arguments
-    args = parser.parse_args()
-
-    # Check if SiNE is set correctly
-    # TODO make as a separate function
+def validate_input_arguments(args):
     if args.mode in ["sine", "caption_sine"]:
         if (
             (args.sine_sd is not None and args.sine_st is None)
@@ -245,48 +246,75 @@ def main():
             or (args.sine_sd is None and args.sine_st is None)
         ):
             raise ValueError("Both sd and st must be set for the SiNE mode")
+
+
+def get_model(model_dir):
+    model_params = get_model_params(model_dir)
+    model_dir = os.path.join(model_dir, "ckpt_dir")
+    model = load_model(model_dir)
+    model.no_rnn_units = model_params.no_rnn_units
+    return model
+
+
+def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir):
+    # Load problem formulae as a list
+    prob = load_and_process_problem(prob_path)
+
+    # Ensure all numbers are quoted
+    prob = list(map(quote_number_in_formula, prob))
+
+    # If the problem should be ideal, we just remove the last half of the axioms are they are false
+    if mode == "ideal":
+        prob = prob[: len(prob) // 2 + 1]
+
+    # Run clean/sine mode and clausify the problem
+    clausified_problem = clausify(prob, sine_st=sine_st, sine_sd=sine_sd)
+
+    # Save to folder
+    save_problem(result_dir, Path(prob_path).stem, clausified_problem)
+
+
+def main():
+
+    # Parse input arguments
+    args = parser.parse_args()
+    # Check if SiNE is set correctly
+    validate_input_arguments(args)
+
     # Set result dir based on the mode
     result_dir = get_result_dir(args.result_dir, args.mode, args.sine_st, args.sine_sd)
 
     # Get path to all problems
     problem_paths = get_problems_from_path(args.problem_dir)
     if len(problem_paths) == 0:
-        raise ValueError(f"Error please check problem dir path, found no problem at \"{args.problem_dir}\"")
+        raise ValueError(f'Error please check problem dir path, found no problem at "{args.problem_dir}"')
 
     # If captioning, load all the required resources
     if args.mode in ["caption", "caption_sine"]:
-        # TODO make as a separate function
         problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
-
-        # Load the tokenizer
         tokenizer, _ = get_tokenizer("data/deepmath/tokenizer.json")
+        model = get_model(args.model_dir)
 
-        # Load model
-        print("Loading the model")
-        model_params = get_model_params(args.model_dir)
-        model_dir = os.path.join(args.model_dir, "ckpt_dir")
-        model = load_model(model_dir)
-        model.no_rnn_units = model_params.no_rnn_units
+    # Compute the problems
+    # In clean/ideal/sine mode we use a process pool for speedup
+    if args.mode in ["clean", "ideal", "sine"]:
+        star_args = [
+            (prob_path, args.mode, args.sine_st, args.sine_sd, result_dir) for prob_path in problem_paths
+        ]
+        pool = Pool(args.workers)
+        pool.starmap(standard_process_problem, star_args)
+        pool.close()
+        pool.join()
 
-    # For each problem
-    for prob_path in tqdm(problem_paths):
-        prob = load_and_process_problem(prob_path)
+    # Run other problem modes
+    elif args.mode in ["caption", "caption_sine"]:
 
-        # Ensure all numbers are quoted
-        prob = list(map(quote_number_in_formula, prob))
+        # Process each problem
+        for prob_path in tqdm(problem_paths):
+            prob = load_and_process_problem(prob_path)
 
-        # Maybe use flag instead?
-        if args.mode in ["clean", "ideal", "sine"]:
-            # If the problem should be ideal, we just remove the last half of the axioms are they are false
-            if args.mode == "ideal":
-                prob = prob[: len(prob) // 2 + 1]
-
-            # TODO should run this as a pocess pool! Add number of workers to the argparser
-            # TODO flip the
-            # Run clean/sine mode and clausify the problem
-            clausified_problem = clausify(prob, sine_st=args.sine_st, sine_sd=args.sine_sd)
-
-        elif args.mode in ["caption", "caption_sine"]:
+            # Ensure all numbers are quoted
+            prob = list(map(quote_number_in_formula, prob))
 
             # Split the problem into initial axioms and conjecture
             conjecture, initial_axioms = prob[0], prob[1:]
@@ -312,11 +340,11 @@ def main():
                 sine_problem = clausify(new_problem, sine_st=args.sine_st, sine_sd=args.sine_sd)
                 # Combine the clausified axioms with the sine output
                 clausified_problem += b"\n" + sine_problem
-        else:
-            raise ValueError(f"Unrecognised mode '{args.mode}'")
+            # Save to folder
+            save_problem(result_dir, Path(prob_path).stem, clausified_problem)
 
-        # Save to folder
-        save_problem(result_dir, Path(prob_path).stem, clausified_problem)
+    else:
+        raise ValueError(f"Unrecognised mode '{args.mode}'")
 
 
 if __name__ == "__main__":
