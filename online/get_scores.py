@@ -15,7 +15,12 @@ LIBRARY_VERSION = 64
 
 DATASET_DIR = "../data/deepmath/"
 
-EXPERIMENTS = {115360: "test experiment"}
+EXPERIMENTS = {115360: "test experiment",
+               115362: "first test on clean",
+               115363: "second test on clean",
+               115364: "Ideal",
+               115365: "Sine 1 1",
+               115366: "Sine 3 0"}
 
 DATA_SETS = {"total": None, "train": "train.txt", "test": "test.txt"}
 
@@ -142,8 +147,8 @@ def main():
 
         for name, res in results.items():
             print(name)
-            print(f" Solved  : {res['solved']}")
-            print(f" Avg Time: {res['time']:.2f}")
+            print(f"  Solved  : {res['solved']}")
+            print(f"  Avg Time: {res['time']:.2f}")
         print()
 
 
