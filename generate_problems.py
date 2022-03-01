@@ -10,6 +10,8 @@ import argparse
 from keras.preprocessing.text import text_to_word_sequence
 from tqdm import tqdm
 from multiprocessing import Pool
+import random
+from itertools import chain
 
 from dataset import get_tokenizer
 from dataset import load_photo_features
@@ -17,6 +19,8 @@ from model import get_model_params
 from model import load_model
 from evaluate import generate_step
 
+
+random.seed(7)
 
 CLAUSIFIER = "~/bin/vclausify_rel"
 
@@ -58,18 +62,34 @@ parser.add_argument(
     default=max(os.cpu_count() - 2, 1),
     help="Number of workers for multiprocessing (used in some modes)",
 )
+parser.add_argument('-d', '--debug', action='store_true',
+                    default=False, help='Limit generation to 100 instances')
 
 # Re pattern for finding each element in a clause
 ELEMENT_PATTERN = re.compile("([\(\),=&])")
 
 # Find an quote all numbers appearing in a formula
 def quote_number_in_formula(formula):
-    # Lambda function?
+    # Split formula elements
     elements = ELEMENT_PATTERN.split(formula)
-    # Quote all the digits
-    elements = ["'" + e.strip() + "'" if e.strip().isdigit() else e for e in elements]
-    # Join back up and return
-    return "".join(elements)
+    # Quote all the digits FIXME cannot use shorthand
+    #elements = ["'" + e.strip() + "'" if e.strip().isdigit() else e for e in elements]
+    formula = []
+    digits = set()
+    for e in elements:
+        # Quote all digits
+        if e.strip().isdigit():
+            digit = e.strip()
+            # Add quoted digit
+            formula += "'" + digit + "'"
+            # Add to set of digits
+            digits.add(digit)
+        else:
+            # Add non-digit
+            formula += e
+
+    # Join the formula back up and return
+    return digits, "".join(formula)
 
 
 @atexit.register
@@ -133,6 +153,7 @@ def run_clausifier(prob, cmd, sine_st, sine_sd):
         if proc.returncode != 0 or errs != b"":
             print(f"Clausifier finished with exitcode: {proc.returncode}")
             print("Error: ", errs)
+            print(cmd)
 
     return outs
 
@@ -150,7 +171,6 @@ def sine_process(prob, sine_st=None, sine_sd=None):
 
 
 def save_problem(dir_name, prob_name, prob):
-    # print(prob)
     with open(os.path.join(dir_name, prob_name), "wb") as f:
         f.write(prob)
 
@@ -256,16 +276,33 @@ def get_model(model_dir):
     return model
 
 
+def quote_number_in_problem(prob):
+
+    # Quote numbers in each formula
+    numbers, prob = zip(*list(map(quote_number_in_formula, prob)))
+
+    # Get the set of numbers in the problem from each formulae
+    numbers = set(chain.from_iterable(numbers))
+
+    # If there are more than one number, add distinct number axiom
+    if len(numbers) > 1:
+        distinct_number_axiom = "fof(a1, axiom, $distinct({0})).".format(", ".join(["'" + n + "'" for n in sorted(numbers)]))
+        # Add axiom to the tuple of formulae
+        prob += tuple([distinct_number_axiom])
+
+    return prob
+
+
 def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir):
     # Load problem formulae as a list
     prob = load_and_process_problem(prob_path)
 
-    # Ensure all numbers are quoted
-    prob = list(map(quote_number_in_formula, prob))
-
-    # If the problem should be ideal, we just remove the last half of the axioms are they are false
+   # If the problem should be ideal, we just remove the last half of the axioms are they are false
     if mode == "ideal":
         prob = prob[: len(prob) // 2 + 1]
+
+    # Ensure all numbers are quoted
+    prob = quote_number_in_problem(prob)
 
     # Run clean/sine mode and clausify the problem
     clausified_problem = clausify(prob, sine_st=sine_st, sine_sd=sine_sd)
@@ -288,6 +325,9 @@ def main():
     problem_paths = get_problems_from_path(args.problem_dir)
     if len(problem_paths) == 0:
         raise ValueError(f'Error please check problem dir path, found no problem at "{args.problem_dir}"')
+    if args.debug:
+        print("Debug mode: Limiting to 100 problems")
+        problem_paths = random.sample(problem_paths, k=5)
 
     # If captioning, load all the required resources
     if args.mode in ["caption", "caption_sine"]:
@@ -314,7 +354,7 @@ def main():
             prob = load_and_process_problem(prob_path)
 
             # Ensure all numbers are quoted
-            prob = list(map(quote_number_in_formula, prob))
+            prob = quote_number_in_problem(prob)
 
             # Split the problem into initial axioms and conjecture
             conjecture, initial_axioms = prob[0], prob[1:]
