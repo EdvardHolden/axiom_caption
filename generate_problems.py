@@ -66,7 +66,7 @@ parser.add_argument('-d', '--debug', action='store_true',
                     default=False, help='Limit generation to 100 instances')
 
 # Re pattern for finding each element in a clause
-ELEMENT_PATTERN = re.compile("([\(\),=&])")
+ELEMENT_PATTERN = re.compile("([\(\),=&?<>|])")
 
 # Find an quote all numbers appearing in a formula
 def quote_number_in_formula(formula):
