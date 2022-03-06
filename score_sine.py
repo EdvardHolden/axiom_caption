@@ -32,6 +32,12 @@ parser.add_argument(
     default="data/embeddings/deepmath/graph_features_deepmath_premise.pkl",
     help="Path to the problem embeddings",
 )
+parser.add_argument(
+    "--number_of_samples",
+    type=int,
+    default=None,
+    help="Number of samples to use for computing the score (None for all)",
+)
 
 
 NO_WORKERS = 8
@@ -44,7 +50,6 @@ clause_name_problem_re = "^fof\((\w+), axiom"
 # Wou ld be good with multiprocessing on the problems!
 DATASET_PATH = "/home/eholden/gnn-entailment-caption/nndata/"
 
-NUMBER_OF_SAMPLES = None
 ST_VALUES = [1, 2, 3]
 SD_VALUES = [0, 1, 2, 3, 4]
 
@@ -66,8 +71,8 @@ def get_clause_names(prob):
 
 
 def sine_score_problem(prob_path, sine_st, sine_sd, selected_axioms):
+
     prob = load_and_process_problem(prob_path)
-    # Unclear whether this is the right call to do rn
     prob_processed = sine_process(prob, sine_st=sine_st, sine_sd=sine_sd)
     del prob
 
@@ -148,10 +153,11 @@ def main():
     args = parser.parse_args()
 
     # Get path to all problems
-    problem_paths = get_problems_from_path(limit=NUMBER_OF_SAMPLES)
+    problem_paths = get_problems_from_path(DATASET_PATH, limit=args.number_of_samples)
 
     # We compute the sequence problems first as it is unaffected by the sine parameters.
     # Load tokenizer if needed
+    # TODO maybe split this and make it into separate functions?
     selected_axioms_dict = {}
     if args.model_dir is not None or args.include_rare_axioms:
         tokenizer, _ = get_tokenizer("data/deepmath/tokenizer.json")
@@ -179,6 +185,12 @@ def main():
 
             for prob_path in problem_paths:
                 axiom_caption = compute_caption(tokenizer, model, problem_features[Path(prob_path).stem])
+                # Extract the clause names
+                axiom_caption = get_clause_names("\n".join(axiom_caption))
+                # assert len(rare_axiom_names) == len(rare_axiom_clauses)
+
+                axiom_caption = [ax.encode() for ax in axiom_caption]  # Ensure axioms are bytes
+
                 sequence_axioms[Path(prob_path).stem] = axiom_caption
 
         # Join the two dicts
