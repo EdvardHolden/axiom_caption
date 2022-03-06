@@ -128,9 +128,14 @@ class WordDecoder(layers.Layer):
         super(WordDecoder, self).__init__(name=name, **kwargs)
 
         rnn = get_rnn(rnn_type)
-        self.lm = rnn(no_rnn_units, dropout=dropout_rate, return_state=True, return_sequences=False)
+        self.rnn = rnn(
+            no_rnn_units,
+            dropout=dropout_rate,
+            return_state=True,
+            return_sequences=True,
+            recurrent_initializer="glorot_uniform",
+        )
 
-        # self.lm = GRU(no_lstm_units, dropout=dropout_rate, return_state=True, return_sequences=False)
         self.no_rnn_units = no_rnn_units
 
         self.d1 = Dropout(dropout_rate)
@@ -141,17 +146,19 @@ class WordDecoder(layers.Layer):
     def call(self, inputs, training=None):
         x = inputs
 
-        if isinstance(self.lm, LSTM):
+        if isinstance(self.rnn, LSTM):
             # LSTM also returns the cell state, which we do not use
-            x, hidden, _ = self.lm(x, training=training)
+            x, hidden, _ = self.rnn(x, training=training)
         else:
             # GRU does not return the cell state
-            x, hidden = self.lm(x, training=training)
+            x, hidden = self.rnn(x, training=training)
 
         x = self.d1(x, training=training)
         x = self.fc(x)
         x = self.d2(x, training=training)
         x = self.out(x)
+
+        x = tf.reshape(x, (-1, x.shape[2]))
         return x, hidden
 
     def reset_state(self, batch_size):
