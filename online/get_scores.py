@@ -15,12 +15,18 @@ LIBRARY_VERSION = 64
 
 DATASET_DIR = "../data/deepmath/"
 
+''' Error in problems
 EXPERIMENTS = {115360: "test experiment",
                115362: "first test on clean",
                115363: "second test on clean",
                115364: "Ideal",
                115365: "Sine 1 1",
                115366: "Sine 3 0"}
+'''
+EXPERIMENTS = {115376: "Clean",
+               115377: "Ideal",
+               115378: "Sine 1 1",
+               115379: "Sine 3 0"}
 
 DATA_SETS = {"total": None, "train": "train.txt", "test": "test.txt"}
 
