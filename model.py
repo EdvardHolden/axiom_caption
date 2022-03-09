@@ -29,6 +29,29 @@ def adapt_normalization_layer(model, embedding_vectors):
     return model
 
 
+def reset_model_decoder_state(model):
+    """Function used to reset rnn state of the word decoder when it is stateful
+    If it is the first call to the model (e.g. input sizes are not set), the
+    model returns ValueError. At the moment we handle try and ask for forgiveness
+    but a proper check might be better"""
+    # Check if we are given the full model
+    if hasattr(model, "word_decoder"):
+        # Check that rnn is stateful
+        if model.word_decoder.rnn.stateful:
+            try:
+                model.word_decoder.rnn.reset_states()
+            except ValueError:
+                pass
+    # Check if we are given the word decoder
+    elif hasattr(model, "rnn"):
+        # Check that rnn is stateful
+        if model.rnn.stateful:
+            try:
+                model.rnn.reset_states()
+            except ValueError:
+                pass
+
+
 def initialise_model(model_type, max_len, vocab_size, model_params, training_data=None):
 
     model = get_model(model_type, max_len, vocab_size, model_params)
@@ -105,6 +128,7 @@ class WordEncoder(layers.Layer):
         # TODO need to understand the use of this?
         self.emb3 = TimeDistributed(Dense(no_dense_units, activation="relu"))
         self.d2 = Dropout(dropout_rate)
+        print("Warning: Deprecated")
 
     def call(self, inputs, training=None):
         x = inputs
@@ -123,13 +147,22 @@ class WordEncoder(layers.Layer):
 
 class WordDecoder(layers.Layer):
     def __init__(
-        self, vocab_size, rnn_type, no_rnn_units, no_dense_units, dropout_rate, name="word_decoder", **kwargs
+        self,
+        vocab_size,
+        rnn_type,
+        stateful,
+        no_rnn_units,
+        no_dense_units,
+        dropout_rate,
+        name="word_decoder",
+        **kwargs,
     ):
         super(WordDecoder, self).__init__(name=name, **kwargs)
 
         rnn = get_rnn(rnn_type)
         self.rnn = rnn(
             no_rnn_units,
+            stateful=stateful,
             dropout=dropout_rate,
             return_state=True,
             return_sequences=True,
@@ -255,6 +288,7 @@ class InjectModel(tf.keras.Model):
         self.word_decoder = WordDecoder(
             vocab_size,
             model_params.rnn_type,
+            model_params.stateful,
             model_params.no_rnn_units,
             model_params.no_dense_units,
             model_params.dropout_rate,
@@ -368,6 +402,7 @@ class MergeInjectModel(tf.keras.Model):
         # Add repeat vector for avoid calling the image encoder all the time
         # QUICKFIX - setting length to 1 to expand the dimension of the output for concat
         self.repeat = RepeatVector(1)
+        print("Warning: Model DEPRECATED (need updates)")
 
     def call(self, inputs, training=None):
         input_image, input_word, hidden_state = inputs
@@ -487,9 +522,10 @@ if __name__ == "__main__":
     print(m.build_graph().summary())
 
     print("# # # Dense # # #")
-    m = get_model("dense", 123, 20, params)
-    print(m)
-    print(m.build_graph().summary())
+    dense = get_model("dense", 123, 20, params)
+    print(dense)
+    print(dense.build_graph().summary())
+
 
 """
     print("# # # Inject # # #")

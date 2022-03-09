@@ -8,7 +8,7 @@ import random
 
 import config
 from dataset import get_dataset, get_tokenizer, compute_axiom_frequency, AxiomOrder
-from model import get_model_params, initialise_model, DenseModel
+from model import get_model_params, initialise_model, DenseModel, reset_model_decoder_state
 from evaluate import jaccard_score, coverage_score
 
 # Make script deterministic to see if we can avoid the gpu issue
@@ -74,8 +74,8 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     # Initial loss on the batch is zero
     loss = 0
 
-    # Reset the LSTM states between each batch
-    model.reset_states()
+    # Reset the LSTM states of the decoder between each batch
+    reset_model_decoder_state(model)
 
     # Initialise the hidden shape of the model - makes the above lines redundant
     if isinstance(model, DenseModel):

@@ -8,8 +8,7 @@ from tqdm import tqdm
 import random
 
 from dataset import get_dataset, get_tokenizer, compute_max_length
-from model import get_model_params
-from model import load_model
+from model import get_model_params, load_model, reset_model_decoder_state
 
 
 from tensorflow.sets import size, intersection, union
@@ -176,7 +175,7 @@ def generate_step(
     result = set()
 
     # Reset LSTM states between each batch
-    model.reset_states()
+    reset_model_decoder_state(model)
 
     # Initialise the hidden shape of the model - makes the above lines redundant
     hidden = tf.zeros((1, model.no_rnn_units))
