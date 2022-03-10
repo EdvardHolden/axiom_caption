@@ -181,7 +181,7 @@ def get_dataset(
     dataset = tf.data.Dataset.from_tensor_slices((feature_data, caption_data))
 
     # Shuffle and batch
-    dataset = dataset.shuffle(config.BUFFER_SIZE).batch(batch_size)
+    dataset = dataset.shuffle(config.BUFFER_SIZE).batch(batch_size, drop_remainder=True)
     dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
 
     # Return the made dataset
