@@ -13,6 +13,7 @@ from multiprocessing import Pool
 import random
 from itertools import chain
 import numpy as np
+import socket
 
 from dataset import get_tokenizer
 from dataset import load_photo_features
@@ -41,9 +42,14 @@ parser.add_argument("--sine_st", default=None)
 parser.add_argument(
     "--result_dir", default="generated_problems/", help="Base folder for writing generated problems"
 )
+
+if socket.gethostname() == "kontor":
+    default_problem_dir = "/home/eholden/gnn-entailment-caption/"
+else:
+    default_problem_dir = "/shareddata/home/holden/gnn-entailment-caption/"
 parser.add_argument(
     "--problem_dir",
-    default="/home/eholden/gnn-entailment-caption/nndata/",
+    default="default_problem_dir",
     help="Directory containing the base problems",
 )
 
