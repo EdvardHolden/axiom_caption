@@ -44,13 +44,25 @@ parser.add_argument(
 )
 
 if socket.gethostname() == "kontor":
-    default_problem_dir = "/home/eholden/gnn-entailment-caption/"
+    default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
 else:
-    default_problem_dir = "/shareddata/home/holden/gnn-entailment-caption/"
+    default_problem_dir = "/shareddata/home/holden/gnn-entailment-caption/nndata"
 parser.add_argument(
     "--problem_dir",
-    default="default_problem_dir",
+    default=default_problem_dir,
     help="Directory containing the base problems",
+)
+parser.add_argument(
+    "--add_extra_axioms",
+    default=False,
+    action="store_true",
+    help="Add a set number of extra axioms to each problem. Same axioms added to each problem.",
+)
+parser.add_argument(
+    "--number_of_extra_axioms",
+    default=1000,
+    type=int,
+    help="Number of extra axioms to add to each generated problem. Only used if add_extra_axioms flag is set",
 )
 
 parser.add_argument(
@@ -238,7 +250,7 @@ def compute_caption(tokenizer, model, problem_feature):
     return axiom_caption
 
 
-def get_result_dir(result_dir, mode, sine_st, sine_sd):
+def get_result_dir(result_dir, mode, sine_st, sine_sd, add_extra_axioms, number_of_extra_axioms):
     if mode == "clean":
         result_dir = os.path.join(result_dir, "clean")
     elif mode == "ideal":
@@ -251,6 +263,9 @@ def get_result_dir(result_dir, mode, sine_st, sine_sd):
         result_dir = os.path.join(result_dir, f"caption_sine_{sine_st}_{sine_sd}")
     else:
         raise ValueError(f'Generative mode "{mode}" not implemented')
+
+    if add_extra_axioms:
+        result_dir += f"_extra_axioms_{number_of_extra_axioms}"
 
     # Create direcotry if not exist
     if not os.path.exists(result_dir):
@@ -308,7 +323,7 @@ def quote_number_in_problem(prob):
     return prob
 
 
-def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir):
+def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms):
     # Load problem formulae as a list
     prob = load_and_process_problem(prob_path)
 
@@ -316,14 +331,42 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir):
     if mode == "ideal":
         prob = prob[: len(prob) // 2 + 1]
 
+    # Add extra axioms if provided
+    if len(extra_axioms) > 0:
+        prob = set(prob).union(set(extra_axioms))
+
     # Ensure all numbers are quoted
-    prob = quote_number_in_problem(prob)
+    prob = quote_number_in_problem(list(prob))
 
     # Run clean/sine mode and clausify the problem
     clausified_problem = clausify(prob, sine_st=sine_st, sine_sd=sine_sd)
 
     # Save to folder
     save_problem(result_dir, Path(prob_path).stem, clausified_problem)
+
+
+def get_extra_axioms(problem_paths, no_axioms):
+
+    # Get all axioms
+    axioms = set()
+    for problem in problem_paths:
+        prob_ax = load_and_process_problem(problem)[1:]
+        # Add axioms
+        if len(prob_ax) > 0:
+            # prob_ax = prob_ax[: len(prob_ax) // 2] # If inlcuding only positive
+            axioms.update(set(prob_ax))
+
+    # Check if enough axioms, otherwise return them all
+    if no_axioms > len(axioms):
+        print(
+            f"Warning: Cannot add {no_axioms} to benchmark as there is not that many axioms. Truncating to: {len(axioms)}"
+        )
+        return axioms
+
+    # Sample the axioms
+    extra_axioms = set(random.sample(list(axioms), k=no_axioms))
+    assert len(extra_axioms) == no_axioms
+    return extra_axioms
 
 
 def main():
@@ -334,7 +377,14 @@ def main():
     validate_input_arguments(args)
 
     # Set result dir based on the mode
-    result_dir = get_result_dir(args.result_dir, args.mode, args.sine_st, args.sine_sd)
+    result_dir = get_result_dir(
+        args.result_dir,
+        args.mode,
+        args.sine_st,
+        args.sine_sd,
+        args.add_extra_axioms,
+        args.number_of_extra_axioms,
+    )
 
     # Get path to all problems
     problem_paths = get_problems_from_path(args.problem_dir)
@@ -350,11 +400,21 @@ def main():
         tokenizer, _ = get_tokenizer("data/deepmath/tokenizer.json")
         model = get_model(args.model_dir)
 
+    # Add extra axioms if set
+    if args.add_extra_axioms:
+        extra_axioms = get_extra_axioms(problem_paths, args.number_of_extra_axioms)
+    else:
+        extra_axioms = set()
+
+    # ## Compute the problems
+
     # Compute the problems
     # In clean/ideal/sine mode we use a process pool for speedup
     if args.mode in ["clean", "ideal", "sine"]:
+
         star_args = [
-            (prob_path, args.mode, args.sine_st, args.sine_sd, result_dir) for prob_path in problem_paths
+            (prob_path, args.mode, args.sine_st, args.sine_sd, result_dir, extra_axioms)
+            for prob_path in problem_paths
         ]
         pool = Pool(args.workers)
         pool.starmap(standard_process_problem, star_args)
@@ -368,13 +428,16 @@ def main():
         for prob_path in tqdm(problem_paths):
             prob = load_and_process_problem(prob_path)
 
-            # Ensure all numbers are quoted
-            prob = quote_number_in_problem(prob)
-
             # Split the problem into initial axioms and conjecture
-            conjecture, initial_axioms = prob[0], prob[1:]
+            conjecture = prob[0]
+            initial_axioms = set(prob[1:])
+
             # Set the current problem to be the conjecture
             new_problem = set([conjecture])
+
+            # Update initial axioms with the extra axioms if set
+            if args.add_extra_axioms:
+                initial_axioms.update(extra_axioms)
 
             # Extract axioms that are found in proof but cannot be predicted
             rare_axioms = extract_rare_axioms(tokenizer, initial_axioms)
@@ -385,6 +448,9 @@ def main():
             axiom_caption = compute_caption(tokenizer, model, problem_features[Path(prob_path).stem])
             # Add the caption to the problem
             new_problem.update(axiom_caption)
+
+            # Ensure all numbers are quoted
+            new_problem = quote_number_in_problem(new_problem)
 
             # Clausify the problem
             clausified_problem = clausify(new_problem, sine_st=None, sine_sd=None)
