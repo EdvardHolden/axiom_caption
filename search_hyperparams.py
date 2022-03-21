@@ -9,7 +9,7 @@ import config
 from tqdm import tqdm
 import utils
 
-from train import get_train_parser
+from utils import launch_training_job, get_train_parser
 
 
 def get_hyperparam_parser():
@@ -20,9 +20,6 @@ def get_hyperparam_parser():
 
     # Get the parser for the train script
     parser = get_train_parser()
-
-    # Extract and store its original options for later use
-    train_parameters = sorted(parser.parse_args([]).__dict__.keys())
 
     # Extend the argument parser
     parser.add_argument(
@@ -42,22 +39,7 @@ def get_hyperparam_parser():
         action="store_true",
         help="Force rerunning of a config even if the job dir already exists",
     )
-    return parser, train_parameters
-
-
-def launch_training_job(job_dir, args, training_parameters):
-    """
-    Launch training of the model with a set of hyperparameters in experiment_dir/job_name
-    """
-    cmd = f"{config.PYTHON} train.py --model_dir {job_dir}"
-
-    # Add all other remaining training parameters
-    for param in training_parameters:
-        if param != "model_dir":
-            cmd += f" --{param} {args.__dict__[param]} "
-
-    # check_call(cmd, shell=True, stdout=subprocess.DEVNULL) # FIXME
-    check_call(cmd, shell=True, stdout=None)
+    return parser
 
 
 def main():
@@ -89,12 +71,16 @@ def main():
         # Create job dir
         job_dir = utils.create_job_dir(args.experiment_dir, job_name, params=param_config)
 
+        # Update the model directory
+        args.model_dir = job_dir
+
         # Launch job
-        launch_training_job(job_dir, args, training_parameters)
+        launch_training_job(job_dir, args)
 
     # Report the number of skipped runs if any
     if no_skipped_runs > 0:
         print(f"Skipped a total of {no_skipped_runs} job runs")
+    print("Finished")
 
 
 if __name__ == "__main__":

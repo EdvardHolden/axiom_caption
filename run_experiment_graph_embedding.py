@@ -6,11 +6,9 @@ import os
 from pathlib import Path
 import json
 from tqdm import tqdm
-import subprocess
-from subprocess import check_call
 import utils
-import config
 
+from utils import launch_training_job
 from train import get_train_parser
 
 
@@ -27,9 +25,6 @@ def get_embedding_exp_parser():
 
     # Get the parser for the train script
     parser = get_train_parser()
-
-    # Extract and store its original options for later use
-    train_parameters = sorted(parser.parse_args([]).__dict__.keys())
 
     # Extend the argument parser
     parser.add_argument(
@@ -49,28 +44,11 @@ def get_embedding_exp_parser():
         help="Force rerunning of a config even if the job dir already exists",
     )
 
-    return parser, train_parameters
-
-
-def launch_training_job_embedding(job_dir, embedding, args, training_parameters):
-    """
-    Launch training of a model configuration on the given embedding
-    """
-
-    # The initial training cmd
-    cmd = f"{config.PYTHON} train.py --model_dir {job_dir} --problem_features {embedding}"
-
-    # Add all other remaining training parameters
-    for param in training_parameters:
-        if param != "model_dir" and param != "problem_features":
-            cmd += f" --{param} {args.__dict__[param]} "
-
-    # check_call(cmd, shell=True, stdout=subprocess.DEVNULL)
-    check_call(cmd, shell=True, stdout=None)
+    return parser
 
 
 def main():
-    parser, training_parameters = get_embedding_exp_parser()
+    parser = get_embedding_exp_parser()
     args = parser.parse_args()
 
     # Get all embeddings in the embedding folder
@@ -79,7 +57,7 @@ def main():
         print("Warning: Could not find any embeddings in the provided directory")
 
     # Read the model config
-    with open(os.path.join(args.model_dir, "params.json"), "r") as f:
+    with open(os.path.join(args.experiment_dir, "params.json"), "r") as f:
         model_params = json.load(f)
 
     # For each embedding
@@ -96,8 +74,14 @@ def main():
         # Create directory for placing the results and storing the parameters of the model
         job_dir = utils.create_job_dir(args.experiment_dir, Path(emb).stem, params=model_params)
 
+        # Update model dir
+        args.model_dir = job_dir
+
+        # Update embedding file
+        args.problem_features = emb
+
         # Run the job on the directory and embedding
-        launch_training_job_embedding(job_dir, emb, args, training_parameters)
+        launch_training_job(job_dir, args)
 
     # Report the number of skipped runs if any
     if no_skipped_runs > 0:

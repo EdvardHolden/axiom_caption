@@ -10,6 +10,7 @@ import config
 from dataset import get_dataset, get_tokenizer, compute_axiom_frequency, AxiomOrder
 from model import get_model_params, initialise_model, DenseModel, reset_model_decoder_state
 from evaluate import jaccard_score, coverage_score
+from utils import get_train_parser
 
 # Make script deterministic to see if we can avoid the gpu issue
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
@@ -19,43 +20,6 @@ tf.random.set_seed(42)
 
 
 loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
-
-
-def get_train_parser(add_help=True):
-
-    # Get the parser, need to remove 'help' if being used as a parent parser
-    parser = argparse.ArgumentParser(add_help=add_help)
-
-    # Dataset ID options
-    # FIXME only add dataset folder and not full id path?
-    parser.add_argument(
-        "--train_id_file", default=config.train_id_file, help="File containing the training ids"
-    )
-    parser.add_argument(
-        "--val_id_file", default=config.val_id_file, help="File containing the validation ids"
-    )
-
-    # Feature options
-    parser.add_argument("--proof_data", default=config.proof_data, help="File containing the image features")
-    parser.add_argument(
-        "--problem_features", default=config.problem_features, help="File containing the image descriptions"
-    )
-    parser.add_argument(
-        "--remove_unknown",
-        action="store_true",
-        default=False,
-        help="Remove tokens mapped to oov. Can reduce the number of samples.",
-    )
-
-    # Model options
-    parser.add_argument("--model_dir", default=config.base_model, help="Directory containing params.json")
-
-    # FIXME this might not remove that much memory load due to the checkpoints
-    parser.add_argument(
-        "--save_model", default=False, action="store_true", help="Set if final model should be saved"
-    )
-
-    return parser
 
 
 def loss_function(real, pred):
