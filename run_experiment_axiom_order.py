@@ -1,17 +1,12 @@
 """
 Script for running experiment which evaluates the different axiom orderings over a single model.
 """
-import glob
 import os
-from pathlib import Path
 import json
 from tqdm import tqdm
-import subprocess
-from subprocess import check_call
 import utils
-import config
 
-from train import get_train_parser
+from utils import get_train_parser, launch_training_job
 
 AXIOM_ORDERS = ["original", "lexicographic", "length", "random", "frequency"]
 
@@ -30,9 +25,6 @@ def get_order_exp_parser():
     # Get the parser for the train script
     parser = get_train_parser()
 
-    # Extract and store its original options for later use
-    train_parameters = sorted(parser.parse_args([]).__dict__.keys())
-
     # Extend the argument parser
     parser.add_argument(
         "--experiment_dir",
@@ -47,24 +39,7 @@ def get_order_exp_parser():
         help="Force rerunning of a config even if the job dir already exists",
     )
 
-    return parser, train_parameters
-
-
-def launch_training_job_embedding(job_dir, args, training_parameters):
-    """
-    Launch training of a model configuration on the params file containing the order
-    """
-
-    # The initial training cmd
-    cmd = f"{config.PYTHON} train.py --model_dir {job_dir}"
-
-    # Add all other remaining training parameters
-    for param in training_parameters:
-        if param != "model_dir":
-            cmd += f" --{param} {args.__dict__[param]} "
-
-    # check_call(cmd, shell=True, stdout=subprocess.DEVNULL)
-    check_call(cmd, shell=True, stdout=None)
+    return parser
 
 
 def main():
@@ -93,8 +68,11 @@ def main():
         # Create directory for placing the results and storing the parameters of the model
         job_dir = utils.create_job_dir(args.experiment_dir, order, params=model_params)
 
+        # Update model directory
+        args.model_dir = job_dir
+
         # Run the job on the directory and embedding
-        launch_training_job_embedding(job_dir, args, training_parameters)
+        launch_training_job(job_dir, args)
 
     if no_skipped_runs > 0:
         print(f"Skipped a total of {no_skipped_runs} job runs")

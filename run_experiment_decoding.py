@@ -20,6 +20,7 @@ SAMPLERS = [
 # --sampler_top_k
 
 
+# TODO could this be improved?
 def launch_evaluation_job_decoding(args):
     """
     Run model over the problem data with the given sampler
