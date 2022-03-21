@@ -29,6 +29,9 @@ CLAUSIFIER = "~/bin/vclausify_rel"
 # Create temporary folder for storing clausifier results
 TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 
+# Top dir of the result directory
+BASE_RES_DIR = "generated_problems/"
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--mode",
@@ -39,9 +42,7 @@ parser.add_argument(
 )
 parser.add_argument("--sine_sd", default=None)
 parser.add_argument("--sine_st", default=None)
-parser.add_argument(
-    "--result_dir", default="generated_problems/", help="Base folder for writing generated problems"
-)
+parser.add_argument("--result_dir", default=None, help="Base folder for writing generated problems")
 
 if socket.gethostname() == "kontor":
     default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
@@ -83,6 +84,12 @@ parser.add_argument(
 )
 parser.add_argument(
     "-d", "--debug", action="store_true", default=False, help="Limit generation to 100 instances"
+)
+parser.add_argument(
+    "--problem_format",
+    default="deepmath",
+    choices=["deepmath", "mptp"],
+    help="The problem format of the benchmark",
 )
 
 # Re pattern for finding each element in a clause
@@ -128,24 +135,63 @@ def get_tmp_out_file():
     return filepath
 
 
-def load_and_process_problem(path):
+def load_and_process_problem(path, deepmath=False):
+    """
+    Loads a problem from the text file into lists consiting of string of formulae.
+    It currently assumes that each formulae is on a separate line. For deepmath
+    problems, the prefix of each formula is removed. It handles axiom includes
+    by calling itself on the axiom file.
+    """
 
     # Load lines
     with open(path, "r") as f:
-        # Load the conjecture and replace axiom tag with the appropriate conjecture tag
-        conjecture = next(f)[2:].replace("axiom", "conjecture", 1).strip()
+        # List to store all the fof formulae
+        formulae = []
+
+        # If deepmath the first formula is a conjecture, load it and replace the axiom tag
+        if deepmath:
+            conjecture = next(f)[2:].replace("axiom", "conjecture", 1).strip()
+            formulae += [conjecture]
 
         # Load the axioms
-        axioms = []
-        lines = f.readlines()
-        for line in lines:
-            axioms += [line[2:].strip()]
+        axioms = f.read().splitlines()
+
+        # If deepmath remove the label tag
+        if deepmath:
+            axioms = [ax[2:] for ax in axioms]
+
+        # No inclusion of axioms files for the deepmath format
+        if not deepmath:
+            # By convention, inclusion happens in the first n lines only
+            no_axiom_files = 0
+            for n, ax in enumerate(axioms):
+                # If no inclusion
+                if not ax[:7] == "include":
+                    break
+                no_axiom_files += 1
+
+                # Get hold of file
+                axiom_file_name = re.findall("\(.+?\)", ax)[0][2:-2]
+                axiom_file_path = os.path.join(os.path.dirname(path), axiom_file_name)
+
+                # Extract the axioms
+                file_axioms = load_and_process_problem(axiom_file_path, deepmath=deepmath)
+
+                # Add axioms to the set
+                axioms.extend(file_axioms)
+
+            # Delete inclusion statements as the axioms are now included
+            for n in range(no_axiom_files):
+                del axioms[0]
+
+    # Add axioms to the set of problem formulae
+    formulae.extend(axioms)
 
     # Return the problem as a list of formulas
-    return [conjecture] + axioms
+    return formulae
 
 
-def run_clausifier(prob, cmd, sine_st, sine_sd):
+def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name):
 
     # Build sine string
     if sine_st is not None and sine_sd is not None:
@@ -168,21 +214,29 @@ def run_clausifier(prob, cmd, sine_st, sine_sd):
 
     if "--print_clausifier_premises" in cmd:
         if proc.returncode != 0 and proc.returncode != 1:  # For some reason it returns 1 for this
-            print(f"Clausifier finished with exitcode: {proc.returncode}")
+            print(f"Clausifier finished on {prob_name} with exitcode: {proc.returncode}")
+            print(cmd)
     else:
         if proc.returncode != 0 or errs != b"":
-            print(f"Clausifier finished with exitcode: {proc.returncode}")
+            print(f"Clausifier finished on {prob_name} with exitcode: {proc.returncode}")
             print("Error: ", errs)
             print(cmd)
+
+    # Try to delete the file to save memory
+    try:
+        os.remove(tmp_file)
+        pass
+    except Exception as err:
+        print(f"Warning could not remove file {tmp_file} because: {err}")
 
     return outs
 
 
-def clausify(prob, sine_st=None, sine_sd=None):
+def clausify(prob, sine_st=None, sine_sd=None, prob_name=None):
 
     # Set clausifier mode and call clausifier
     cmd = f"{CLAUSIFIER} --mode clausify "
-    return run_clausifier(prob, cmd, sine_st, sine_sd)
+    return run_clausifier(prob, cmd, sine_st, sine_sd, prob_name)
 
 
 def sine_process(prob, sine_st=None, sine_sd=None):
@@ -191,8 +245,12 @@ def sine_process(prob, sine_st=None, sine_sd=None):
 
 
 def save_problem(dir_name, prob_name, prob):
-    with open(os.path.join(dir_name, prob_name), "wb") as f:
-        f.write(prob)
+    try:
+        with open(os.path.join(dir_name, prob_name), "wb") as f:
+            f.write(prob)
+    except OSError as err:
+        print("Error: ", err)
+        print("Could not save generated problem for: ", prob_name)
 
 
 def extract_rare_axioms(tokenizer, axioms):
@@ -274,10 +332,14 @@ def get_result_dir(result_dir, mode, sine_st, sine_sd, add_extra_axioms, number_
     return result_dir
 
 
-def get_problems_from_path(problem_dir, limit=None):
+def get_problems_from_path(problem_dir, limit=None, deepmath=True):
 
     # Get path to all problems
-    problem_paths = glob.glob(os.path.join(problem_dir, "") + "*")
+    if deepmath:
+        problem_paths = glob.glob(os.path.join(problem_dir, "") + "*")
+    else:
+        problem_paths = glob.glob(os.path.join(problem_dir, "") + "*.p")
+
     if limit is not None:
         return_limit = min(limit, len(problem_paths))
         problem_paths = problem_paths[:return_limit]
@@ -323,9 +385,9 @@ def quote_number_in_problem(prob):
     return prob
 
 
-def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms):
+def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms, deepmath):
     # Load problem formulae as a list
-    prob = load_and_process_problem(prob_path)
+    prob = load_and_process_problem(prob_path, deepmath=deepmath)
 
     # If the problem should be ideal, we just remove the last half of the axioms are they are false
     if mode == "ideal":
@@ -339,22 +401,23 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
     prob = quote_number_in_problem(list(prob))
 
     # Run clean/sine mode and clausify the problem
-    clausified_problem = clausify(prob, sine_st=sine_st, sine_sd=sine_sd)
+    clausified_problem = clausify(prob, sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
 
     # Save to folder
-    save_problem(result_dir, Path(prob_path).stem, clausified_problem)
+    save_problem(result_dir, Path(prob_path).name, clausified_problem)
 
 
-def get_extra_axioms(problem_paths, no_axioms):
+def get_extra_axioms(problem_paths, no_axioms, deepmath):
 
     # Get all axioms
     axioms = set()
     for problem in problem_paths:
-        prob_ax = load_and_process_problem(problem)[1:]
+        # Get all clauses in the problem
+        prob_ax = load_and_process_problem(problem, deepmath=deepmath)
         # Add axioms
-        if len(prob_ax) > 0:
+        if len(prob_ax) > 1:
             # prob_ax = prob_ax[: len(prob_ax) // 2] # If inlcuding only positive
-            axioms.update(set(prob_ax))
+            axioms.update(set(prob_ax[1:]))
 
     # Check if enough axioms, otherwise return them all
     if no_axioms > len(axioms):
@@ -376,18 +439,24 @@ def main():
     # Check if SiNE is set correctly
     validate_input_arguments(args)
 
-    # Set result dir based on the mode
-    result_dir = get_result_dir(
-        args.result_dir,
-        args.mode,
-        args.sine_st,
-        args.sine_sd,
-        args.add_extra_axioms,
-        args.number_of_extra_axioms,
-    )
+    # Deduce the problem format
+    deepmath = args.problem_format == "deepmath"
+
+    # Set result dir based on the mode if the path is not provided
+    if args.result_dir is not None:
+        result_dir = os.path.join(args.result_dir, "")
+    else:
+        result_dir = get_result_dir(
+            BASE_RES_DIR,
+            args.mode,
+            args.sine_st,
+            args.sine_sd,
+            args.add_extra_axioms,
+            args.number_of_extra_axioms,
+        )
 
     # Get path to all problems
-    problem_paths = get_problems_from_path(args.problem_dir)
+    problem_paths = get_problems_from_path(args.problem_dir, deepmath=deepmath)
     if len(problem_paths) == 0:
         raise ValueError(f'Error please check problem dir path, found no problem at "{args.problem_dir}"')
     if args.debug:
@@ -402,7 +471,7 @@ def main():
 
     # Add extra axioms if set
     if args.add_extra_axioms:
-        extra_axioms = get_extra_axioms(problem_paths, args.number_of_extra_axioms)
+        extra_axioms = get_extra_axioms(problem_paths, args.number_of_extra_axioms, deepmath)
     else:
         extra_axioms = set()
 
@@ -413,7 +482,7 @@ def main():
     if args.mode in ["clean", "ideal", "sine"]:
 
         star_args = [
-            (prob_path, args.mode, args.sine_st, args.sine_sd, result_dir, extra_axioms)
+            (prob_path, args.mode, args.sine_st, args.sine_sd, result_dir, extra_axioms, deepmath)
             for prob_path in problem_paths
         ]
         pool = Pool(args.workers)
@@ -426,7 +495,7 @@ def main():
 
         # Process each problem
         for prob_path in tqdm(problem_paths):
-            prob = load_and_process_problem(prob_path)
+            prob = load_and_process_problem(prob_path, deepmath)
 
             # Split the problem into initial axioms and conjecture
             conjecture = prob[0]
@@ -462,7 +531,7 @@ def main():
                 # Combine the clausified axioms with the sine output
                 clausified_problem += b"\n" + sine_problem
             # Save to folder
-            save_problem(result_dir, Path(prob_path).stem, clausified_problem)
+            save_problem(result_dir, Path(prob_path).name, clausified_problem)
 
     else:
         raise ValueError(f"Unrecognised mode '{args.mode}'")
