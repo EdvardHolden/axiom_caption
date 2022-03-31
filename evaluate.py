@@ -8,7 +8,7 @@ from tqdm import tqdm
 import random
 
 from dataset import get_dataset, get_tokenizer, compute_max_length
-from model import get_model_params, load_model, reset_model_decoder_state
+from model import get_model_params, load_model, reset_model_decoder_state, initialise_model
 
 
 from tensorflow.sets import size, intersection, union
@@ -168,7 +168,7 @@ def jaccard_score_np(actual, predicted, avg=True):
 
 # @tf.function
 def generate_step(
-    tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k
+    tokenizer, model, max_len, img_tensor, caption, sampler, no_samples, sampler_temperature, sampler_top_k
 ):
 
     # List for storing predicted sequence
@@ -178,13 +178,14 @@ def generate_step(
     reset_model_decoder_state(model)
 
     # Initialise the hidden shape of the model - makes the above lines redundant
-    hidden = tf.zeros((1, model.no_rnn_units))
+    hidden = tf.zeros((caption.shape[0], model.no_rnn_units))
 
     # Get start token
-    dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]], 0)
+    dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * caption.shape[0], 1)
 
     # Run the model until we reach the max length or the end token
     for i in range(max_len):
+
         # Predict probabilities
         pred, hidden = model([img_tensor, dec_input, hidden], training=False)
 
@@ -227,7 +228,15 @@ def evaluate_model(
     for (_, (img_tensor, caption)) in tqdm(enumerate(test_data)):
         # Generate caption based on the image tensor
         yhat = generate_step(
-            tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k
+            tokenizer,
+            model,
+            max_len,
+            img_tensor,
+            caption,
+            sampler,
+            no_samples,
+            sampler_temperature,
+            sampler_top_k,
         )
 
         # Extract the string value from the tensor, remove start, end and pad tokens,
@@ -244,6 +253,30 @@ def evaluate_model(
     avg_size = np.mean([len(set(p)) for p in predicted])
 
     return {"coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
+
+
+def get_new_trained_model(trained_model, model_params, vocab_size):
+
+    # First we create some new dummy data
+    inp1 = tf.random.uniform([1, 400])
+    inp2 = tf.ones([1, 1], dtype=tf.dtypes.int32)
+    hidden = tf.zeros((1, model_params.no_rnn_units))
+
+    # Make dummy data into a dataset in case normalisation is set.
+    # This will create the layer, but the weights will be updated from the trained model
+    normalisation_data = tf.data.Dataset.from_tensor_slices((inp1, inp2))
+
+    model = initialise_model(
+        model_params.model_type, -1, vocab_size, model_params, training_data=normalisation_data
+    )  # Loaded weights will override this
+
+    # Run the model call once to infer the main input shapes? - fails otherwise
+    model([inp1, inp2, hidden])
+
+    # Set the weights of the new model with the weights of the old model
+    model.set_weights(trained_model.get_weights())
+
+    return model
 
 
 def main(
@@ -266,7 +299,7 @@ def main(
 
     # Get pre-trained tokenizer
     tokenizer_path = os.path.join(os.path.dirname(problem_ids), "tokenizer.json")
-    tokenizer, _ = get_tokenizer(tokenizer_path, verbose=1)
+    tokenizer, vocab_size = get_tokenizer(tokenizer_path, verbose=1)
 
     # If maximum length is not provided, we compute it based on the training set in config
     if max_length is None:
@@ -291,15 +324,18 @@ def main(
         tokenizer=tokenizer,
     )
 
-    # Load model
+    # Load the checkpointed model
     model_dir = os.path.join(model_dir, "ckpt_dir")
     loaded_model = load_model(model_dir)
-    loaded_model.no_rnn_units = model_params.no_rnn_units
+
+    # As stateful=True might be set, we need to get a new fresh model with the weights of the loaded
+    # model. This is to use a different batch size in the evaluation instead of the training batch size.
+    model = get_new_trained_model(loaded_model, model_params, vocab_size)
 
     # Run evaluation
     scores = evaluate_model(
         tokenizer,
-        loaded_model,
+        model,
         test_data,
         max_len,
         sampler,
