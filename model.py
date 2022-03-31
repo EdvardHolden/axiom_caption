@@ -224,14 +224,16 @@ class DenseModel(tf.keras.Model):
             model_params.batch_norm,
         )
 
-        self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
+        self.word_embedder = tf.keras.layers.Embedding(
+            vocab_size, model_params.embedding_size, name="layer_word_embedding"
+        )
 
         # Define the dense model
-        self.fc = Dense(model_params.no_dense_units, activation="relu")
-        self.dropout = Dropout(model_params.dropout_rate)
-        self.out = Dense(vocab_size)
+        self.fc = Dense(model_params.no_dense_units, activation="relu", name="layer_dense_1")
+        self.dropout = Dropout(model_params.dropout_rate, name="layer_dropout")
+        self.out = Dense(vocab_size, name="layer_output")
 
-        self.flatten = Flatten()
+        self.flatten = Flatten(name="layer_flatten")
 
     def call(self, inputs, training=None):
         input_image, input_word, hidden_state = inputs
@@ -244,7 +246,7 @@ class DenseModel(tf.keras.Model):
         # Flatten the embedding as we are not using LSTM
         word_emb = self.flatten(word_emb)
 
-        x = concatenate([image_emb, word_emb])
+        x = concatenate([image_emb, word_emb], name="layer_concatenate")
 
         # Pass through the dense layer
         x = self.fc(x, training=training)
@@ -458,7 +460,7 @@ def load_model(ckpt_dir):
     loaded_model = tf.keras.models.load_model(ckpt_dir)
     latest_checkpoint = tf.train.latest_checkpoint(ckpt_dir)
     load_status = loaded_model.load_weights(latest_checkpoint)
-    print(f"Restored from {latest_checkpoint}.")
+    print(f"Restored model from {latest_checkpoint}.")
 
     return loaded_model
 
