@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 import random
+from pathlib import Path
 
 from dataset import get_dataset, get_tokenizer, compute_max_length
 from model import get_model_params, load_model, reset_model_decoder_state, initialise_model
@@ -27,7 +28,11 @@ def get_evaluate_parser(add_help=True):
         "--model_dir", default="experiments/base_model", help="Directory containing params.json"
     )
     parser.add_argument(
-        "--problem_ids", default=config.test_id_file, help="File containing IDs for evaluation"
+        "--problem_ids",
+        default=[config.test_id_file],
+        nargs="+",
+        type=str,
+        help="List of files containing IDs for evaluation",
     )
 
     parser.add_argument(
@@ -48,6 +53,7 @@ def get_evaluate_parser(add_help=True):
         "--no_samples",
         default=1,
         type=int,
+        nargs="+",
         help="The number of samples to draw at each iteration (only one is passed to the model)",
     )
     parser.add_argument(
@@ -297,8 +303,8 @@ def main(
         f"Sampler configuration: (sampler: {sampler}) (no_samples: {no_samples}) (sampler_temperature: {sampler_temperature}) (sampler_top_k: {sampler_top_k})"
     )
 
-    # Get pre-trained tokenizer
-    tokenizer_path = os.path.join(os.path.dirname(problem_ids), "tokenizer.json")
+    # Get pre-trained tokenizer - assume all ids are in the same directory
+    tokenizer_path = os.path.join(os.path.dirname(problem_ids[0]), "tokenizer.json")
     tokenizer, vocab_size = get_tokenizer(tokenizer_path, verbose=1)
 
     # If maximum length is not provided, we compute it based on the training set in config
@@ -313,17 +319,6 @@ def main(
     axiom_order = None  # We do not care about the order in this case as all metrics are based on the set
     print("Using axiom order: ", axiom_order)
 
-    # Get the test dataset with batch 1 as we need to treat each caption separately
-    # Also, we want the raw text so not providing a tokenizer
-    test_data, _ = get_dataset(
-        problem_ids,
-        proof_data,
-        problem_features,
-        batch_size=1,
-        order=axiom_order,
-        tokenizer=tokenizer,
-    )
-
     # Load the checkpointed model
     model_dir = os.path.join(model_dir, "ckpt_dir")
     loaded_model = load_model(model_dir)
@@ -332,21 +327,38 @@ def main(
     # model. This is to use a different batch size in the evaluation instead of the training batch size.
     model = get_new_trained_model(loaded_model, model_params, vocab_size)
 
-    # Run evaluation
-    scores = evaluate_model(
-        tokenizer,
-        model,
-        test_data,
-        max_len,
-        sampler,
-        no_samples,
-        sampler_temperature,
-        sampler_top_k,
-        verbose=verbose,
-    )
-    print("# Scores ")
-    for score in sorted(scores):
-        print(f"{score:<8}: {scores[score]:.2f}")
+    # Get the test dataset with batch 1 as we need to treat each caption separately
+    # Also, we want the raw text so not providing a tokenizer
+    for n in no_samples:
+        print(f"### No samples: {n}")
+        for ids in problem_ids:
+
+            print(f"## Evaluating on: {Path(ids).stem}")
+            test_data, _ = get_dataset(
+                ids,
+                proof_data,
+                problem_features,
+                batch_size=1,
+                order=axiom_order,
+                tokenizer=tokenizer,
+            )
+
+            # Run evaluation
+            scores = evaluate_model(
+                tokenizer,
+                model,
+                test_data,
+                max_len,
+                sampler,
+                n,
+                sampler_temperature,
+                sampler_top_k,
+                verbose=verbose,
+            )
+            print("# Scores ")
+            for score in sorted(scores):
+                print(f"{score:<8}: {scores[score]:.2f}")
+            print()
 
     return scores
 
