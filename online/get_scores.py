@@ -15,18 +15,27 @@ LIBRARY_VERSION = 64
 
 DATASET_DIR = "../data/deepmath/"
 
-''' Error in problems
+""" Error in problems
 EXPERIMENTS = {115360: "test experiment",
                115362: "first test on clean",
                115363: "second test on clean",
                115364: "Ideal",
                115365: "Sine 1 1",
                115366: "Sine 3 0"}
-'''
-EXPERIMENTS = {115376: "Clean",
-               115377: "Ideal",
-               115378: "Sine 1 1",
-               115379: "Sine 3 0"}
+"""
+# """
+# Good experiments with proper quoting of numbers
+# EXPERIMENTS = {115376: "Clean", 115377: "Ideal", 115378: "Sine 1 1", 115379: "Sine 3 0"}
+# """
+# Experiments with 1000 extra axioms
+# EXPERIMENTS = {115386: "Clean", 115387: "Sine 1 1", 115388: "Sine 3 0"}
+
+# MPTP
+# EXPERIMENTS = {115403: "Clean", 115404: "Sine 1 1", 115405: "Sine 3 0"}
+
+# Mizar 40
+EXPERIMENTS = {115407: "Clean", 115408: "Sine 1 1", 115409: "Sine 3 0"}
+
 
 DATA_SETS = {"total": None, "train": "train.txt", "test": "test.txt"}
 
@@ -118,6 +127,13 @@ def get_no_solved(exp_id, upper_time_bound=None, problem_set=None):
     select = "SELECT IFNULL(COUNT(*), 0)"
     res = _base_query_solved_problemrun(select, exp_id, upper_time_bound, problem_set)
     return int(res[0][0])
+
+
+def get_problem_stats(exp_id, upper_time_bound=None, problem_set=None):
+
+    select = "SELECT PR.Problem, PR.Runtime"
+    res = _base_query_solved_problemrun(select, exp_id, upper_time_bound, problem_set)
+    return res
 
 
 def get_avg_time_solved(exp_id, upper_time_bound=None, problem_set=None):
