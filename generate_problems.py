@@ -335,10 +335,13 @@ def get_result_dir(result_dir, mode, sine_st, sine_sd, add_extra_axioms, number_
 def get_problems_from_path(problem_dir, limit=None, deepmath=True):
 
     # Get path to all problems
+    problem_paths = glob.glob(os.path.join(problem_dir, "") + "*")
+    """
     if deepmath:
         problem_paths = glob.glob(os.path.join(problem_dir, "") + "*")
     else:
         problem_paths = glob.glob(os.path.join(problem_dir, "") + "*.p")
+    """
 
     if limit is not None:
         return_limit = min(limit, len(problem_paths))
