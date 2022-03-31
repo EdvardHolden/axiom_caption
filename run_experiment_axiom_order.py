@@ -44,11 +44,11 @@ def get_order_exp_parser():
 
 def main():
 
-    parser, training_parameters = get_order_exp_parser()
+    parser = get_order_exp_parser()
     args = parser.parse_args()
 
     # Read the model config
-    with open(os.path.join(args.model_dir, "params.json"), "r") as f:
+    with open(os.path.join(args.experiment_dir, "params.json"), "r") as f:
         model_params = json.load(f)
 
     # For each embedding
