@@ -7,13 +7,29 @@ import config
 import evaluate
 from evaluate import get_evaluate_parser
 
+# TODO break this down the middle and run it on 2-3 machines?
+"""
 SAMPLERS = [
-    {"sampler": "greedy", "no_samples": 1},
-    {"sampler": "greedy", "no_samples": 3},
-    {"sampler": "greedy", "no_samples": 5},
-    {"sampler": "temperature", "sampler_temperature": 0.3, "no_samples": 1},
-    {"sampler": "top_k", "sampler_top_k": 100, "no_samples": 1},
+    {"sampler": "greedy"},
+    {"sampler": "temperature", "sampler_temperature": 1.0},
+    {"sampler": "temperature", "sampler_temperature": 0.9},
 ]
+"""
+"""
+SAMPLERS = [
+    {"sampler": "temperature", "sampler_temperature": 0.8},
+    {"sampler": "temperature", "sampler_temperature": 0.5},
+    {"sampler": "top_k", "sampler_top_k": 32},
+]
+"""
+SAMPLERS = [
+    {"sampler": "top_k", "sampler_top_k": 64},
+    {"sampler": "top_k", "sampler_top_k": 128},
+    {"sampler": "top_k", "sampler_top_k": 256},
+]
+
+# Set no_samples as a static thing across experiments to avoid any mistakes
+no_samples = {"no_samples": [1, 2, 4]}
 # --sampler
 # --no_samples
 # --sampler_temperature
@@ -52,6 +68,8 @@ def main():
     # For each sampler
     results = {}
     for sampler in tqdm(SAMPLERS):
+
+        sampler.update(no_samples)
 
         # Get the tag for the job
         sampler_tag = "_".join(k + "_" + str(sampler[k]) for k in sorted(sampler))
