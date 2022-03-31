@@ -72,6 +72,13 @@ def get_evaluate_parser(add_help=True):
     parser.add_argument("--max_length", default=22, type=int, help="The maximum length of the predictions")
     parser.add_argument("-v", "--verbose", action="count", default=0)
 
+    parser.add_argument(
+        "--remove_unknown",
+        action="store_true",
+        default=False,
+        help="Remove tokens mapped to oov. Can reduce the number of samples.",
+    )
+
     return parser
 
 
@@ -295,6 +302,7 @@ def main(
     no_samples,
     sampler_temperature,
     sampler_top_k,
+    remove_unknown,
     verbose,
 ):
 
@@ -341,6 +349,7 @@ def main(
                 batch_size=1,
                 order=axiom_order,
                 tokenizer=tokenizer,
+                remove_unknown=remove_unknown,
             )
 
             # Run evaluation
