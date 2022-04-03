@@ -122,6 +122,11 @@ def load_photo_features(filename, dataset):
     # Load the img features of the photos in the set
     with open(filename, "rb") as f:
         all_features = pickle.load(f)
+
+    # Ensure no new line added to the name entry
+    for k in sorted(all_features):
+        all_features[k.strip()] = all_features.pop(k)
+
     # FIXME Adding the .p extension in the name for now - should be made more uniform
     if ".p" == str(all_features[list(all_features.keys())[0]][-2:]):
         features = {k: all_features[k + ".p"] for k in dataset}
@@ -250,6 +255,17 @@ def main():
     print(test_data)
     print("Max length: ", max_len_train)
     assert max_len_test == max_len_train
+
+    deepmath_data, max_len_deepmath = get_dataset(
+        "data/deepmath/all.txt",
+        config.proof_data,
+        "data/embeddings/deepmath/deepmath_embedding_unsupervised_conjecture.pkl",
+        tokenizer=tokenizer,
+        max_cap_len=max_len_train,
+        order=order,
+        axiom_frequency=axiom_frequency,
+        remove_unknown=True,
+    )
 
 
 if __name__ == "__main__":
