@@ -19,8 +19,9 @@ from dataset import get_tokenizer
 from dataset import load_photo_features
 from model import get_model_params
 from model import load_model
-from evaluate import generate_step
+from evaluate import generate_step, get_new_trained_model
 
+import tensorflow as tf
 
 random.seed(7)
 
@@ -281,8 +282,9 @@ def compute_caption(tokenizer, model, problem_feature):
     axiom_caption = generate_step(
         tokenizer,
         model,
-        22,
+        20,
         [problem_feature],
+        tf.ones([1, 1], dtype=tf.dtypes.int32),
         "greedy",
         1,
         None,
@@ -361,11 +363,11 @@ def validate_input_arguments(args):
             raise ValueError("Both sd and st must be set for the SiNE mode")
 
 
-def get_model(model_dir):
+def get_model(model_dir, vocab_size):
     model_params = get_model_params(model_dir)
-    model_dir = os.path.join(model_dir, "ckpt_dir")
-    model = load_model(model_dir)
-    model.no_rnn_units = model_params.no_rnn_units
+    loaded_model = load_model(os.path.join(model_dir, "ckpt_dir"))
+    model = model = get_new_trained_model(loaded_model, model_params, vocab_size)
+
     return model
 
 
@@ -469,8 +471,8 @@ def main():
     # If captioning, load all the required resources
     if args.mode in ["caption", "caption_sine"]:
         problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
-        tokenizer, _ = get_tokenizer("data/deepmath/tokenizer.json")
-        model = get_model(args.model_dir)
+        tokenizer, vocab_size = get_tokenizer("data/deepmath/tokenizer.json")
+        model = get_model(args.model_dir, vocab_size)
 
     # Add extra axioms if set
     if args.add_extra_axioms:
