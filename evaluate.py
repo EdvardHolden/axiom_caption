@@ -76,7 +76,7 @@ def get_evaluate_parser(add_help=True):
         "--remove_unknown",
         action="store_true",
         default=False,
-        help="Remove tokens mapped to oov. Can reduce the number of samples.",
+        help="Remove tokens mapped to oov. May reduce the number of samples.",
     )
 
     return parser
