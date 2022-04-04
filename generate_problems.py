@@ -6,7 +6,6 @@ import os
 import re
 import subprocess
 from pathlib import Path
-import argparse
 from keras.preprocessing.text import text_to_word_sequence
 from tqdm import tqdm
 from multiprocessing import Pool
@@ -20,6 +19,7 @@ from dataset import load_photo_features
 from model import get_model_params
 from model import load_model
 from evaluate import generate_step, get_new_trained_model
+from utils import get_sampler_parser
 
 import tensorflow as tf
 
@@ -33,65 +33,71 @@ TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 # Top dir of the result directory
 BASE_RES_DIR = "generated_problems/"
 
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--mode",
-    # default="clean",
-    default="caption",
-    choices=["clean", "ideal", "sine", "caption", "caption_sine"],
-    help="The mode used to generate the modified DeepMath problems",
-)
-parser.add_argument("--sine_sd", default=None)
-parser.add_argument("--sine_st", default=None)
-parser.add_argument("--result_dir", default=None, help="Base folder for writing generated problems")
 
-if socket.gethostname() == "kontor":
-    default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
-else:
-    default_problem_dir = "/shareddata/home/holden/gnn-entailment-caption/nndata"
-parser.add_argument(
-    "--problem_dir",
-    default=default_problem_dir,
-    help="Directory containing the base problems",
-)
-parser.add_argument(
-    "--add_extra_axioms",
-    default=False,
-    action="store_true",
-    help="Add a set number of extra axioms to each problem. Same axioms added to each problem.",
-)
-parser.add_argument(
-    "--number_of_extra_axioms",
-    default=1000,
-    type=int,
-    help="Number of extra axioms to add to each generated problem. Only used if add_extra_axioms flag is set",
-)
+def get_generate_parser():
 
-parser.add_argument(
-    "--feature_path",
-    default="data/embeddings/deepmath/graph_features_deepmath_all.pkl",
-    help="Path to the problem embeddings",
-)
-parser.add_argument(
-    "--model_dir",
-    default="experiments/hyperparam/initial/attention_False_axiom_order_length_batch_norm_False_dropout_rate_0.1_embedding_size_200_learning_rate_0.001_model_type_merge_inject_no_dense_units_32_no_rnn_units_32_normalize_True_rnn_type_lstm/",
-    help="Path to the model used in the captioning modes",
-)
-parser.add_argument(
-    "--workers",
-    type=int,
-    default=max(os.cpu_count() - 2, 1),
-    help="Number of workers for multiprocessing (used in some modes)",
-)
-parser.add_argument(
-    "-d", "--debug", action="store_true", default=False, help="Limit generation to 100 instances"
-)
-parser.add_argument(
-    "--problem_format",
-    default="deepmath",
-    choices=["deepmath", "mptp"],
-    help="The problem format of the benchmark",
-)
+    parser = get_sampler_parser()
+    parser.add_argument(
+        "--mode",
+        # default="clean",
+        default="caption",
+        choices=["clean", "ideal", "sine", "caption", "caption_sine"],
+        help="The mode used to generate the modified DeepMath problems",
+    )
+    parser.add_argument("--sine_sd", default=None)
+    parser.add_argument("--sine_st", default=None)
+    parser.add_argument("--result_dir", default=None, help="Base folder for writing generated problems")
+
+    if socket.gethostname() == "kontor":
+        default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
+    else:
+        default_problem_dir = "/shareddata/home/holden/gnn-entailment-caption/nndata"
+    parser.add_argument(
+        "--problem_dir",
+        default=default_problem_dir,
+        help="Directory containing the base problems",
+    )
+    parser.add_argument(
+        "--add_extra_axioms",
+        default=False,
+        action="store_true",
+        help="Add a set number of extra axioms to each problem. Same axioms added to each problem.",
+    )
+    parser.add_argument(
+        "--number_of_extra_axioms",
+        default=1000,
+        type=int,
+        help="Number of extra axioms to add to each generated problem. Only used if add_extra_axioms flag is set",
+    )
+
+    parser.add_argument(
+        "--feature_path",
+        default="data/embeddings/deepmath/graph_features_deepmath_all.pkl",
+        help="Path to the problem embeddings",
+    )
+    parser.add_argument(
+        "--model_dir",
+        default="experiments/hyperparam/initial/attention_False_axiom_order_length_batch_norm_False_dropout_rate_0.1_embedding_size_200_learning_rate_0.001_model_type_merge_inject_no_dense_units_32_no_rnn_units_32_normalize_True_rnn_type_lstm/",
+        help="Path to the model used in the captioning modes",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=max(os.cpu_count() - 2, 1),
+        help="Number of workers for multiprocessing (used in some modes)",
+    )
+    parser.add_argument(
+        "-d", "--debug", action="store_true", default=False, help="Limit generation to 100 instances"
+    )
+    parser.add_argument(
+        "--problem_format",
+        default="deepmath",
+        choices=["deepmath", "mptp"],
+        help="The problem format of the benchmark",
+    )
+
+    return parser
+
 
 # Re pattern for finding each element in a clause
 ELEMENT_PATTERN = re.compile("([\(\),=&?<>|])")
@@ -274,7 +280,11 @@ def extract_rare_axioms(tokenizer, axioms):
     return rare
 
 
-def compute_caption(tokenizer, model, problem_feature):
+def compute_caption(
+    tokenizer, model, problem_feature, sampler, max_length, no_samples, sampler_temperature, sampler_top_k
+):
+
+    # TODO add sampling into models and get from argparser
 
     # TODO add sampling type?
     # Run the model to get the predicted tokens
@@ -282,13 +292,13 @@ def compute_caption(tokenizer, model, problem_feature):
     axiom_caption = generate_step(
         tokenizer,
         model,
-        20,
+        max_length,
         [problem_feature],
-        tf.ones([1, 1], dtype=tf.dtypes.int32),
-        "greedy",
-        1,
-        None,
-        None,
+        tf.ones([1, 1], dtype=tf.dtypes.int32),  # Dummy the caption to get dimension
+        sampler,
+        no_samples,
+        sampler_temperature,
+        sampler_top_k,
     )
     # Remove non-axiom tokens
     axiom_caption = list(filter(lambda x: x != 0 and x != 1 and x != 2 and x != 3, axiom_caption))
@@ -440,12 +450,18 @@ def get_extra_axioms(problem_paths, no_axioms, deepmath):
 def main():
 
     # Parse input arguments
+    parser = get_generate_parser()
     args = parser.parse_args()
     # Check if SiNE is set correctly
     validate_input_arguments(args)
 
     # Deduce the problem format
     deepmath = args.problem_format == "deepmath"
+
+    if len(args.no_samples) > 1:
+        raise ValueError("Error: Multiple sample values not supported for generating problems")
+    else:
+        no_samples = args.no_samples[0]
 
     # Set result dir based on the mode if the path is not provided
     if args.result_dir is not None:
@@ -461,7 +477,7 @@ def main():
         )
 
     # Get path to all problems
-    problem_paths = get_problems_from_path(args.problem_dir, deepmath=deepmath)
+    problem_paths = get_problems_from_path(args.problem_dir, deepmath=deepmath)[:10]
     if len(problem_paths) == 0:
         raise ValueError(f'Error please check problem dir path, found no problem at "{args.problem_dir}"')
     if args.debug:
@@ -519,7 +535,16 @@ def main():
             new_problem.update(rare_axioms)
 
             # Use the model to generate the axioms required for the proof
-            axiom_caption = compute_caption(tokenizer, model, problem_features[Path(prob_path).stem])
+            axiom_caption = compute_caption(
+                tokenizer,
+                model,
+                problem_features[Path(prob_path).stem],
+                args.sampler,
+                args.max_length,
+                no_samples,
+                args.sampler_temperature,
+                args.sampler_top_k,
+            )
             # Add the caption to the problem
             new_problem.update(axiom_caption)
 
