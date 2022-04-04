@@ -466,6 +466,8 @@ def main():
     # Set result dir based on the mode if the path is not provided
     if args.result_dir is not None:
         result_dir = os.path.join(args.result_dir, "")
+        if not os.path.exists(result_dir):
+            os.mkdir(result_dir)
     else:
         result_dir = get_result_dir(
             BASE_RES_DIR,
