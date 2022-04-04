@@ -477,7 +477,7 @@ def main():
         )
 
     # Get path to all problems
-    problem_paths = get_problems_from_path(args.problem_dir, deepmath=deepmath)[:10]
+    problem_paths = get_problems_from_path(args.problem_dir, deepmath=deepmath)
     if len(problem_paths) == 0:
         raise ValueError(f'Error please check problem dir path, found no problem at "{args.problem_dir}"')
     if args.debug:
