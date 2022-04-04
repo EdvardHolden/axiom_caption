@@ -10,6 +10,7 @@ from pathlib import Path
 
 from dataset import get_dataset, get_tokenizer, compute_max_length
 from model import get_model_params, load_model, reset_model_decoder_state, initialise_model
+from utils import get_sampler_parser
 
 
 from tensorflow.sets import size, intersection, union
@@ -23,7 +24,8 @@ tf.random.set_seed(42)
 def get_evaluate_parser(add_help=True):
 
     # Get the parser, need to remove 'help' if being used as a parent parser
-    parser = argparse.ArgumentParser(add_help=add_help)
+    parser = get_sampler_parser()
+
     parser.add_argument(
         "--model_dir", default="experiments/base_model", help="Directory containing params.json"
     )
@@ -42,34 +44,6 @@ def get_evaluate_parser(add_help=True):
         "--proof_data", default=config.proof_data, help="File containing the image descriptions"
     )
 
-    # Sampling options
-    parser.add_argument(
-        "--sampler",
-        default="greedy",
-        choices=["greedy", "temperature", "top_k"],
-        help="The method used to sample the next word in the prediction",
-    )
-    parser.add_argument(
-        "--no_samples",
-        default=1,
-        type=int,
-        nargs="+",
-        help="The number of samples to draw at each iteration (only one is passed to the model)",
-    )
-    parser.add_argument(
-        "--sampler_temperature",
-        default=1.0,
-        type=float,
-        help="The temperature when using the temperature sampler (0, 1]",
-    )
-    parser.add_argument(
-        "--sampler_top_k",
-        default=10,
-        type=int,
-        help="The top k predictions to use when recomputing the prediction distributions",
-    )
-
-    parser.add_argument("--max_length", default=22, type=int, help="The maximum length of the predictions")
     parser.add_argument("-v", "--verbose", action="count", default=0)
 
     parser.add_argument(

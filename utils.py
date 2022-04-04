@@ -12,7 +12,6 @@ def get_train_parser(add_help=True):
     parser = argparse.ArgumentParser(add_help=add_help)
 
     # Dataset ID options
-    # FIXME only add dataset folder and not full id path?
     parser.add_argument(
         "--train_id_file", default=config.train_id_file, help="File containing the training ids"
     )
@@ -39,6 +38,43 @@ def get_train_parser(add_help=True):
     parser.add_argument(
         "--save_model", default=False, action="store_true", help="Set if final model should be saved"
     )
+
+    return parser
+
+
+def get_sampler_parser(add_help=True):
+
+    # Get the parser, need to remove 'help' if being used as a parent parser
+    parser = argparse.ArgumentParser(add_help=add_help)
+
+    # Sampling options
+    parser.add_argument(
+        "--sampler",
+        default="greedy",
+        choices=["greedy", "temperature", "top_k"],
+        help="The method used to sample the next word in the prediction",
+    )
+    parser.add_argument(
+        "--no_samples",
+        default=[1],
+        type=int,
+        nargs="+",
+        help="The number of samples to draw at each iteration (only one is passed to the model)",
+    )
+    parser.add_argument(
+        "--sampler_temperature",
+        default=1.0,
+        type=float,
+        help="The temperature when using the temperature sampler (0, 1]",
+    )
+    parser.add_argument(
+        "--sampler_top_k",
+        default=10,
+        type=int,
+        help="The top k predictions to use when recomputing the prediction distributions",
+    )
+
+    parser.add_argument("--max_length", default=22, type=int, help="The maximum length of the predictions")
 
     return parser
 
