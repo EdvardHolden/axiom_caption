@@ -159,6 +159,12 @@ def load_and_process_problem(path, deepmath=False):
         if deepmath:
             conjecture = next(f)[2:].replace("axiom", "conjecture", 1).strip()
             formulae += [conjecture]
+        else:
+            # MPTP files start with a comment and a conjecture
+            _ = next(f)  # Comment
+            conjecture = next(f)  # Conjecture
+            assert "conjecture," in conjecture
+            formulae += [conjecture]
 
         # Load the axioms
         axioms = f.read().splitlines()
@@ -529,6 +535,7 @@ def main():
 
             # Update initial axioms with the extra axioms if set
             if args.add_extra_axioms:
+                # These only affect the extraction of rare axioms
                 initial_axioms.update(extra_axioms)
 
             # Extract axioms that are found in proof but cannot be predicted
