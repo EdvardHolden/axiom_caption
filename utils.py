@@ -4,6 +4,15 @@ import config
 from subprocess import check_call
 import argparse
 from argparse import Namespace
+from enum import Enum
+
+
+class Context(Enum):
+    PROOF = "proof"
+    FLICKR = "flickr"
+
+    def __str__(self):
+        return self.value
 
 
 def get_train_parser(add_help=True):
@@ -37,6 +46,14 @@ def get_train_parser(add_help=True):
     # FIXME this might not remove that much memory load due to the checkpoints
     parser.add_argument(
         "--save_model", default=False, action="store_true", help="Set if final model should be saved"
+    )
+
+    parser.add_argument(
+        "--context",
+        choices=list(Context),
+        type=Context,
+        default="proof",
+        help="Alternate context between Flickr8 and Proof datasets",
     )
 
     return parser

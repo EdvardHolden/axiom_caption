@@ -13,12 +13,14 @@ from keras.layers import Embedding
 from keras.layers import Flatten
 from keras.layers import Normalization
 from keras.layers import BatchNormalization
+from keras.layers.pooling import GlobalMaxPooling2D
 from keras.layers.merge import concatenate
 from argparse import Namespace
 import json
 import os
 
 from dataset import AxiomOrder
+from utils import Context
 
 
 def adapt_normalization_layer(model, embedding_vectors):
@@ -66,13 +68,27 @@ def initialise_model(model_type, max_len, vocab_size, model_params, training_dat
 
 
 class ImageEncoder(layers.Layer):
-    def __init__(self, no_dense_units, dropout_rate, normalize, batch_norm, name="image_encoder", **kwargs):
+    def __init__(
+        self,
+        no_dense_units,
+        dropout_rate,
+        normalize,
+        batch_norm,
+        global_max_pool=False,
+        name="image_encoder",
+        **kwargs,
+    ):
         super(ImageEncoder, self).__init__(name=name, **kwargs)
 
         if normalize:
             self.normalize = Normalization()
         else:
             self.normalize = None
+
+        if global_max_pool:  # FIXME unclear whether this should go before normalisation
+            self.max_pool = GlobalMaxPooling2D()
+        else:
+            self.max_pool = None
 
         if batch_norm:
             self.batch_norm = BatchNormalization()
@@ -89,6 +105,10 @@ class ImageEncoder(layers.Layer):
         if self.normalize:
             assert self.normalize.is_adapted, "Need to adapt the normalisation layer before using"
             x = self.normalize(x)
+
+        # Apply max pooling if set
+        if self.max_pool:
+            x = self.max_pool(x)
 
         # Apply batch norm if set
         if self.batch_norm:
@@ -280,6 +300,7 @@ class InjectModel(tf.keras.Model):
             model_params.dropout_rate,
             model_params.normalize,
             model_params.batch_norm,
+            global_max_pool=model_params.global_max_pool,
         )
 
         if model_params.attention:
@@ -299,6 +320,8 @@ class InjectModel(tf.keras.Model):
         self.repeat = RepeatVector(1)
 
     def call(self, inputs, training=None):
+
+        # Extract the input elements
         input_image, input_word, hidden_state = inputs
 
         # Compute image embedding
@@ -360,7 +383,9 @@ class BahdanauAttention(tf.keras.Model):
 
 
 class MergeInjectModel(tf.keras.Model):
-    def __init__(self, max_length, vocab_size, model_params, name="merge_inject", **kwargs):
+    def __init__(
+        self, max_length, vocab_size, model_params, global_max_pool=False, name="merge_inject", **kwargs
+    ):
         super(MergeInjectModel, self).__init__(name=name, **kwargs)
         self.max_length = max_length
         self.vocab_size = vocab_size
@@ -373,6 +398,7 @@ class MergeInjectModel(tf.keras.Model):
             model_params.dropout_rate,
             model_params.normalize,
             model_params.batch_norm,
+            global_max_pool=global_max_pool,
         )
         self.word_encoder = WordEncoder(
             vocab_size,
@@ -476,7 +502,7 @@ def get_rnn(rnn_type):
     return rnn
 
 
-def get_model_params(model_dir):
+def get_model_params(model_dir, context=Context.PROOF):
 
     # Load parameters from model directory and create namespace
     with open(os.path.join(model_dir, "params.json"), "r") as f:
@@ -485,6 +511,9 @@ def get_model_params(model_dir):
 
     if params.axiom_order:
         params.axiom_order = _axiom_order_string_to_type(params.axiom_order)
+
+    # Enable max pooling if we are operating on image features
+    params.global_max_pool = context == Context.FLICKR
 
     return params
 

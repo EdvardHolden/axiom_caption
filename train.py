@@ -215,7 +215,9 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return metrics
 
 
-def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, save_model, remove_unknown):
+def main(
+    model_dir, problem_features, proof_data, train_id_file, val_id_file, save_model, remove_unknown, context
+):
 
     # Instantiate Tensorflow environment
     # TODO
@@ -232,7 +234,7 @@ def main(model_dir, problem_features, proof_data, train_id_file, val_id_file, sa
     print("Number of words: ", vocab_size)
 
     # Load model params from model file
-    model_params = get_model_params(model_dir)
+    model_params = get_model_params(model_dir, context=context)
 
     # Compute the axiom frequencies if required
     if model_params.axiom_order is AxiomOrder.FREQUENCY:
