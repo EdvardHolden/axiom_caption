@@ -44,7 +44,7 @@ def get_hyperparam_parser():
 
 def main():
 
-    parser, training_parameters = get_hyperparam_parser()
+    parser = get_hyperparam_parser()
     args = parser.parse_args()
 
     # Define the hyper-parameter space
