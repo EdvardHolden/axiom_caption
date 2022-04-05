@@ -254,7 +254,7 @@ def get_new_trained_model(trained_model, model_params, vocab_size):
     normalisation_data = tf.data.Dataset.from_tensor_slices((inp1, inp2))
 
     model = initialise_model(
-        model_params.model_type, -1, vocab_size, model_params, training_data=normalisation_data
+        model_params.model_type, vocab_size, model_params, training_data=normalisation_data
     )  # Loaded weights will override this
 
     # Run the model call once to infer the main input shapes? - fails otherwise
