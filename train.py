@@ -266,9 +266,7 @@ def main(
     )
 
     # Initialise the model
-    model = initialise_model(
-        model_params.model_type, max_len, vocab_size, model_params, training_data=train_data
-    )
+    model = initialise_model(model_params.model_type, vocab_size, model_params, training_data=train_data)
     print("Training on: ", model)
 
     # Initialise the optimiser

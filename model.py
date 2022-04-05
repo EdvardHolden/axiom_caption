@@ -54,9 +54,9 @@ def reset_model_decoder_state(model):
                 pass
 
 
-def initialise_model(model_type, max_len, vocab_size, model_params, training_data=None):
+def initialise_model(model_type, vocab_size, model_params, training_data=None):
 
-    model = get_model(model_type, max_len, vocab_size, model_params)
+    model = get_model(model_type, vocab_size, model_params)
 
     # If normalisation on the embedding graph is set, we have to adapt the
     # layer before compiling (or re-compile) the model
@@ -229,9 +229,8 @@ class WordDecoder(layers.Layer):
 
 
 class DenseModel(tf.keras.Model):
-    def __init__(self, max_length, vocab_size, model_params, name="dense", **kwargs):
+    def __init__(self, vocab_size, model_params, name="dense", **kwargs):
         super(DenseModel, self).__init__(name=name, **kwargs)
-        self.max_length = max_length
         self.vocab_size = vocab_size
         self.no_rnn_units = model_params.no_rnn_units
 
@@ -277,7 +276,7 @@ class DenseModel(tf.keras.Model):
 
     def get_config(self):
         config = super(DenseModel, self).get_config()
-        config.update({"max_length": self.max_length, "vocab_size": self.vocab_size, "name": self.name})
+        config.update({"vocab_size": self.vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -286,9 +285,8 @@ class DenseModel(tf.keras.Model):
 
 
 class InjectModel(tf.keras.Model):
-    def __init__(self, max_length, vocab_size, model_params, name="inject", **kwargs):
+    def __init__(self, vocab_size, model_params, name="inject", **kwargs):
         super(InjectModel, self).__init__(name=name, **kwargs)
-        self.max_length = max_length
         self.vocab_size = vocab_size
         self.no_rnn_units = model_params.no_rnn_units
 
@@ -343,7 +341,7 @@ class InjectModel(tf.keras.Model):
 
     def get_config(self):
         config = super(InjectModel, self).get_config()
-        config.update({"max_length": self.max_length, "vocab_size": self.vocab_size, "name": self.name})
+        config.update({"vocab_size": self.vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -383,11 +381,8 @@ class BahdanauAttention(tf.keras.Model):
 
 
 class MergeInjectModel(tf.keras.Model):
-    def __init__(
-        self, max_length, vocab_size, model_params, global_max_pool=False, name="merge_inject", **kwargs
-    ):
+    def __init__(self, vocab_size, model_params, global_max_pool=False, name="merge_inject", **kwargs):
         super(MergeInjectModel, self).__init__(name=name, **kwargs)
-        self.max_length = max_length
         self.vocab_size = vocab_size
         self.no_rnn_units = model_params.no_rnn_units
 
@@ -454,7 +449,7 @@ class MergeInjectModel(tf.keras.Model):
 
     def get_config(self):
         config = super(MergeInjectModel, self).get_config()
-        config.update({"max_length": self.max_length, "vocab_size": self.vocab_size, "name": self.name})
+        config.update({"vocab_size": self.vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -468,13 +463,13 @@ class MergeInjectModel(tf.keras.Model):
         return Model(inputs=x, outputs=self.call(x))
 
 
-def get_model(model_type, max_length, vocab_size, params):
+def get_model(model_type, vocab_size, params):
     if model_type == "merge_inject":
-        model = MergeInjectModel(max_length, vocab_size, params)
+        model = MergeInjectModel(vocab_size, params)
     elif model_type == "inject":
-        model = InjectModel(max_length, vocab_size, params)
+        model = InjectModel(vocab_size, params)
     elif model_type == "dense":
-        model = DenseModel(max_length, vocab_size, params)
+        model = DenseModel(vocab_size, params)
     else:
         print("Unrecognised model type: ", model_type, file=sys.stderr)
         sys.exit(1)
