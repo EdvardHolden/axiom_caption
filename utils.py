@@ -15,6 +15,19 @@ class Context(Enum):
         return self.value
 
 
+# Set axiom order type
+class AxiomOrder(Enum):
+    ORIGINAL = "original"
+    LEXICOGRAPHIC = "lexicographic"
+    LENGTH = "length"
+    FREQUENCY = "frequency"
+    RANDOM = "random"
+    RANDOM_GLOBAL = "random_global"
+
+    def __str__(self):
+        return self.value
+
+
 def get_train_parser(add_help=True):
 
     # Get the parser, need to remove 'help' if being used as a parent parser

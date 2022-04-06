@@ -1,7 +1,6 @@
 import os
 import time
 import tensorflow as tf
-import argparse
 from pickle import dump
 import numpy as np
 import random
@@ -12,11 +11,10 @@ from dataset import (
     get_tokenizer,
     compute_axiom_frequency,
     compute_random_global_axiom_frequency,
-    AxiomOrder,
 )
 from model import get_model_params, initialise_model, DenseModel, reset_model_decoder_state
 from evaluate import jaccard_score, coverage_score
-from utils import get_train_parser
+from utils import get_train_parser, AxiomOrder
 
 # Make script deterministic to see if we can avoid the gpu issue
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
