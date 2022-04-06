@@ -505,28 +505,12 @@ def get_model_params(model_dir, context=Context.PROOF):
         params = Namespace(**params)
 
     if params.axiom_order:
-        params.axiom_order = _axiom_order_string_to_type(params.axiom_order)
+        params.axiom_order = AxiomOrder(params.AxiomOrder)
 
     # Enable max pooling if we are operating on image features
     params.global_max_pool = context == Context.FLICKR
 
     return params
-
-
-def _axiom_order_string_to_type(string_value):
-
-    if string_value == "original":
-        return AxiomOrder.ORIGINAL
-    elif string_value == "lexicographic":
-        return AxiomOrder.LEXICOGRAPHIC
-    elif string_value == "length":
-        return AxiomOrder.LENGTH
-    elif string_value == "random":
-        return AxiomOrder.RANDOM
-    elif string_value == "frequency":
-        return AxiomOrder.FREQUENCY
-    else:
-        raise ValueError(f"No string mapping between '{string_value}' and enum in AxiomOrder")
 
 
 if __name__ == "__main__":

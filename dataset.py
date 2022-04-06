@@ -6,7 +6,7 @@ import os
 import json
 from keras.preprocessing.text import tokenizer_from_json
 from keras.preprocessing.sequence import pad_sequences
-from enum import Enum, auto
+from enum import Enum
 from utils import debug
 
 import config
@@ -14,11 +14,11 @@ import config
 
 # Set axiom order type
 class AxiomOrder(Enum):
-    ORIGINAL = auto()
-    LEXICOGRAPHIC = auto()
-    LENGTH = auto()
-    FREQUENCY = auto()
-    RANDOM = auto()
+    ORIGINAL = "original"
+    LEXICOGRAPHIC = "lexicographic"
+    LENGTH = "length"
+    FREQUENCY = "frequen"
+    RANDOM = "random"
 
 
 def get_tokenizer(tokenizer_path, verbose=0):
