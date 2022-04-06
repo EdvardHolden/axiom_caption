@@ -17,8 +17,9 @@ class AxiomOrder(Enum):
     ORIGINAL = "original"
     LEXICOGRAPHIC = "lexicographic"
     LENGTH = "length"
-    FREQUENCY = "frequen"
+    FREQUENCY = "frequency"
     RANDOM = "random"
+    RANDOM_GLOBAL = "random_global"
 
 
 def get_tokenizer(tokenizer_path, verbose=0):
@@ -70,6 +71,31 @@ def load_ids(filename):
     return sorted(dataset)
 
 
+def order_axioms(order, axioms, axiom_frequency=None):
+
+    # We are expecting and order but want to chedck that the type is correct
+    # and order != AxiomOrder.original:
+    if not isinstance(order, AxiomOrder):
+        raise ValueError(f"Incorrect value given for order: '{order}' needs to be of type AxiomOrder")
+    if order is AxiomOrder.ORIGINAL:
+        pass  # Do not change the order
+    elif order is AxiomOrder.LEXICOGRAPHIC:
+        axioms = sorted(axioms)
+    elif order is AxiomOrder.LENGTH:
+        axioms = sorted(axioms, key=len)
+    elif order is AxiomOrder.RANDOM:
+        # Randomly mutates the list
+        random.shuffle(axioms)
+    elif order is AxiomOrder.FREQUENCY or AxiomOrder.RANDOM_GLOBAL:
+        if axiom_frequency is None:
+            raise ValueError(f"Order is set to {order}, but no frequency list is supplied")
+        axioms = sorted(axioms, key=lambda x: -axiom_frequency[x])
+    else:
+        raise ValueError(f"No ordering function implemented for order: '{order}'")
+
+    return axioms
+
+
 def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
     # Load the descriptions of the images in the set and append start/end tokens
     with open(filename, "rb") as f:
@@ -88,30 +114,9 @@ def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
             axioms = data["axioms"]
             axioms = [ax.replace(config.TOKEN_DELIMITER, " ") for ax in axioms]
 
-            # TODO this should be a separate function
-            # Sort the list of axioms if set
+            # Order the axioms if set
             if order is not None:
-                # We are expecting and order but want to chedck that the type is correct
-                # and order != AxiomOrder.original:
-                if not isinstance(order, AxiomOrder):
-                    raise ValueError(
-                        f"Incorrect value given for order: '{order}' needs to be of type AxiomOrder"
-                    )
-                if order is AxiomOrder.ORIGINAL:
-                    pass  # Do not change the order
-                elif order is AxiomOrder.LEXICOGRAPHIC:
-                    axioms = sorted(axioms)
-                elif order is AxiomOrder.LENGTH:
-                    axioms = sorted(axioms, key=len)
-                elif order is AxiomOrder.RANDOM:
-                    # Randomly mutates the list
-                    random.shuffle(axioms)
-                elif order is AxiomOrder.FREQUENCY:
-                    if axiom_frequency is None:
-                        raise ValueError("Order is set to frequency, but no frequency list is supplied")
-                    axioms = sorted(axioms, key=lambda x: -axiom_frequency[x])
-                else:
-                    raise ValueError(f"No ordering function implemented for order: '{order}'")
+                axioms = order_axioms(order, axioms, axiom_frequency=axiom_frequency)
 
             # Build the caption string and save in dict
             descriptions[prob_id] = (
@@ -216,6 +221,22 @@ def compute_axiom_frequency(proof_data_file, ids_file):
 
     # Count the occurence of the axioms and return the result
     counts = Counter(axioms)
+    return counts
+
+
+def compute_random_global_axiom_frequency(tokenizer):
+    """
+    To compute a random global order on the axioms, we assign random values
+    to the set of axioms in the vocabulary.
+    """
+    # Extract the axiom names from the
+    axioms = tokenizer.word_index.keys()
+    # Get a list of number and shuffle them
+    numbers = list(range(len(axioms)))
+    numbers = random.shuffle(numbers)
+
+    # Assign the numbers randomly to the axioms
+    counts = {ax: num for ax, num in zip(axioms, numbers)}
     return counts
 
 

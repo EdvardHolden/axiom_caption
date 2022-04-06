@@ -7,7 +7,13 @@ import numpy as np
 import random
 
 import config
-from dataset import get_dataset, get_tokenizer, compute_axiom_frequency, AxiomOrder
+from dataset import (
+    get_dataset,
+    get_tokenizer,
+    compute_axiom_frequency,
+    compute_random_global_axiom_frequency,
+    AxiomOrder,
+)
 from model import get_model_params, initialise_model, DenseModel, reset_model_decoder_state
 from evaluate import jaccard_score, coverage_score
 from utils import get_train_parser
@@ -239,6 +245,8 @@ def main(
     # Compute the axiom frequencies if required
     if model_params.axiom_order is AxiomOrder.FREQUENCY:
         axiom_frequency = compute_axiom_frequency(config.proof_data, config.val_id_file)
+    elif model_params.axiom_order is AxiomOrder.RANDOM_GLOBAL:
+        axiom_frequency = compute_random_global_axiom_frequency(tokenizer)
     else:
         axiom_frequency = None
 
