@@ -505,7 +505,7 @@ def get_model_params(model_dir, context=Context.PROOF):
         params = Namespace(**params)
 
     if params.axiom_order:
-        params.axiom_order = AxiomOrder(params.AxiomOrder)
+        params.axiom_order = AxiomOrder(params.axiom_order)
 
     # Enable max pooling if we are operating on image features
     params.global_max_pool = context == Context.FLICKR

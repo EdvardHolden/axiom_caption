@@ -240,11 +240,11 @@ def main(
     # Load model params from model file
     model_params = get_model_params(model_dir, context=context)
 
-    # Compute the axiom frequencies if required
+    # Compute the axiom frequencies if required # FIXME make function
     if model_params.axiom_order is AxiomOrder.FREQUENCY:
-        axiom_frequency = compute_axiom_frequency(config.proof_data, config.val_id_file)
+        axiom_frequency = compute_axiom_frequency(proof_data, train_id_file)
     elif model_params.axiom_order is AxiomOrder.RANDOM_GLOBAL:
-        axiom_frequency = compute_random_global_axiom_frequency(tokenizer)
+        axiom_frequency = compute_random_global_axiom_frequency(proof_data)
     else:
         axiom_frequency = None
 
@@ -270,6 +270,9 @@ def main(
         axiom_frequency=axiom_frequency,
         remove_unknown=remove_unknown,
     )
+
+    # Remove axiom frequencies as it is no longer needed and can be very large
+    del axiom_frequency
 
     # Initialise the model
     model = initialise_model(model_params.model_type, vocab_size, model_params, training_data=train_data)

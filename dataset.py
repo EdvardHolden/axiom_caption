@@ -214,19 +214,29 @@ def compute_axiom_frequency(proof_data_file, ids_file):
     return counts
 
 
-def compute_random_global_axiom_frequency(tokenizer):
+def compute_random_global_axiom_frequency(proof_data_file):
     """
     To compute a random global order on the axioms, we assign random values
     to the set of axioms in the vocabulary.
     """
-    # Extract the axiom names from the
-    axioms = tokenizer.word_index.keys()
+
+    with open(proof_data_file, "rb") as f:
+        proof_data = pickle.load(f)
+
+    # Extract all the relevant axioms
+    axioms = set()
+    for _, data in proof_data.items():
+
+        # Update set of axioms
+        axioms.update(data["axioms"])
+
     # Get a list of number and shuffle them
     numbers = list(range(len(axioms)))
-    numbers = random.shuffle(numbers)
+    random.shuffle(numbers)
 
     # Assign the numbers randomly to the axioms
     counts = {ax: num for ax, num in zip(axioms, numbers)}
+
     return counts
 
 
