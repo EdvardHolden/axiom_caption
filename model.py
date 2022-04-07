@@ -519,20 +519,24 @@ if __name__ == "__main__":
     params = get_model_params("experiments/base_model")
     params.normalize = False  # Quick hack
     print("Model params: ", params)
+    """
+    # Deprecated model
     print("# # # MergeInject # # #")
     m = get_model("merge_inject", 123, 20, params)
     m.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
     print(m)
     print(m.build_graph().summary())
     print()
+    """
 
     print("# # # Inject # # #")
-    m = get_model("inject", 123, 20, params)
+    params.stateful = False  # Need to turn off the state as do not want to specify batch size
+    m = get_model("inject", 123, params)
     print(m)
     print(m.build_graph().summary())
 
     print("# # # Dense # # #")
-    dense = get_model("dense", 123, 20, params)
+    dense = get_model("dense", 123, params)
     print(dense)
     print(dense.build_graph().summary())
 
