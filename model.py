@@ -1,7 +1,7 @@
 import sys
 
 import tensorflow as tf
-from keras.models import Model
+from tensorflow.keras.models import Model
 from tensorflow.keras import layers
 from keras.layers import Input
 from keras.layers import Dense
@@ -70,33 +70,30 @@ def initialise_model(model_type, vocab_size, model_params, training_data=None):
 class ImageEncoder(layers.Layer):
     def __init__(
         self,
-        no_dense_units,
-        dropout_rate,
-        normalize,
-        batch_norm,
-        global_max_pool=False,
+        params,
         name="image_encoder",
         **kwargs,
     ):
         super(ImageEncoder, self).__init__(name=name, **kwargs)
 
-        if normalize:
+        # Initialise with parameters
+        if params.normalize:
             self.normalize = Normalization()
         else:
             self.normalize = None
 
-        if global_max_pool:  # FIXME unclear whether this should go before normalisation
+        if params.global_max_pool:  # FIXME unclear whether this should go before normalisation
             self.max_pool = GlobalMaxPooling2D()
         else:
             self.max_pool = None
 
-        if batch_norm:
+        if params.batch_norm:
             self.batch_norm = BatchNormalization()
         else:
             self.batch_norm = None
 
-        self.fe2 = Dense(no_dense_units, activation="relu")
-        self.d2 = Dropout(dropout_rate)
+        self.fe2 = Dense(params.no_dense_units, activation="relu")
+        self.d2 = Dropout(params.dropout_rate)
 
     def call(self, inputs, training=None):
         x = inputs
@@ -169,31 +166,30 @@ class WordDecoder(layers.Layer):
     def __init__(
         self,
         vocab_size,
-        rnn_type,
-        stateful,
-        no_rnn_units,
-        no_dense_units,
-        dropout_rate,
+        params,
         name="word_decoder",
         **kwargs,
     ):
         super(WordDecoder, self).__init__(name=name, **kwargs)
+        self.params = params
 
-        rnn = get_rnn(rnn_type)
+        # Get the RNN type
+        rnn = get_rnn(params.rnn_type)
+        # Initialise RNN model
         self.rnn = rnn(
-            no_rnn_units,
-            stateful=stateful,
-            dropout=dropout_rate,
+            params.no_rnn_units,
+            stateful=params.stateful,
+            dropout=params.dropout_rate,
             return_state=True,
             return_sequences=True,
             recurrent_initializer="glorot_uniform",
         )
 
-        self.no_rnn_units = no_rnn_units
+        self.no_rnn_units = params.no_rnn_units
 
-        self.d1 = Dropout(dropout_rate)
-        self.fc = Dense(no_dense_units, activation="relu")
-        self.d2 = Dropout(dropout_rate)
+        self.d1 = Dropout(params.dropout_rate)
+        self.fc = Dense(params.no_dense_units, activation="relu")
+        self.d2 = Dropout(params.dropout_rate)
         self.out = Dense(vocab_size)
 
     def call(self, inputs, training=None):
@@ -208,10 +204,10 @@ class WordDecoder(layers.Layer):
 
         x = self.d1(x, training=training)
         x = self.fc(x)
+        x = tf.reshape(x, (-1, x.shape[2]))
         x = self.d2(x, training=training)
         x = self.out(x)
 
-        x = tf.reshape(x, (-1, x.shape[2]))
         return x, hidden
 
     def reset_state(self, batch_size):
@@ -221,8 +217,7 @@ class WordDecoder(layers.Layer):
         # Input shape of a single word
         x = Input(
             shape=(
-                22,
-                256,
+                1, self.params.embedding_size + self.params.no_dense_units,
             )
         )
         return Model(inputs=x, outputs=self.call(x))
@@ -237,10 +232,7 @@ class DenseModel(tf.keras.Model):
         self.axiom_order = model_params.axiom_order
 
         self.image_encoder = ImageEncoder(
-            model_params.no_dense_units,
-            model_params.dropout_rate,
-            model_params.normalize,
-            model_params.batch_norm,
+            model_params
         )
 
         self.word_embedder = tf.keras.layers.Embedding(
@@ -293,26 +285,16 @@ class InjectModel(tf.keras.Model):
         self.axiom_order = model_params.axiom_order
 
         self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
-        self.image_encoder = ImageEncoder(
-            model_params.no_dense_units,
-            model_params.dropout_rate,
-            model_params.normalize,
-            model_params.batch_norm,
-            global_max_pool=model_params.global_max_pool,
-        )
+        self.image_encoder = ImageEncoder(model_params)
 
         if model_params.attention:
-            self.attention = BahdanauAttention(model_params.no_rnn_units)
+            self.attention = BahdanauAttention(model_params)
         else:
             self.attention = None
 
         self.word_decoder = WordDecoder(
             vocab_size,
-            model_params.rnn_type,
-            model_params.stateful,
-            model_params.no_rnn_units,
-            model_params.no_dense_units,
-            model_params.dropout_rate,
+            model_params
         )
 
         self.repeat = RepeatVector(1)
@@ -350,10 +332,10 @@ class InjectModel(tf.keras.Model):
 
 
 class BahdanauAttention(tf.keras.Model):
-    def __init__(self, units):
+    def __init__(self, params):
         super(BahdanauAttention, self).__init__()
-        self.W1 = tf.keras.layers.Dense(units)
-        self.W2 = tf.keras.layers.Dense(units)
+        self.W1 = tf.keras.layers.Dense(params.no_rnn_units)
+        self.W2 = tf.keras.layers.Dense(params.no_rnn_units)
         self.V = tf.keras.layers.Dense(1)
 
     def call(self, features, hidden):
@@ -365,6 +347,7 @@ class BahdanauAttention(tf.keras.Model):
 
         # attention_hidden_layer shape == (batch_size, 64, units)
         attention_hidden_layer = tf.nn.tanh(self.W1(features) + self.W2(hidden_with_time_axis))
+        # TODO this looks a bit fishy
 
         # score shape == (batch_size, 64, 1)
         # This gives you an unnormalized score for each image feature.
@@ -379,6 +362,53 @@ class BahdanauAttention(tf.keras.Model):
 
         return context_vector, attention_weights
 
+    def build_graph(self):
+        # Input shape of a single word
+        x = Input(shape=(64,))
+        hidden = Input(shape=(50,))
+        return Model(inputs=[x, hidden], outputs=self.call(x, hidden))
+
+# TODO test this attention!
+class BahdanauAttentionNew(tf.keras.Model):
+    def __init__(self, params):
+        super(BahdanauAttentionNew, self).__init__()
+        self.W1 = tf.keras.layers.Dense(params.no_rnn_units)
+        self.W2 = tf.keras.layers.Dense(params.no_rnn_units)
+        self.V = tf.keras.layers.Dense(params.no_dense_units)
+
+    def call(self, features, hidden):
+        # features(CNN_encoder output) shape == (batch_size, 64, embedding_dim)
+        # TODO maybe update description and dimension sizes?
+
+        # hidden shape == (batch_size, hidden_size)
+        # hidden_with_time_axis shape == (batch_size, 1, hidden_size)
+        #hidden_with_time_axis = tf.expand_dims(hidden, 1)
+
+        # attention_hidden_layer shape == (batch_size, 64, units)
+        attention_hidden_layer = tf.nn.tanh(self.W1(features) + self.W2(hidden))
+
+        # score shape == (batch_size, 64, 1)
+        # This gives you an unnormalized score for each image feature.
+        score = self.V(attention_hidden_layer)
+
+        # attention_weights shape == (batch_size, 64, 1)
+        #attention_weights = tf.nn.softmax(attention_hidden_layer, axis=1)
+        attention_weights = tf.nn.softmax(score, axis=1)
+
+        # context_vector shape after sum == (batch_size, hidden_size)
+
+        #context_vector = attention_weights
+        context_vector = attention_weights * features
+        #context_vector = tf.reduce_sum(context_vector, axis=1)
+
+        return context_vector, attention_weights
+
+    def build_graph(self):
+        # Input shape of a single word
+        x = Input(shape=(64,))
+        hidden = Input(shape=(50,))
+        return Model(inputs=[x, hidden], outputs=self.call(x, hidden))
+
 
 class MergeInjectModel(tf.keras.Model):
     def __init__(self, vocab_size, model_params, global_max_pool=False, name="merge_inject", **kwargs):
@@ -388,13 +418,8 @@ class MergeInjectModel(tf.keras.Model):
 
         self.axiom_order = model_params.axiom_order
 
-        self.image_encoder = ImageEncoder(
-            model_params.no_dense_units,
-            model_params.dropout_rate,
-            model_params.normalize,
-            model_params.batch_norm,
-            global_max_pool=global_max_pool,
-        )
+        self.image_encoder = ImageEncoder(model_params)
+
         self.word_encoder = WordEncoder(
             vocab_size,
             model_params.embedding_size,
@@ -410,16 +435,13 @@ class MergeInjectModel(tf.keras.Model):
                 "Warning: Attention functionality not fully implemented for the merge architecture",
                 file=sys.stderr,
             )
-            self.attention = BahdanauAttention(model_params.no_rnn_units)
+            self.attention = BahdanauAttention(model_params)
         else:
             self.attention = None
 
         self.word_decoder = WordDecoder(
             vocab_size,
-            model_params.rnn_type,
-            model_params.no_rnn_units,
-            model_params.no_dense_units,
-            model_params.dropout_rate,
+            model_params
         )
 
         # Add repeat vector for avoid calling the image encoder all the time
@@ -512,13 +534,49 @@ def get_model_params(model_dir, context=Context.PROOF):
 
     return params
 
+def check_inject():
+    # Load base model parameters
+    params = get_model_params("experiments/base_model")
+    params.normalize = False  # quick hack
+    params.attention = True  # quick hack
+    print("model params: ", params)
 
-if __name__ == "__main__":
+    # TODO add  the other components
+    # Get inject
+    vocab_size = 1000
+
+
+    # Attention
+    print("\n# # # Attention # # #")
+    m = BahdanauAttention(params)
+    print(m.build_graph().summary())
+
+
+    print("\n# # # Inject # # #")
+    m = InjectModel(vocab_size, params)
+    print(m.build_graph().summary())
+    #print("### No trainable variables: ", m.trainable_variables)
+    import numpy as np
+    tran = np.sum([np.prod(v.get_shape().as_list()) for v in m.trainable_variables])
+    print("### No trainable variables: ", tran)
+
+    # ImageEncoder
+    print("\n# # # Image Encoder # # #")
+    m = ImageEncoder(params)
+    print(m.build_graph().summary())
+
+    # WordDecoder
+    print("\n# # # WordDecoder # # #")
+    m = WordDecoder(vocab_size, params)
+    print(m.build_graph().summary())
+
+
+def check_models():
     # Function for testing the script
     # Load base model parameters
     params = get_model_params("experiments/base_model")
-    params.normalize = False  # Quick hack
-    print("Model params: ", params)
+    params.normalize = False  # quick hack
+    print("model params: ", params)
     """
     # Deprecated model
     print("# # # MergeInject # # #")
@@ -538,6 +596,7 @@ if __name__ == "__main__":
     print("# # # Dense # # #")
     dense = get_model("dense", 123, params)
     print(dense)
+    print(dense.summary())
     print(dense.build_graph().summary())
 
 
@@ -548,3 +607,8 @@ if __name__ == "__main__":
     print(m)
     print(m.build_graph().summary())
 """
+
+if __name__ == "__main__":
+    #check_models()
+    check_inject()
+
