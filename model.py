@@ -217,7 +217,8 @@ class WordDecoder(layers.Layer):
         # Input shape of a single word
         x = Input(
             shape=(
-                1, self.params.embedding_size + self.params.no_dense_units,
+                1,
+                self.params.embedding_size + self.params.no_dense_units,
             )
         )
         return Model(inputs=x, outputs=self.call(x))
@@ -231,9 +232,7 @@ class DenseModel(tf.keras.Model):
 
         self.axiom_order = model_params.axiom_order
 
-        self.image_encoder = ImageEncoder(
-            model_params
-        )
+        self.image_encoder = ImageEncoder(model_params)
 
         self.word_embedder = tf.keras.layers.Embedding(
             vocab_size, model_params.embedding_size, name="layer_word_embedding"
@@ -292,10 +291,7 @@ class InjectModel(tf.keras.Model):
         else:
             self.attention = None
 
-        self.word_decoder = WordDecoder(
-            vocab_size,
-            model_params
-        )
+        self.word_decoder = WordDecoder(vocab_size, model_params)
 
         self.repeat = RepeatVector(1)
 
@@ -368,6 +364,7 @@ class BahdanauAttention(tf.keras.Model):
         hidden = Input(shape=(50,))
         return Model(inputs=[x, hidden], outputs=self.call(x, hidden))
 
+
 # TODO test this attention!
 class BahdanauAttentionNew(tf.keras.Model):
     def __init__(self, params):
@@ -382,7 +379,7 @@ class BahdanauAttentionNew(tf.keras.Model):
 
         # hidden shape == (batch_size, hidden_size)
         # hidden_with_time_axis shape == (batch_size, 1, hidden_size)
-        #hidden_with_time_axis = tf.expand_dims(hidden, 1)
+        # hidden_with_time_axis = tf.expand_dims(hidden, 1)
 
         # attention_hidden_layer shape == (batch_size, 64, units)
         attention_hidden_layer = tf.nn.tanh(self.W1(features) + self.W2(hidden))
@@ -392,14 +389,14 @@ class BahdanauAttentionNew(tf.keras.Model):
         score = self.V(attention_hidden_layer)
 
         # attention_weights shape == (batch_size, 64, 1)
-        #attention_weights = tf.nn.softmax(attention_hidden_layer, axis=1)
+        # attention_weights = tf.nn.softmax(attention_hidden_layer, axis=1)
         attention_weights = tf.nn.softmax(score, axis=1)
 
         # context_vector shape after sum == (batch_size, hidden_size)
 
-        #context_vector = attention_weights
+        # context_vector = attention_weights
         context_vector = attention_weights * features
-        #context_vector = tf.reduce_sum(context_vector, axis=1)
+        # context_vector = tf.reduce_sum(context_vector, axis=1)
 
         return context_vector, attention_weights
 
@@ -439,10 +436,7 @@ class MergeInjectModel(tf.keras.Model):
         else:
             self.attention = None
 
-        self.word_decoder = WordDecoder(
-            vocab_size,
-            model_params
-        )
+        self.word_decoder = WordDecoder(vocab_size, model_params)
 
         # Add repeat vector for avoid calling the image encoder all the time
         # QUICKFIX - setting length to 1 to expand the dimension of the output for concat
@@ -534,41 +528,42 @@ def get_model_params(model_dir, context=Context.PROOF):
 
     return params
 
+
 def check_inject():
     # Load base model parameters
     params = get_model_params("experiments/base_model")
     params.normalize = False  # quick hack
     params.attention = True  # quick hack
+    params.stateful = False  # FIXME is this right?
     print("model params: ", params)
 
     # TODO add  the other components
     # Get inject
     vocab_size = 1000
 
-
     # Attention
     print("\n# # # Attention # # #")
     m = BahdanauAttention(params)
-    print(m.build_graph().summary())
-
+    m.build_graph().summary()
 
     print("\n# # # Inject # # #")
     m = InjectModel(vocab_size, params)
-    print(m.build_graph().summary())
-    #print("### No trainable variables: ", m.trainable_variables)
+    m.build_graph().summary()
+    # print("### No trainable variables: ", m.trainable_variables)
     import numpy as np
+
     tran = np.sum([np.prod(v.get_shape().as_list()) for v in m.trainable_variables])
-    print("### No trainable variables: ", tran)
+    print("### Number of trainable variables: ", tran)
 
     # ImageEncoder
     print("\n# # # Image Encoder # # #")
     m = ImageEncoder(params)
-    print(m.build_graph().summary())
+    m.build_graph().summary()
 
     # WordDecoder
     print("\n# # # WordDecoder # # #")
     m = WordDecoder(vocab_size, params)
-    print(m.build_graph().summary())
+    m.build_graph().summary()
 
 
 def check_models():
@@ -609,6 +604,5 @@ def check_models():
 """
 
 if __name__ == "__main__":
-    #check_models()
+    # check_models()
     check_inject()
-
