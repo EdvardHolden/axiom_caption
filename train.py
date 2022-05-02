@@ -29,6 +29,7 @@ loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, re
 LOG_DIR = os.path.join("logdir", time.strftime("%Y%m%d-%H%M%S"))
 
 
+@tf.function
 def loss_function(real, pred):
 
     mask = tf.math.logical_not(tf.math.equal(real, 0))
@@ -61,6 +62,7 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     predictions = []
 
     with tf.GradientTape() as tape:
+        # for i in tf.range(1, target.shape[1]):
         for i in range(1, target.shape[1]):
             # Predict the next token - slightly expensive way of doing it as it
             # encodes the image each time
@@ -87,6 +89,7 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     return loss, sequence_loss, tf.transpose(predictions)
 
 
+# TODO could this eb a tf function?
 def compute_pred_stats(captions, predictions):
     # First need to remove pad and start tokens, and end tokens
     # <pad>: 0, <start>: 2, <end>: 3
@@ -108,6 +111,11 @@ def compute_pred_stats(captions, predictions):
     return cov_score, jac_score
 
 
+epoch_jac_score = tf.keras.metrics.Mean()
+epoch_cov_score = tf.keras.metrics.Mean()
+epoch_loss = tf.keras.metrics.Mean()
+num_steps = tf.Variable(0)
+
 # TODO put tf training here?
 # @tf.function
 def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
@@ -117,20 +125,22 @@ def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
     If the epoch is not None we report the loss of each batch.
     """
 
-    # TODO use tf.metrics here instead?
     # Need to keep track of the number of steps to compute the loss correctly.
-    num_steps = 0
-    total_loss = 0
-    jac_scores = []
-    cov_scores = []
+    num_steps.assign(0)
+
+    # Re-initialise the metrics for this epoch
+    epoch_loss.reset_state()
+    epoch_jac_score.reset_state()
+    epoch_cov_score.reset_state()
 
     # Train on each batch in the data
     for (batch, (img_tensor, captions)) in enumerate(data):
-        num_steps += 1
+        # num_steps += 1
+        num_steps.assign_add(1)
+
         batch_loss, s_loss, predictions = train_step(
             tokenizer, model, optimizer, img_tensor, captions, training=training
         )
-        total_loss += s_loss
 
         # Check if reporting batch
         if epoch is not None and batch % 10 == 0:
@@ -139,16 +149,17 @@ def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
 
         # Compute statistics
         cov_batch, jac_batch = compute_pred_stats(captions, predictions)
-        jac_scores.extend(jac_batch)
-        cov_scores.extend(cov_batch)
-
-    # Store the training loss for plotting
-    loss_epoch = total_loss.numpy() / num_steps
-    jac_epoch = np.average(jac_scores)
-    cov_epoch = np.average(cov_scores)
+        # Update metric
+        epoch_loss.update_state(s_loss)
+        epoch_jac_score.update_state(jac_batch)
+        epoch_cov_score.update_state(cov_batch)
 
     # Return metrics as a dict
-    return {"loss": loss_epoch, "coverage": cov_epoch, "jaccard": jac_epoch}
+    return {
+        "loss": epoch_loss.result(),
+        "coverage": epoch_cov_score.result(),
+        "jaccard": epoch_jac_score.result(),
+    }
 
 
 def add_new_metrics(history, new_stats, prefix=""):
@@ -163,6 +174,7 @@ def add_new_metrics(history, new_stats, prefix=""):
     return history
 
 
+# TODO tf.function?
 def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, es_patience=None):
 
     # Dictionary to store all the metrics
@@ -170,7 +182,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
 
     # Initialise EarlyStopping wait variable
     if es_patience is not None:
-        print("EarlyStopping patience set to: ", es_patience)
+        tf.print("EarlyStopping patience set to: ", es_patience)
         es_wait = 0
         es_best_loss = np.inf
 
@@ -182,6 +194,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
         tf.print(f"Initial model training loss: {initial_stats['loss']:.2f}")
 
     # Loop through each epoch
+    # for epoch in tf.range(0, config.EPOCHS):
     for epoch in range(0, config.EPOCHS):
         start = time.time()
 
@@ -205,6 +218,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
         # decrease over a certain number of epochs.
         if es_patience is not None:
             es_wait += 1
+            # FIXME use tf operators?
             if metrics["val_loss"][-1] < es_best_loss:
                 es_best_loss = metrics["val_loss"][-1]
                 es_wait = 0
