@@ -25,6 +25,9 @@ tf.random.set_seed(42)
 
 loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
 
+# Make path for tensorboard
+LOG_DIR = os.path.join("logdir", time.strftime("%Y%m%d-%H%M%S"))
+
 
 def loss_function(real, pred):
 
@@ -105,6 +108,8 @@ def compute_pred_stats(captions, predictions):
     return cov_score, jac_score
 
 
+# TODO put tf training here?
+# @tf.function
 def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
     """
     Runs one epoch of data over the model. Used to train/validate the model.
@@ -112,6 +117,7 @@ def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
     If the epoch is not None we report the loss of each batch.
     """
 
+    # TODO use tf.metrics here instead?
     # Need to keep track of the number of steps to compute the loss correctly.
     num_steps = 0
     total_loss = 0
@@ -129,7 +135,7 @@ def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
         # Check if reporting batch
         if epoch is not None and batch % 10 == 0:
             average_batch_loss = batch_loss.numpy() / int(captions.shape[1])
-            print(f"Epoch {epoch + 1} Batch {batch} Train Loss {average_batch_loss:.4f}")
+            tf.print(f"Epoch {epoch + 1} Batch {batch} Train Loss {average_batch_loss:.4f}")
 
         # Compute statistics
         cov_batch, jac_batch = compute_pred_stats(captions, predictions)
@@ -173,7 +179,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     # first in order to build the graph correctly.
     if config.DEVELOPING:
         initial_stats = epoch_step(model, tokenizer, optimizer, train_data, training=False)
-        print(f"Initial model training loss: {initial_stats['loss']:.2f}")
+        tf.print(f"Initial model training loss: {initial_stats['loss']:.2f}")
 
     # Loop through each epoch
     for epoch in range(0, config.EPOCHS):
@@ -191,9 +197,9 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
         if epoch % 1 == 0:
             ckpt_manager.save()
 
-        print(f"Epoch {epoch + 1} Total Train Loss {metrics['train_loss'][-1]:.6f}")
-        print(f"Epoch {epoch + 1} Total Val   Loss {metrics['val_loss'][-1]:.6f}")
-        print(f"Time spent on epoch {time.time() - start:.2f} sec\n")
+        tf.print(f"Epoch {epoch + 1} Total Train Loss {metrics['train_loss'][-1]:.6f}")
+        tf.print(f"Epoch {epoch + 1} Total Val   Loss {metrics['val_loss'][-1]:.6f}")
+        tf.print(f"Time spent on epoch {time.time() - start:.2f} sec\n")
 
         # The early stopping strategy: stop the training if `val_loss` does not
         # decrease over a certain number of epochs.
@@ -203,7 +209,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
                 es_best_loss = metrics["val_loss"][-1]
                 es_wait = 0
             elif es_wait >= es_patience:
-                print(
+                tf.print(
                     "Terminated training with early stopping after {0} epochs of no improvement".format(
                         es_wait
                     )
@@ -211,7 +217,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
                 break
 
     # Add a final metric evaluation that ensures no drop out is ised (with training off)
-    print("Computing metrics on the training set with the final model parameters, without dropout")
+    tf.print("Computing metrics on the training set with the final model parameters, without dropout")
     train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=False, epoch=epoch)
     metrics = add_new_metrics(metrics, train_epoch_metrics, prefix="train_")
 
@@ -230,7 +236,7 @@ def main(
     for device in physical_devices:
         tf.config.experimental.set_memory_growth(device, True)
     """
-    tf.config.run_functions_eagerly(config.DEVELOPING)
+    tf.config.run_functions_eagerly(config.DEVELOPING)  # TODO
 
     # Get pre-trained tokenizer
     tokenizer_path = os.path.join(os.path.dirname(train_id_file), "tokenizer.json")  # FIXME
@@ -277,6 +283,10 @@ def main(
     # Initialise the model
     model = initialise_model(model_params.model_type, vocab_size, model_params, training_data=train_data)
     print("Training on: ", model)
+
+    # TODO adding tensorboard stuff here - need to add more log points for this to apply
+    # tb_callback = tf.keras.callbacks.TensorBoard(LOG_DIR)
+    # tb_callback.set_model(model)
 
     # Initialise the optimiser
     optimizer = tf.keras.optimizers.Adam(learning_rate=model_params.learning_rate)

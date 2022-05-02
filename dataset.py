@@ -6,8 +6,8 @@ import os
 import json
 from keras.preprocessing.text import tokenizer_from_json
 from keras.preprocessing.sequence import pad_sequences
-from enum import Enum
 from utils import debug, AxiomOrder
+import numpy as np
 
 import config
 
@@ -29,7 +29,7 @@ def get_tokenizer(tokenizer_path, verbose=0):
 
 def load_doc(filename):
     # Return the text contained in a document
-    with open(filename, "r") as file:
+    with open(os.path.expanduser(filename), "r") as file:
         text = file.read()
     return text
 
@@ -88,7 +88,7 @@ def order_axioms(order, axioms, axiom_frequency=None):
 
 def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
     # Load the descriptions of the images in the set and append start/end tokens
-    with open(filename, "rb") as f:
+    with open(os.path.expanduser(filename), "rb") as f:
         proof_data = pickle.load(f)
 
     descriptions = dict()
@@ -120,7 +120,7 @@ def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
 
 def load_photo_features(filename, dataset):
     # Load the img features of the photos in the set
-    with open(filename, "rb") as f:
+    with open(os.path.expanduser(filename), "rb") as f:
         all_features = pickle.load(f)
 
     # Ensure no new line added to the name entry
@@ -136,10 +136,15 @@ def load_photo_features(filename, dataset):
     return features
 
 
+def _load_cached_features(img_name, cap):
+    img_tensor = np.load(img_name.decode("utf-8") + ".npy")
+    return img_tensor, cap
+
+
 def get_dataset(
     image_ids,
     captions_path,
-    image_features,
+    image_feature_path,
     tokenizer=None,
     max_cap_len=None,
     batch_size=config.BATCH_SIZE,
@@ -151,7 +156,17 @@ def get_dataset(
     # Load the necessary data for the id set
     ids = load_ids(image_ids)
     captions = load_clean_descriptions(captions_path, ids, order=order, axiom_frequency=axiom_frequency)
-    img_features = load_photo_features(image_features, ids)
+
+    caching = False  # Whether we are using cached image features
+    if os.path.isfile(os.path.expanduser(image_feature_path)):
+        # Load the features from the pickle file
+        img_features = load_photo_features(image_feature_path, ids)
+    else:
+        # Build feature dictionary with a path to the cached data
+        caching = True
+        img_features = {
+            prob_id: os.path.expanduser(os.path.join(image_feature_path, prob_id)) for prob_id in ids
+        }
 
     # Compute the longest caption if value not provided
     if max_cap_len is None:
@@ -183,7 +198,17 @@ def get_dataset(
         caption_data = pad_sequences(caption_data, maxlen=max_cap_len, padding="post")
 
     # Make dataset from data lists
+    print("Dataset size: ", len(feature_data))
     dataset = tf.data.Dataset.from_tensor_slices((feature_data, caption_data))
+
+    if caching:
+        # Add function which loads the cached features
+        dataset = dataset.map(
+            lambda item1, item2: tf.numpy_function(
+                _load_cached_features, [item1, item2], [tf.float32, tf.int32]
+            ),
+            num_parallel_calls=tf.data.AUTOTUNE,
+        )
 
     # Shuffle and batch
     dataset = dataset.shuffle(config.BUFFER_SIZE).batch(batch_size, drop_remainder=True)
@@ -251,6 +276,7 @@ def main():
     tokenizer_path = os.path.join(os.path.dirname(config.train_id_file), "tokenizer.json")
     tokenizer, _ = get_tokenizer(tokenizer_path)
 
+    """
     # Test with validation file as we want this to run quicker
     if order is AxiomOrder.FREQUENCY:
         axiom_frequency = compute_axiom_frequency(config.proof_data, config.val_id_file)
@@ -291,6 +317,19 @@ def main():
         order=order,
         axiom_frequency=axiom_frequency,
         remove_unknown=True,
+    )
+    """
+
+    print("### Test feature caching")
+    deepmath_data, max_len_deepmath = get_dataset(
+        "~/caption_attention/data/train.txt",
+        "~/caption_attention/data/captions_6000_1.pkl",
+        "~/caption_attention/data/image_features_6000_1",
+        tokenizer=tokenizer,
+        max_cap_len=50,
+        order=AxiomOrder.ORIGINAL,
+        axiom_frequency=None,
+        remove_unknown=False,
     )
 
 
