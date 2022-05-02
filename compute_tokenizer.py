@@ -16,17 +16,32 @@ parser.add_argument(
     type=int,
     help="Number of top K words to include in the vocabulary. None for all words",
 )
+parser.add_argument(
+    "--tokenizer_type",
+    choices=["axioms", "words"],
+    help="Set preprocessing ased on natural language or axioms",
+)
 
 
-def create_tokenizer(descriptions, vocab_word_limit):
+def create_tokenizer(descriptions, vocab_word_limit, axiom_words=True):
     lines = list(descriptions.values())
-    tokenizer = Tokenizer(
-        lower=False,
-        num_words=vocab_word_limit,
-        filters="",
-        split=config.TOKEN_DELIMITER,
-        oov_token=config.TOKEN_OOV,
-    )
+    if axiom_words:
+        tokenizer = Tokenizer(
+            lower=False,
+            num_words=vocab_word_limit,
+            filters="",
+            split=config.TOKEN_DELIMITER,
+            oov_token=config.TOKEN_OOV,
+        )
+    else:
+        tokenizer = Tokenizer(
+            lower=True,
+            num_words=vocab_word_limit,
+            filters='!"#$%&\(\)\*\+.,-/:;=?@\[\\\]^_`{|}~',
+            split=config.TOKEN_DELIMITER,
+            oov_token=config.TOKEN_OOV,
+        )
+
     tokenizer.fit_on_texts(lines)
     return tokenizer
 
@@ -37,7 +52,11 @@ def main():
     train_descriptions = load_clean_descriptions(
         args.proof_data, load_ids(args.id_file), order=None
     )  # The order is irrelevant for this purpose
-    tokenizer = create_tokenizer(train_descriptions, args.vocab_word_limit)
+
+    # Check whether we are using axioms or natural language, no filtering for axioms
+    axiom_words = args.tokenizer_type == "axioms"
+
+    tokenizer = create_tokenizer(train_descriptions, args.vocab_word_limit, axiom_words=axiom_words)
 
     # Add padding token
     tokenizer.word_index[config.TOKEN_PAD] = 0
