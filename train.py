@@ -54,15 +54,14 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
         hidden = None  # no hidden state in the dense model
     else:
         hidden = model.word_decoder.reset_state(batch_size=target.shape[0])
-        # hidden = tf.zeros((1, model.no_rnn_units))
 
     # Initialise input vector with the start token
     dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * target.shape[0], 1)
 
+    # List for holding the predictions
     predictions = []
 
     with tf.GradientTape() as tape:
-        # for i in tf.range(1, target.shape[1]):
         for i in range(1, target.shape[1]):
             # Predict the next token - slightly expensive way of doing it as it
             # encodes the image each time
@@ -120,8 +119,7 @@ epoch_cov_score = tf.keras.metrics.Mean()
 epoch_loss = tf.keras.metrics.Mean()
 num_steps = tf.Variable(0)
 
-# TODO put tf function here?
-# @tf.function
+
 def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
     """
     Runs one epoch of data over the model. Used to train/validate the model.
@@ -129,7 +127,7 @@ def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
     If the epoch is not None we report the loss of each batch.
     """
 
-    # Need to keep track of the number of steps to compute the loss correctly.
+    # Keep track of the number of steps/batches for correct reportin
     num_steps.assign(0)
 
     # Re-initialise the metrics for this epoch
@@ -138,8 +136,8 @@ def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
     epoch_cov_score.reset_state()
 
     # Train on each batch in the data
-    for (batch, (img_tensor, captions)) in enumerate(data):
-        # num_steps += 1
+    for img_tensor, captions in data:
+        # Increment the number of steps
         num_steps.assign_add(1)
 
         batch_loss, s_loss, predictions = train_step(
@@ -147,13 +145,15 @@ def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
         )
 
         # Check if reporting batch
-        if epoch is not None and batch % 10 == 0:
+        # if epoch is not None and batch % 10 == 0:
+        if epoch is not None and num_steps % 10 == 0:
             average_batch_loss = batch_loss.numpy() / int(captions.shape[1])
-            tf.print(f"Epoch {epoch + 1} Batch {batch} Train Loss {average_batch_loss:.4f}")
+            tf.print(f"Epoch {epoch + 1} Batch {num_steps.numpy()} Train Loss {average_batch_loss:.4f}")
 
         # Compute statistics
         cov_batch, jac_batch = compute_pred_stats(captions, predictions)
-        # Update metric
+
+        # Update metrics
         epoch_loss.update_state(s_loss)
         epoch_jac_score.update_state(jac_batch)
         epoch_cov_score.update_state(cov_batch)
@@ -178,7 +178,6 @@ def add_new_metrics(history, new_stats, prefix=""):
     return history
 
 
-# TODO tf.function?
 def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, es_patience=None):
 
     # Dictionary to store all the metrics
@@ -198,8 +197,7 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
         tf.print(f"Initial model training loss: {initial_stats['loss']:.2f}")
 
     # Loop through each epoch
-    # for epoch in tf.range(0, config.EPOCHS):
-    for epoch in range(0, config.EPOCHS):
+    for epoch in tf.range(0, config.EPOCHS):
         start = time.time()
 
         # Train the model for one epoch
@@ -222,7 +220,6 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
         # decrease over a certain number of epochs.
         if es_patience is not None:
             es_wait += 1
-            # FIXME use tf operators?
             if metrics["val_loss"][-1] < es_best_loss:
                 es_best_loss = metrics["val_loss"][-1]
                 es_wait = 0
@@ -243,34 +240,45 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
     return metrics
 
 
+# Compute the axiom frequencies if required
+def get_axiom_frequency(axiom_order, train_id_file, proof_data):
+    """
+    Gets the axiom frequencies. Either comptued from data, or randomly imposed
+    on the global set of axioms. Returns None if an order which does not
+    require this is set.
+    """
+
+    if axiom_order is AxiomOrder.FREQUENCY:
+        axiom_frequency = compute_axiom_frequency(proof_data, train_id_file)
+    elif axiom_order is AxiomOrder.RANDOM_GLOBAL:
+        axiom_frequency = compute_random_global_axiom_frequency(proof_data)
+    else:
+        axiom_frequency = None
+    return axiom_frequency
+
+
 def main(
     model_dir, problem_features, proof_data, train_id_file, val_id_file, save_model, remove_unknown, context
 ):
 
     # Instantiate Tensorflow environment
-    # TODO
     """
     physical_devices = tf.config.list_physical_devices("GPU")
     for device in physical_devices:
         tf.config.experimental.set_memory_growth(device, True)
     """
-    tf.config.run_functions_eagerly(config.DEVELOPING)  # TODO
+    tf.config.run_functions_eagerly(config.DEVELOPING)
 
     # Get pre-trained tokenizer
-    tokenizer_path = os.path.join(os.path.dirname(train_id_file), "tokenizer.json")  # FIXME
+    tokenizer_path = os.path.join(os.path.dirname(train_id_file), "tokenizer.json")
     tokenizer, vocab_size = get_tokenizer(tokenizer_path)
-    print("Number of words: ", vocab_size)
+    tf.print("Number of words: ", vocab_size)
 
     # Load model params from model file
     model_params = get_model_params(model_dir, context=context)
 
-    # Compute the axiom frequencies if required # FIXME make function
-    if model_params.axiom_order is AxiomOrder.FREQUENCY:
-        axiom_frequency = compute_axiom_frequency(proof_data, train_id_file)
-    elif model_params.axiom_order is AxiomOrder.RANDOM_GLOBAL:
-        axiom_frequency = compute_random_global_axiom_frequency(proof_data)
-    else:
-        axiom_frequency = None
+    # Get the axiom frequencies from this dataset
+    axiom_frequency = get_axiom_frequency(model_params.axiom_order, train_id_file, proof_data)
 
     # Get the training dataset
     train_data, max_len = get_dataset(
@@ -282,7 +290,7 @@ def main(
         axiom_frequency=axiom_frequency,
         remove_unknown=remove_unknown,
     )
-    print("Max len: ", max_len)
+    tf.print("Max len: ", max_len)
     # Compute validation dataset based on the max length of the training data
     val_data, _ = get_dataset(
         val_id_file,
@@ -300,7 +308,7 @@ def main(
 
     # Initialise the model
     model = initialise_model(model_params.model_type, vocab_size, model_params, training_data=train_data)
-    print("Training on: ", model)
+    tf.print("Training on: ", model)
 
     # TODO adding tensorboard stuff here - need to add more log points for this to apply
     # tb_callback = tf.keras.callbacks.TensorBoard(LOG_DIR)
