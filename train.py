@@ -89,25 +89,29 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     return loss, sequence_loss, tf.transpose(predictions)
 
 
-# TODO could this eb a tf function?
+@tf.function
 def compute_pred_stats(captions, predictions):
     # First need to remove pad and start tokens, and end tokens
     # <pad>: 0, <start>: 2, <end>: 3
     # This will be converted to a sparse tensor where 0 is unrepresented
-    FILTER = lambda x: x if x != 2 and x != 3 else 0
+    FILTER = lambda x: x if x != 2 and x != 3 else tf.constant(0, dtype=tf.int64)
 
-    filtered_pred = []
-    filtered_cap = []
-    for pred, cap in zip(predictions, captions):
-        filtered_pred.append([*map(FILTER, pred)])
-        filtered_cap.append([*map(FILTER, cap)])
+    # Need to cast the captions from int32 to int64
+    captions = tf.cast(captions, dtype=tf.int64)
 
-    filtered_pred = tf.convert_to_tensor(filtered_pred, dtype=tf.int64)
-    filtered_cap = tf.convert_to_tensor(filtered_cap, dtype=tf.int64)
+    # Filter some tokens - if this starts failing we should include fn_output_signature=tf.int64 in function call
+    captions = tf.map_fn(
+        lambda x: tf.map_fn(FILTER, x),
+        captions,
+    )
+    predictions = tf.map_fn(
+        lambda x: tf.map_fn(FILTER, x),
+        predictions,
+    )
 
-    # Compute and return the stats for each prediction
-    cov_score = coverage_score(filtered_cap, filtered_pred, avg=False)
-    jac_score = jaccard_score(filtered_cap, filtered_pred, avg=False)
+    cov_score = coverage_score(captions, predictions, avg=False)
+    jac_score = jaccard_score(captions, predictions, avg=False)
+
     return cov_score, jac_score
 
 
@@ -116,7 +120,7 @@ epoch_cov_score = tf.keras.metrics.Mean()
 epoch_loss = tf.keras.metrics.Mean()
 num_steps = tf.Variable(0)
 
-# TODO put tf training here?
+# TODO put tf function here?
 # @tf.function
 def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
     """

@@ -102,6 +102,7 @@ def top_k_sampler(pred, no_samples, k=10):
     return sampled_token
 
 
+@tf.function
 def coverage_score(actual, predicted, avg=True):
 
     actual = tf.sparse.from_dense(actual)
@@ -114,6 +115,7 @@ def coverage_score(actual, predicted, avg=True):
         return scores
 
 
+@tf.function
 def jaccard_score(actual, predicted, avg=True):
     """
     Jaccard(A,B) = |A/\B|/|A\/B|
