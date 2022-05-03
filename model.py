@@ -32,12 +32,27 @@ def adapt_normalization_layer(model, embedding_vectors):
 
 
 def reset_model_decoder_state(model):
-    """Function used to reset rnn state of the word decoder when it is stateful
+    """Function used to reset rnn state of the word decoder when it is stateful.
     If it is the first call to the model (e.g. input sizes are not set), the
     model returns ValueError. At the moment we handle try and ask for forgiveness
-    but a proper check might be better"""
+    but a proper check might be better.
+    Warning, function can not be wrapped in tf.function as it alters the behaviour"""
     # Check if we are given the full model
-    if hasattr(model, "word_decoder"):
+    if isinstance(model, tuple) and hasattr(model[1], "word_decoder"):
+        # Check that rnn is stateful
+        if model[1].word_decoder.rnn.stateful:
+            try:
+                model[1].word_decoder.rnn.reset_states()
+            except ValueError:
+                pass
+    elif isinstance(model, InjectModel):
+        # Check that rnn is stateful
+        if model.inject_decoder.word_decoder.rnn.stateful:
+            try:
+                model.inject_decoder.word_decoder.rnn.reset_states()
+            except ValueError:
+                pass
+    elif hasattr(model, "word_decoder"):
         # Check that rnn is stateful
         if model.word_decoder.rnn.stateful:
             try:
@@ -54,15 +69,37 @@ def reset_model_decoder_state(model):
                 pass
 
 
+@tf.function
+def get_hidden_state(model, batch_size):
+    """
+    Get the initial hidden state of the model - based on the number of rnn parameters
+    """
+    if isinstance(model, DenseModel):
+        hidden = None  # no hidden state in the dense model
+    elif isinstance(model, tuple) and isinstance(model[1], InjectDecoder):
+        hidden = model[1].word_decoder.reset_state(batch_size=batch_size)
+    elif isinstance(model, InjectModel):
+        hidden = model.inject_decoder.word_decoder.reset_state(batch_size=batch_size)
+    else:
+        # Assume model structure with a word_decoder
+        hidden = model.word_decoder.reset_state(batch_size=batch_size)
+
+    return hidden
+
+
 def initialise_model(model_type, vocab_size, model_params, training_data=None):
 
     model = get_model(model_type, vocab_size, model_params)
 
     # If normalisation on the embedding graph is set, we have to adapt the
-    # layer before compiling (or re-compile) the model
+    # layer before compiling (or re-compile) the model. This is done over
+    # the embedding vectors only.
     if model_params.normalize:
-        # Only supply the embedding vectors
-        model = adapt_normalization_layer(model, training_data.map(lambda x1, x2: x1))
+        if isinstance(model, tuple):  # Check if decoder and encoder is separated
+            model[0] = adapt_normalization_layer(model[0], training_data.map(lambda x1, x2: x1))
+        else:
+            # Only supply the embedding vectors
+            model = adapt_normalization_layer(model, training_data.map(lambda x1, x2: x1))
 
     return model
 
@@ -275,16 +312,16 @@ class DenseModel(tf.keras.Model):
         return Model(inputs=x, outputs=self.call(x))
 
 
-class InjectModel(tf.keras.Model):
-    def __init__(self, vocab_size, model_params, name="inject", **kwargs):
-        super(InjectModel, self).__init__(name=name, **kwargs)
+class InjectDecoder(tf.keras.Model):
+    def __init__(self, vocab_size, model_params, name="inject_decoder", **kwargs):
+
+        super(InjectDecoder, self).__init__(name=name, **kwargs)
         self.vocab_size = vocab_size
         self.no_rnn_units = model_params.no_rnn_units
 
         self.axiom_order = model_params.axiom_order
 
         self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
-        self.image_encoder = ImageEncoder(model_params)
 
         if model_params.attention:
             self.attention = BahdanauAttention(model_params)
@@ -298,10 +335,9 @@ class InjectModel(tf.keras.Model):
     def call(self, inputs, training=None):
 
         # Extract the input elements
-        input_image, input_word, hidden_state = inputs
+        image_emb, input_word, hidden_state = inputs
 
         # Compute image embedding
-        image_emb = self.image_encoder(input_image, training=training)
         # Pass word through embedding layer
         word_emb = self.word_embedder(input_word, training=training)
 
@@ -315,6 +351,39 @@ class InjectModel(tf.keras.Model):
 
         # Give to decoder
         output, hidden_state = self.word_decoder(merged_emb, training=training)
+        return output, hidden_state
+
+    def get_config(self):
+        config = super(InjectDecoder, self).get_config()
+        config.update({"vocab_size": self.vocab_size, "name": self.name})
+        return config
+
+    def build_graph(self):
+        x = [Input(shape=(400,)), Input(shape=(1,)), Input(shape=(self.no_rnn_units,))]
+        return Model(inputs=x, outputs=self.call(x))
+
+
+class InjectModel(tf.keras.Model):
+    def __init__(self, vocab_size, model_params, name="inject_model", **kwargs):
+        super(InjectModel, self).__init__(name=name, **kwargs)
+
+        self.image_encoder = ImageEncoder(model_params)
+        self.inject_decoder = InjectDecoder(vocab_size, model_params)
+
+        self.vocab_size = vocab_size
+        self.no_rnn_units = model_params.no_rnn_units
+        self.axiom_order = model_params.axiom_order
+
+    def call(self, inputs, training=None):
+
+        # Extract the input elements
+        input_image, input_word, hidden_state = inputs
+
+        # Compute image embedding
+        image_emb = self.image_encoder(input_image, training=training)
+
+        # Give to decoder
+        output, hidden_state = self.inject_decoder([image_emb, input_word, hidden_state], training=training)
         return output, hidden_state
 
     def get_config(self):
@@ -484,6 +553,11 @@ def get_model(model_type, vocab_size, params):
         model = MergeInjectModel(vocab_size, params)
     elif model_type == "inject":
         model = InjectModel(vocab_size, params)
+    elif model_type == "inject_decoder":
+        # Model where encoder and decoder is separate for more efficient training
+        encoder = ImageEncoder(params)
+        decoder = InjectDecoder(vocab_size, params)
+        model = (encoder, decoder)
     elif model_type == "dense":
         model = DenseModel(vocab_size, params)
     else:

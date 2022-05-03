@@ -12,7 +12,12 @@ from dataset import (
     compute_axiom_frequency,
     compute_random_global_axiom_frequency,
 )
-from model import get_model_params, initialise_model, DenseModel, reset_model_decoder_state
+from model import (
+    get_model_params,
+    initialise_model,
+    get_hidden_state,
+    reset_model_decoder_state,
+)
 from evaluate import jaccard_score, coverage_score
 from utils import get_train_parser, AxiomOrder
 
@@ -49,11 +54,8 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     # Reset the LSTM states of the decoder between each batch
     reset_model_decoder_state(model)
 
-    # Initialise the hidden shape of the model - makes the above lines redundant
-    if isinstance(model, DenseModel):
-        hidden = None  # no hidden state in the dense model
-    else:
-        hidden = model.word_decoder.reset_state(batch_size=target.shape[0])
+    # Initialise the hidden shape of the model - used for attention mainly
+    hidden = get_hidden_state(model, target.shape[0])
 
     # Initialise input vector with the start token
     dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * target.shape[0], 1)
@@ -62,10 +64,18 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     predictions = []
 
     with tf.GradientTape() as tape:
+
+        # Check if using separate decoder/encoder for faster training
+        if isinstance(model, tuple):
+            img_tensor = model[0](img_tensor, training=training)
+
         for i in range(1, target.shape[1]):
-            # Predict the next token - slightly expensive way of doing it as it
+            # Predict the next token - either by using the full model or just the decoder
             # encodes the image each time
-            y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
+            if isinstance(model, tuple):
+                y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training)
+            else:
+                y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
 
             pred = tf.math.argmax(y_hat, axis=1)
             predictions.append(pred)
@@ -81,7 +91,10 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
 
     # Backprop if in training mode
     if training:
-        trainable_variables = model.trainable_variables
+        if isinstance(model, tuple):
+            trainable_variables = model[0].trainable_variables + model[1].trainable_variables
+        else:
+            trainable_variables = model.trainable_variables
         gradients = tape.gradient(loss, trainable_variables)
         optimizer.apply_gradients(zip(gradients, trainable_variables))
 
@@ -319,7 +332,10 @@ def main(
 
     # Initialise the checkpoint manager
     checkpoint_path = os.path.join(model_dir, "ckpt_dir")
-    ckpt = tf.train.Checkpoint(model)
+    if isinstance(model, tuple):
+        ckpt = tf.train.Checkpoint(encoder=model[0], decoder=model[1])
+    else:
+        ckpt = tf.train.Checkpoint(model)
     ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
 
     # Call training loop
