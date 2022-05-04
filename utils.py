@@ -40,6 +40,11 @@ def get_train_parser(add_help=True):
     parser.add_argument(
         "--val_id_file", default=config.val_id_file, help="File containing the validation ids"
     )
+    parser.add_argument(
+        "--tokenizer_path",
+        default=None,
+        help="Path to the tokenizer. Uses tokenizer.json in directory of the train id if not specified",
+    )
 
     # Feature options
     parser.add_argument("--proof_data", default=config.proof_data, help="File containing the image features")
@@ -146,6 +151,10 @@ def launch_training_job(job_dir: str, args: Namespace) -> None:
         elif param == "save_model":
             if args.__dict__[param]:  # if set to true
                 cmd += " --save_model "
+        # Cannot handle None values so only set if not None
+        elif param == "tokenizer_path":
+            if args.__dict__[param] is not None:
+                cmd += f" --{param} {args.__dict__[param]} "
         else:
             # Include option and value
             cmd += f" --{param} {args.__dict__[param]} "

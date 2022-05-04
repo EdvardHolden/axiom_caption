@@ -68,7 +68,7 @@ def main():
     print(f"Vocabulary Size: {vocab_size}")
 
     # Save the tokenizer
-    save_path = os.path.join(os.path.dirname(args.id_file), "tokenizer.json")
+    save_path = os.path.join(os.path.dirname(args.id_file), f"tokenizer_{args.vocab_word_limit}.json")
     with open(save_path, "w") as f:
         json.dump(tokenizer.to_json(), f)
     print("Saved tokenizer to: ", save_path)

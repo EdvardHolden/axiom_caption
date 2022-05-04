@@ -271,7 +271,15 @@ def get_axiom_frequency(axiom_order, train_id_file, proof_data):
 
 
 def main(
-    model_dir, problem_features, proof_data, train_id_file, val_id_file, save_model, remove_unknown, context
+    model_dir,
+    problem_features,
+    proof_data,
+    train_id_file,
+    val_id_file,
+    save_model,
+    remove_unknown,
+    context,
+    tokenizer_path,
 ):
 
     # Instantiate Tensorflow environment
@@ -283,8 +291,10 @@ def main(
     tf.config.run_functions_eagerly(config.DEVELOPING)
 
     # Get pre-trained tokenizer
-    tokenizer_path = os.path.join(os.path.dirname(train_id_file), "tokenizer.json")
+    if tokenizer_path is None:
+        tokenizer_path = os.path.join(os.path.dirname(train_id_file), "tokenizer.json")
     tokenizer, vocab_size = get_tokenizer(tokenizer_path)
+    tf.print("Loaded tokenizer from file: ", tokenizer_path)
     tf.print("Number of words: ", vocab_size)
 
     # Load model params from model file
