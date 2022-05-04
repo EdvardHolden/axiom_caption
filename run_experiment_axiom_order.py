@@ -8,7 +8,7 @@ import utils
 
 from utils import get_train_parser, launch_training_job
 
-AXIOM_ORDERS = ["original", "lexicographic", "length", "random", "frequency"]
+AXIOM_ORDERS = ["original", "lexicographic", "length", "random", "frequency", "random_global"]
 
 
 def get_order_exp_parser():
