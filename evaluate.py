@@ -8,7 +8,7 @@ from tqdm import tqdm
 import random
 from pathlib import Path
 
-from dataset import get_dataset, get_tokenizer, compute_max_length
+from dataset import get_dataset, get_tokenizer, compute_max_caption_length
 from model import get_model_params, load_model, reset_model_decoder_state, initialise_model
 from utils import get_sampler_parser
 
@@ -293,7 +293,7 @@ def main(
 
     # If maximum length is not provided, we compute it based on the training set in config
     if max_length is None:
-        max_len = compute_max_length(config.train_id_file, proof_data)
+        max_len = compute_max_caption_length(config.train_id_file, proof_data)
     else:
         max_len = max_length
     print("Max caption length: ", max_len)

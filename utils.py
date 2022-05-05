@@ -15,6 +15,14 @@ class Context(Enum):
         return self.value
 
 
+class EncoderInput(Enum):
+    SEQUENCE = "sequence"
+    FLAT = "flat"
+
+    def __str__(self):
+        return self.value
+
+
 # Set axiom order type
 class AxiomOrder(Enum):
     ORIGINAL = "original"
@@ -56,6 +64,18 @@ def get_train_parser(add_help=True):
         action="store_true",
         default=False,
         help="Remove tokens mapped to oov. Can reduce the number of samples.",
+    )
+
+    parser.add_argument(
+        "--encoder_input",
+        default="flat",
+        choices=["flat", "sequence"],
+        help="Changes between flat (normal) entity inputs and sequence (conjecture) input to the encoder",
+    )
+    parser.add_argument(
+        "--conjecture_tokenizer",
+        default=None,
+        help="The path to the conjecture tokenizer. Only used if encoder_input is set to sequence",
     )
 
     # Model options
@@ -142,6 +162,7 @@ def launch_training_job(job_dir: str, args: Namespace) -> None:
     # Get the default parameters from the training script
     default_parameters = sorted(get_train_parser().parse_args([]).__dict__.keys())
 
+    # FIXME could make this more compact
     # Add all other remaining training parameters
     for param in default_parameters:
         # Cannot handle flags so only set them if true
@@ -153,6 +174,9 @@ def launch_training_job(job_dir: str, args: Namespace) -> None:
                 cmd += " --save_model "
         # Cannot handle None values so only set if not None
         elif param == "tokenizer_path":
+            if args.__dict__[param] is not None:
+                cmd += f" --{param} {args.__dict__[param]} "
+        elif param == "conjecture_tokenizer":
             if args.__dict__[param] is not None:
                 cmd += f" --{param} {args.__dict__[param]} "
         else:

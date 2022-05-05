@@ -10,6 +10,7 @@ from utils import debug, AxiomOrder
 import numpy as np
 
 import config
+from utils import EncoderInput
 
 
 def get_tokenizer(tokenizer_path, verbose=0):
@@ -156,6 +157,20 @@ def _load_cached_features(img_name, cap):
     return img_tensor, cap
 
 
+def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids):
+
+    # Load the features from the pickle file
+    conjectures = load_clean_conjectures(conjecture_path, ids)
+
+    # Load the tokenizer
+    tokenizer, _ = get_tokenizer(conjecture_tokenizer)
+
+    for prob_id, conj in conjectures.items():
+        conjectures[prob_id] = tokenizer.texts_to_sequences([conj])[0]
+
+    return conjectures
+
+
 def load_image_feature_dict(image_feature_path, ids):
     """
     Load the image features as a pre-step for making tf.dataset.
@@ -219,27 +234,32 @@ def create_tf_dataset(feature_data, caption_data, caching, batch_size):
 
 
 def get_dataset(
-    image_ids,
+    ids_path,
     captions_path,
-    image_feature_path,
+    entity_feature_path,
     caption_tokenizer=None,
     max_cap_len=None,
     batch_size=config.BATCH_SIZE,
     order=None,
     axiom_frequency=None,
     remove_unknown=False,
+    encoder_input=EncoderInput.FLAT,
+    conjecture_tokenizer=None,
 ):
 
     # Load the necessary data for the id set
-    ids = load_ids(image_ids)
+    ids = load_ids(ids_path)
 
-    # TODO need to add in the sequences here somehow..
-    # TODO maybe just drop the caching if we are using the other mode?? WHERE to place it????
-    # TODO if we use conjectures we also need to alter the model into a sequence encoder and not jsut an image encoder
-    # TODO need to load tokenized conejctures with this as well
-
-    # Load image features as a dict and get flag of whether they are cached
-    img_features, caching = load_image_feature_dict(image_feature_path, ids)
+    # Load the encoder input
+    if encoder_input is EncoderInput.FLAT:
+        # Load image features as a dict and get flag of whether they are cached
+        entity_features, caching = load_image_feature_dict(entity_feature_path, ids)
+    elif encoder_input is EncoderInput.SEQUENCE:
+        entity_features = load_conjecture_tokens_dict(entity_feature_path, conjecture_tokenizer, ids)
+        # We always set caching to False for sequence inptu for now
+        caching = False
+    else:
+        raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
 
     # Load the captions as a dict
     captions = load_caption_dict(
@@ -253,10 +273,10 @@ def get_dataset(
         # Remove captions that have reduced to start+end tokens due to unknown removal
         if not remove_unknown or (remove_unknown and len(captions[i]) > 2):
             caption_data.append(captions[i])
-            feature_data.append(img_features[i])
+            feature_data.append(entity_features[i])
     # Delete dict variables to save memory
     del captions
-    del img_features
+    del entity_features
 
     # Pad the tokenised captions
     if caption_tokenizer:
@@ -370,7 +390,6 @@ def main():
         axiom_frequency=axiom_frequency,
         remove_unknown=True,
     )
-    """
 
     print("### Test feature caching")
     deepmath_data, max_len_deepmath = get_dataset(
@@ -382,6 +401,13 @@ def main():
         order=AxiomOrder.ORIGINAL,
         axiom_frequency=None,
         remove_unknown=False,
+    )
+    """
+
+    load_conjecture_tokens_dict(
+        "data/raw/deepmath_conjectures.pkl",
+        "data/deepmath/tokenizer_conjecture_None.json",
+        load_ids("data/deepmath/train.txt"),
     )
 
 
