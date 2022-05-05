@@ -38,7 +38,7 @@ def max_caption_length(captions):
     return max(len(s.split(config.TOKEN_DELIMITER)) for s in list(captions.values()))
 
 
-def compute_max_length(image_ids, image_descriptions):
+def compute_max_caption_length(image_ids, image_descriptions):
     ids = load_ids(image_ids)
     captions = load_clean_descriptions(
         image_descriptions, ids, order=None
@@ -156,21 +156,12 @@ def _load_cached_features(img_name, cap):
     return img_tensor, cap
 
 
-def get_dataset(
-    image_ids,
-    captions_path,
-    image_feature_path,
-    tokenizer=None,
-    max_cap_len=None,
-    batch_size=config.BATCH_SIZE,
-    order=None,
-    axiom_frequency=None,
-    remove_unknown=False,
-):
-
-    # Load the necessary data for the id set
-    ids = load_ids(image_ids)
-    captions = load_clean_descriptions(captions_path, ids, order=order, axiom_frequency=axiom_frequency)
+def load_image_feature_dict(image_feature_path, ids):
+    """
+    Load the image features as a pre-step for making tf.dataset.
+    If a directory si provided it caches the *.npy files in that
+    directory instead of loading all the features matrixes.
+    """
 
     caching = False  # Whether we are using cached image features
     if os.path.isfile(os.path.expanduser(image_feature_path)):
@@ -183,37 +174,33 @@ def get_dataset(
             prob_id: os.path.expanduser(os.path.join(image_feature_path, prob_id)) for prob_id in ids
         }
 
+    return img_features, caching
+
+
+def load_caption_dict(
+    captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
+):
+    """
+    Load the captions as a dictionary and tokeenize if tokenizer is provided
+    """
+    captions = load_clean_descriptions(captions_path, ids, order=order, axiom_frequency=axiom_frequency)
+
     # Compute the longest caption if value not provided
     if max_cap_len is None:
         max_cap_len = max_caption_length(captions)
 
     # Tokenize the sentences if provided
-    if tokenizer is not None:
+    if caption_tokenizer is not None:
         # Tokenize each caption and store it back in the dictionary
         if remove_unknown:
-            tokenizer.oov_token = None  # This skips entries that maps to oov
+            caption_tokenizer.oov_token = None  # This skips entries that maps to oov
         for i in captions:
-            captions[i] = tokenizer.texts_to_sequences([captions[i]])[0]
+            captions[i] = caption_tokenizer.texts_to_sequences([captions[i]])[0]
 
-    # Build data lists
-    caption_data = []
-    feature_data = []
-    for i in ids:
-        # Remove captions that have reduced to start+end tokens due to unknown removal
-        if not remove_unknown or (remove_unknown and len(captions[i]) > 2):
-            caption_data.append(captions[i])
-            feature_data.append(img_features[i])
+    return captions
 
-    # Delete dict variables to save memory
-    del captions
-    del img_features
 
-    # Pad the tokenised captions
-    if tokenizer:
-        caption_data = pad_sequences(caption_data, maxlen=max_cap_len, padding="post")
-
-    # Make dataset from data lists
-    print("Dataset size: ", len(feature_data))
+def create_tf_dataset(feature_data, caption_data, caching, batch_size):
     dataset = tf.data.Dataset.from_tensor_slices((feature_data, caption_data))
 
     if caching:
@@ -228,6 +215,56 @@ def get_dataset(
     # Shuffle and batch
     dataset = dataset.shuffle(config.BUFFER_SIZE).batch(batch_size, drop_remainder=True)
     dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
+    return dataset
+
+
+def get_dataset(
+    image_ids,
+    captions_path,
+    image_feature_path,
+    caption_tokenizer=None,
+    max_cap_len=None,
+    batch_size=config.BATCH_SIZE,
+    order=None,
+    axiom_frequency=None,
+    remove_unknown=False,
+):
+
+    # Load the necessary data for the id set
+    ids = load_ids(image_ids)
+
+    # TODO need to add in the sequences here somehow..
+    # TODO maybe just drop the caching if we are using the other mode?? WHERE to place it????
+    # TODO if we use conjectures we also need to alter the model into a sequence encoder and not jsut an image encoder
+    # TODO need to load tokenized conejctures with this as well
+
+    # Load image features as a dict and get flag of whether they are cached
+    img_features, caching = load_image_feature_dict(image_feature_path, ids)
+
+    # Load the captions as a dict
+    captions = load_caption_dict(
+        captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
+    )
+
+    # Build data lists for creating a tf.dataset
+    caption_data = []
+    feature_data = []
+    for i in ids:
+        # Remove captions that have reduced to start+end tokens due to unknown removal
+        if not remove_unknown or (remove_unknown and len(captions[i]) > 2):
+            caption_data.append(captions[i])
+            feature_data.append(img_features[i])
+    # Delete dict variables to save memory
+    del captions
+    del img_features
+
+    # Pad the tokenised captions
+    if caption_tokenizer:
+        caption_data = pad_sequences(caption_data, maxlen=max_cap_len, padding="post")
+
+    # Make dataset from data lists
+    print("Dataset size: ", len(feature_data))
+    dataset = create_tf_dataset(feature_data, caption_data, caching, batch_size)
 
     # Return the made dataset
     return dataset, max_cap_len
