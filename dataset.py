@@ -86,6 +86,21 @@ def order_axioms(order, axioms, axiom_frequency=None):
     return axioms
 
 
+def load_clean_conjectures(filename, ids):
+    # Load the descriptions of the images in the set and append start/end tokens
+    with open(os.path.expanduser(filename), "rb") as f:
+        conjecture_data = pickle.load(f)
+
+    conjectures = dict()
+    for prob_id, data in conjecture_data.items():
+
+        # Skip problems not in the ID set
+        if prob_id in ids:
+            conjectures[prob_id] = data
+
+    return conjectures
+
+
 def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
     # Load the descriptions of the images in the set and append start/end tokens
     with open(os.path.expanduser(filename), "rb") as f:
