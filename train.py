@@ -19,7 +19,7 @@ from model import (
     reset_model_decoder_state,
 )
 from evaluate import jaccard_score, coverage_score
-from utils import get_train_parser, AxiomOrder
+from utils import get_train_parser, AxiomOrder, EncoderInput
 
 # Make script deterministic to see if we can avoid the gpu issue
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
@@ -280,6 +280,8 @@ def main(
     remove_unknown,
     context,
     tokenizer_path,
+    encoder_input,
+    conjecture_tokenizer,
 ):
 
     # Instantiate Tensorflow environment
@@ -312,6 +314,8 @@ def main(
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
         remove_unknown=remove_unknown,
+        encoder_input=EncoderInput(encoder_input),
+        conjecture_tokenizer=conjecture_tokenizer,
     )
     tf.print("Max len: ", max_len)
     # Compute validation dataset based on the max length of the training data
@@ -324,6 +328,8 @@ def main(
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
         remove_unknown=remove_unknown,
+        encoder_input=EncoderInput(encoder_input),
+        conjecture_tokenizer=conjecture_tokenizer,
     )
 
     # Remove axiom frequencies as it is no longer needed and can be very large
