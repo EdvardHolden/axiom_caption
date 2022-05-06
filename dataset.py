@@ -163,10 +163,20 @@ def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids):
     conjectures = load_clean_conjectures(conjecture_path, ids)
 
     # Load the tokenizer
+    if conjecture_tokenizer is None:
+        raise ValueError("ERROR: Must supply separate tokenizer for the conjecture strings")
     tokenizer, _ = get_tokenizer(conjecture_tokenizer)
 
     for prob_id, conj in conjectures.items():
         conjectures[prob_id] = tokenizer.texts_to_sequences([conj])[0]
+
+    # Quickly compute maximum conjectur length
+    # max_len = max(len(v) for v in conjectures.values())
+    # tf.print(f"Maximum conjecture input length: {max_len}")
+
+    for prob_id, conj in conjectures.items():
+        # TODO FIXME Set it currently to 64 as it is unclear what to do about this..
+        conjectures[prob_id] = pad_sequences([conj], maxlen=64, padding="post", truncating="post")[0]
 
     return conjectures
 
