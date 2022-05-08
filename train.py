@@ -17,6 +17,8 @@ from model import (
     initialise_model,
     get_hidden_state,
     reset_model_decoder_state,
+    Encoder,
+    ImageEncoder,
 )
 from evaluate import jaccard_score, coverage_score
 from utils import get_train_parser, AxiomOrder, EncoderInput
@@ -48,6 +50,7 @@ def loss_function(real, pred):
 
 @tf.function
 def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
+
     # Initial loss on the batch is zero
     loss = 0
 
@@ -63,17 +66,24 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
     # List for holding the predictions
     predictions = []
 
+    # Placeholder for mask if not used
+    mask = None
+
     with tf.GradientTape() as tape:
 
         # Check if using separate decoder/encoder for faster training
         if isinstance(model, tuple):
-            img_tensor = model[0](img_tensor, training=training)
+            # Call and update variables according to the type of encoder being used
+            if isinstance(model[0], ImageEncoder):
+                img_tensor = model[0](img_tensor, training=training)
+            elif isinstance(model[0], Encoder):
+                img_tensor, hidden, mask = model[0](img_tensor, training=training)
 
         for i in range(1, target.shape[1]):
             # Predict the next token - either by using the full model or just the decoder
             # encodes the image each time
             if isinstance(model, tuple):
-                y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training)
+                y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training, mask=mask)
             else:
                 y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
 
@@ -292,6 +302,10 @@ def main(
     """
     tf.config.run_functions_eagerly(config.DEVELOPING)
 
+    # Ensure that the encoder input is instantiated as the correct type
+    if not isinstance(encoder_input, EncoderInput):
+        encoder_input = EncoderInput(encoder_input)
+
     # Get pre-trained tokenizer
     if tokenizer_path is None:
         tokenizer_path = os.path.join(os.path.dirname(train_id_file), "tokenizer.json")
@@ -299,8 +313,15 @@ def main(
     tf.print("Loaded tokenizer from file: ", tokenizer_path)
     tf.print("Number of words: ", vocab_size)
 
-    # Load model params from model file
-    model_params = get_model_params(model_dir, context=context)
+    # Load model params from model file - and set the encoder input
+    model_params = get_model_params(model_dir, encoder_input, context=context)
+
+    # Set the sequence_vocab_size if using sequence encoder input FIXME - not very clean
+    if encoder_input is EncoderInput.SEQUENCE:
+        _, sequence_vocab_size = get_tokenizer(
+            conjecture_tokenizer,
+        )
+        model_params.sequence_vocab_size = sequence_vocab_size
 
     # Get the axiom frequencies from this dataset
     axiom_frequency = get_axiom_frequency(model_params.axiom_order, train_id_file, proof_data)
@@ -314,7 +335,7 @@ def main(
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
         remove_unknown=remove_unknown,
-        encoder_input=EncoderInput(encoder_input),
+        encoder_input=encoder_input,
         conjecture_tokenizer=conjecture_tokenizer,
     )
     tf.print("Max len: ", max_len)
@@ -328,7 +349,7 @@ def main(
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
         remove_unknown=remove_unknown,
-        encoder_input=EncoderInput(encoder_input),
+        encoder_input=encoder_input,
         conjecture_tokenizer=conjecture_tokenizer,
     )
 

@@ -20,7 +20,7 @@ import json
 import os
 
 from dataset import AxiomOrder
-from utils import Context
+from utils import Context, EncoderInput
 
 
 def adapt_normalization_layer(model, embedding_vectors):
@@ -69,6 +69,16 @@ def reset_model_decoder_state(model):
                 pass
 
 
+def _get_sequence_mask(sequence, dtype=tf.float32):
+    """
+    Return the mask of the input sequence for use with the attention mechanism
+    """
+    mask = tf.math.logical_not(tf.math.equal(sequence, 0))
+    mask = tf.cast(mask, dtype=tf.float32)
+    mask = tf.expand_dims(mask, axis=-1)
+    return mask
+
+
 @tf.function
 def get_hidden_state(model, batch_size):
     """
@@ -95,6 +105,7 @@ def initialise_model(model_type, vocab_size, model_params, training_data=None):
     # layer before compiling (or re-compile) the model. This is done over
     # the embedding vectors only.
     if model_params.normalize:
+        # TODO make this work with the InjectDecoder as well
         if isinstance(model, tuple):  # Check if decoder and encoder is separated
             model[0] = adapt_normalization_layer(model[0], training_data.map(lambda x1, x2: x1))
         else:
@@ -155,6 +166,62 @@ class ImageEncoder(layers.Layer):
     def build_graph(self):
         # Input shape of a single word
         x = Input(shape=(400,))
+        return Model(inputs=x, outputs=self.call(x))
+
+
+# TODO add bidirectional encoder
+class Encoder(tf.keras.layers.Layer):
+    """
+    Encoder function for processing input sequences
+    """
+
+    def __init__(self, params, name="conjecture_encoder", **kwargs):
+
+        super(Encoder, self).__init__(name=name, **kwargs)
+
+        # Set the vocabulary size
+        self.vocab_size = params.sequence_vocab_size
+
+        # The embedding layer converts tokens to vectors
+        self.embedding = tf.keras.layers.Embedding(params.sequence_vocab_size, params.embedding_size)
+
+        # Get the RNN type
+        rnn = get_rnn(params.rnn_type)
+
+        self.no_rnn_units = params.no_rnn_units
+
+        # Initialise RNN model - always set stateful to False as we are processing the full sequence at once
+        self.rnn = rnn(
+            params.no_rnn_units,
+            stateful=False,
+            dropout=params.dropout_rate,
+            return_state=True,
+            return_sequences=True,
+            recurrent_initializer="glorot_uniform",
+        )
+
+    def call(self, sequence_input, training=None):
+
+        # Embed the sequences into tokens
+        x = self.embedding(sequence_input)
+
+        # Process the input sequence
+        if isinstance(self.rnn, LSTM):
+            # LSTM also returns the cell state, which we do not use
+            x, hidden, _ = self.rnn(x, training=training)
+        else:
+            # GRU does not return the cell state
+            x, hidden = self.rnn(x, training=training)
+
+        # Compute the mask for the input sequence
+        mask = _get_sequence_mask(sequence_input)
+
+        # 4. Returns the new sequence, its state and a mask for the input sequence
+        return x, hidden, mask
+
+    def build_graph(self):
+        # Input shape of a single word
+        x = Input(shape=(self.vocab_size,))
         return Model(inputs=x, outputs=self.call(x))
 
 
@@ -287,6 +354,7 @@ class DenseModel(tf.keras.Model):
 
         # Compute image embedding
         image_emb = self.image_encoder(input_image, training=training)
+
         # Pass word through embedding layer
         # word_emb = tf.squeeze( self.word_embedder(input_word, training=training))  # TODO maybe use flatten instead?
         word_emb = self.word_embedder(input_word, training=training)
@@ -332,7 +400,7 @@ class InjectDecoder(tf.keras.Model):
 
         self.repeat = RepeatVector(1)
 
-    def call(self, inputs, training=None):
+    def call(self, inputs, training=None, mask=None):
 
         # Extract the input elements
         image_emb, input_word, hidden_state = inputs
@@ -343,7 +411,7 @@ class InjectDecoder(tf.keras.Model):
 
         # Add attention embedding
         if self.attention is not None:
-            image_emb, _ = self.attention(image_emb, hidden_state)
+            image_emb, _ = self.attention(image_emb, hidden_state, mask=mask)
 
         # Concatenate the features - original paper passes attention vector instead
         image_emb = self.repeat(image_emb)  # Quickfix for expanding the dimension
@@ -367,23 +435,30 @@ class InjectModel(tf.keras.Model):
     def __init__(self, vocab_size, model_params, name="inject_model", **kwargs):
         super(InjectModel, self).__init__(name=name, **kwargs)
 
-        self.image_encoder = ImageEncoder(model_params)
+        self.encoder = _get_encoder(model_params)
         self.inject_decoder = InjectDecoder(vocab_size, model_params)
 
         self.vocab_size = vocab_size
         self.no_rnn_units = model_params.no_rnn_units
         self.axiom_order = model_params.axiom_order
 
-    def call(self, inputs, training=None):
+    def call(self, inputs, training=None, mask=None):
 
         # Extract the input elements
-        input_image, input_word, hidden_state = inputs
+        input_entity, input_word, hidden_state = inputs
 
         # Compute image embedding
-        image_emb = self.image_encoder(input_image, training=training)
+        if isinstance(self.encoder, Encoder):
+            entity_embedding, hidden_state, mask = self.encoder(input_entity, training=training)
+        elif isinstance(self.encoder, ImageEncoder):
+            entity_embedding = self.encoder(input_entity, training=training)
+        else:
+            raise ValueError(f'ERROR: Calling of encoder "{self.encoder}" not implemented for InjectModel')
 
         # Give to decoder
-        output, hidden_state = self.inject_decoder([image_emb, input_word, hidden_state], training=training)
+        output, hidden_state = self.inject_decoder(
+            [entity_embedding, input_word, hidden_state], training=training, mask=mask
+        )
         return output, hidden_state
 
     def get_config(self):
@@ -402,9 +477,9 @@ class BahdanauAttention(tf.keras.Model):
         self.W1 = tf.keras.layers.Dense(params.no_rnn_units)
         self.W2 = tf.keras.layers.Dense(params.no_rnn_units)
         self.V = tf.keras.layers.Dense(1)
+        self.softmax = tf.keras.layers.Softmax(axis=1)
 
-    def call(self, features, hidden):
-        # features(CNN_encoder output) shape == (batch_size, 64, embedding_dim)
+    def call(self, features, hidden, mask=None):
 
         # hidden shape == (batch_size, hidden_size)
         # hidden_with_time_axis shape == (batch_size, 1, hidden_size)
@@ -412,14 +487,13 @@ class BahdanauAttention(tf.keras.Model):
 
         # attention_hidden_layer shape == (batch_size, 64, units)
         attention_hidden_layer = tf.nn.tanh(self.W1(features) + self.W2(hidden_with_time_axis))
-        # TODO this looks a bit fishy
 
         # score shape == (batch_size, 64, 1)
         # This gives you an unnormalized score for each image feature.
         score = self.V(attention_hidden_layer)
 
         # attention_weights shape == (batch_size, 64, 1)
-        attention_weights = tf.nn.softmax(score, axis=1)
+        attention_weights = self.softmax(score, mask=mask)
 
         # context_vector shape after sum == (batch_size, hidden_size)
         context_vector = attention_weights * features
@@ -548,15 +622,30 @@ class MergeInjectModel(tf.keras.Model):
         return Model(inputs=x, outputs=self.call(x))
 
 
+def _get_encoder(params):
+
+    if params.encoder_input is EncoderInput.FLAT:
+        encoder = ImageEncoder(params)
+    elif params.encoder_input is EncoderInput.SEQUENCE:
+        encoder = Encoder(params)
+    else:
+        raise ValueError(f'Cannot get model with the supplied "params.encoder_input": {params.encoder_input}')
+    return encoder
+
+
 def get_model(model_type, vocab_size, params):
+
     if model_type == "merge_inject":
+        print("Merge Inject model is deprecated", file=sys.stderr)
         model = MergeInjectModel(vocab_size, params)
     elif model_type == "inject":
         model = InjectModel(vocab_size, params)
     elif model_type == "inject_decoder":
         # Model where encoder and decoder is separate for more efficient training
-        encoder = ImageEncoder(params)
+        encoder = _get_encoder(params)
+        # Initialise the decoder
         decoder = InjectDecoder(vocab_size, params)
+        # Wrap the model as a tuple
         model = (encoder, decoder)
     elif model_type == "dense":
         model = DenseModel(vocab_size, params)
@@ -587,15 +676,22 @@ def get_rnn(rnn_type):
     return rnn
 
 
-def get_model_params(model_dir, context=Context.PROOF):
+def get_model_params(model_dir, encoder_input, context=Context.PROOF):
 
     # Load parameters from model directory and create namespace
     with open(os.path.join(model_dir, "params.json"), "r") as f:
         params = json.load(f)
         params = Namespace(**params)
 
+    # Set the axiom order
     if params.axiom_order:
         params.axiom_order = AxiomOrder(params.axiom_order)
+
+    # Set the encoder input style of the model
+    if isinstance(encoder_input, EncoderInput):
+        params.encoder_input = encoder_input
+    else:
+        params.encoder_input = EncoderInput(encoder_input)
 
     # Enable max pooling if we are operating on image features
     params.global_max_pool = context == Context.FLICKR
@@ -668,15 +764,25 @@ def check_models():
     print(dense.summary())
     print(dense.build_graph().summary())
 
-
-"""
+    """
     print("# # # Inject # # #")
     m = get_model("inject", 123, 20, params)
     m = get_model("attention_inject", 123, 20, params)
     print(m)
     print(m.build_graph().summary())
-"""
+    """
+
+
+def check_encoder():
+    params = get_model_params("experiments/base_model")
+    # This needs to be supplied from data
+    params.sequence_vocab_size = 80
+    enc = Encoder(params)
+    print(enc)
+    enc.build_graph().summary()
+
 
 if __name__ == "__main__":
     # check_models()
-    check_inject()
+    # check_inject()
+    check_encoder()
