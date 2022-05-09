@@ -206,7 +206,8 @@ def load_caption_dict(
     captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
 ):
     """
-    Load the captions as a dictionary and tokeenize if tokenizer is provided
+    Load the captions as a dictionary and tokeenize if tokenizer is provided.
+    Also compute the length of the longest caption if not provided.
     """
     captions = load_clean_descriptions(captions_path, ids, order=order, axiom_frequency=axiom_frequency)
 
@@ -222,7 +223,7 @@ def load_caption_dict(
         for i in captions:
             captions[i] = caption_tokenizer.texts_to_sequences([captions[i]])[0]
 
-    return captions
+    return captions, max_cap_len
 
 
 def create_tf_dataset(feature_data, caption_data, caching, batch_size):
@@ -272,7 +273,7 @@ def get_dataset(
         raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
 
     # Load the captions as a dict
-    captions = load_caption_dict(
+    captions, max_cap_len = load_caption_dict(
         captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
     )
 
