@@ -36,7 +36,19 @@ def load_doc(filename):
 
 
 def max_caption_length(captions):
-    return max(len(s.split(config.TOKEN_DELIMITER)) for s in list(captions.values()))
+
+    # Check whether caption is tokenized or a single string with delimiters
+    first_cap = list(captions.values())[0]
+    if isinstance(first_cap, list):
+        max_len = max(len(s) for s in list(captions.values()))
+    elif isinstance(first_cap, str):
+        max_len = max(len(s.split(config.TOKEN_DELIMITER)) for s in list(captions.values()))
+    else:
+        raise ValueError(
+            f"Check type of the provided captions. Unclear how to compute max length of caption like: {first_cap}"
+        )
+
+    return max_len
 
 
 def compute_max_caption_length(image_ids, image_descriptions):
@@ -211,10 +223,6 @@ def load_caption_dict(
     """
     captions = load_clean_descriptions(captions_path, ids, order=order, axiom_frequency=axiom_frequency)
 
-    # Compute the longest caption if value not provided
-    if max_cap_len is None:
-        max_cap_len = max_caption_length(captions)
-
     # Tokenize the sentences if provided
     if caption_tokenizer is not None:
         # Tokenize each caption and store it back in the dictionary
@@ -222,6 +230,10 @@ def load_caption_dict(
             caption_tokenizer.oov_token = None  # This skips entries that maps to oov
         for i in captions:
             captions[i] = caption_tokenizer.texts_to_sequences([captions[i]])[0]
+
+    # Compute the longest caption if value not provided - do this after tokenization in case remove_unknown is set
+    if max_cap_len is None:
+        max_cap_len = max_caption_length(captions)
 
     return captions, max_cap_len
 
