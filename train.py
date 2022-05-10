@@ -292,7 +292,12 @@ def main(
     tokenizer_path,
     encoder_input,
     conjecture_tokenizer,
+    working_dir,
 ):
+
+    # Check if working_dir is set, otherwise, default to model_dir
+    if working_dir is None:
+        working_dir = model_dir
 
     # Instantiate Tensorflow environment
     """
@@ -368,7 +373,7 @@ def main(
     optimizer = tf.keras.optimizers.Adam(learning_rate=model_params.learning_rate)
 
     # Initialise the checkpoint manager
-    checkpoint_path = os.path.join(model_dir, "ckpt_dir")
+    checkpoint_path = os.path.join(working_dir, "ckpt_dir")
     if isinstance(model, tuple):
         ckpt = tf.train.Checkpoint(encoder=model[0], decoder=model[1])
     else:
@@ -385,7 +390,7 @@ def main(
         model.save(checkpoint_path)
 
     # Save the training history
-    with open(os.path.join(model_dir, "history.pkl"), "wb") as f:
+    with open(os.path.join(working_dir, "history.pkl"), "wb") as f:
         dump(history, f)
 
 

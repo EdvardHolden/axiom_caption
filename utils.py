@@ -81,6 +81,12 @@ def get_train_parser(add_help=True):
     # Model options
     parser.add_argument("--model_dir", default=config.base_model, help="Directory containing params.json")
 
+    parser.add_argument(
+        "--working_dir",
+        default=None,
+        help="Directory for saving ckp, model and history. Same as model_dir if not set.",
+    )
+
     # FIXME this might not remove that much memory load due to the checkpoints
     parser.add_argument(
         "--save_model", default=False, action="store_true", help="Set if final model should be saved"
@@ -177,6 +183,9 @@ def launch_training_job(job_dir: str, args: Namespace) -> None:
             if args.__dict__[param] is not None:
                 cmd += f" --{param} {args.__dict__[param]} "
         elif param == "conjecture_tokenizer":
+            if args.__dict__[param] is not None:
+                cmd += f" --{param} {args.__dict__[param]} "
+        elif param == "working_dir":
             if args.__dict__[param] is not None:
                 cmd += f" --{param} {args.__dict__[param]} "
         else:
