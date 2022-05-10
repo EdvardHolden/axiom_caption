@@ -24,10 +24,19 @@ from utils import Context, EncoderInput
 
 
 def adapt_normalization_layer(model, embedding_vectors):
+
+    # If we use a cached dataset it is a MapDataset, and we need to unpack it and access all the elements as a new dataset.
+    # I cannot figure out how to check for MapDataset, so we apply this to all cases.
+    embedding_vectors = list(embedding_vectors.unbatch().as_numpy_iterator())
+    embedding_vectors = tf.data.Dataset.from_tensor_slices(embedding_vectors)
+
     if embedding_vectors is None:
         raise ValueError("Cannot initialize model with normalization layer without supplying training data")
     # Adapt the normalisation layer to the embedding vector
-    model.image_encoder.normalize.adapt(embedding_vectors)
+    if isinstance(model, tuple):  # Check if decoder and encoder is separated
+        model[0].normalize.adapt(embedding_vectors)
+    else:
+        model.encoder.normalize.adapt(embedding_vectors)
     return model
 
 
@@ -105,12 +114,8 @@ def initialise_model(model_type, vocab_size, model_params, training_data=None):
     # layer before compiling (or re-compile) the model. This is done over
     # the embedding vectors only.
     if model_params.normalize:
-        # TODO make this work with the InjectDecoder as well
-        if isinstance(model, tuple):  # Check if decoder and encoder is separated
-            model[0] = adapt_normalization_layer(model[0], training_data.map(lambda x1, x2: x1))
-        else:
-            # Only supply the embedding vectors
-            model = adapt_normalization_layer(model, training_data.map(lambda x1, x2: x1))
+        # Only supply the embedding vectors
+        model = adapt_normalization_layer(model, training_data.map(lambda x1, x2: x1))
 
     return model
 
@@ -533,7 +538,7 @@ class BahdanauAttentionNew(tf.keras.Model):
 
         # attention_weights shape == (batch_size, 64, 1)
         # attention_weights = tf.nn.softmax(attention_hidden_layer, axis=1)
-        attention_weights = tf.nn.softmax(score, axis=1)
+        attention_weights = tf.nn.softmax(score, axis=1)  # TODO might add masking here?
 
         # context_vector shape after sum == (batch_size, hidden_size)
 
