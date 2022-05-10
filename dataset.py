@@ -183,12 +183,14 @@ def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids):
         conjectures[prob_id] = tokenizer.texts_to_sequences([conj])[0]
 
     # Quickly compute maximum conjectur length
-    # max_len = max(len(v) for v in conjectures.values())
-    # tf.print(f"Maximum conjecture input length: {max_len}")
+    max_len = max(len(v) for v in conjectures.values())
+    tf.print(f"Maximum conjecture input length: {max_len}")
+    if max_len > config.CONJECTURE_INPUT_MAX_LENGTH:
+        max_len = config.CONJECTURE_INPUT_MAX_LENGTH
+        tf.print(f"Truncated input length to: {max_len}")
 
     for prob_id, conj in conjectures.items():
-        # TODO FIXME Set it currently to 64 as it is unclear what to do about this..
-        conjectures[prob_id] = pad_sequences([conj], maxlen=64, padding="post", truncating="post")[0]
+        conjectures[prob_id] = pad_sequences([conj], maxlen=max_len, padding="post", truncating="post")[0]
 
     return conjectures
 

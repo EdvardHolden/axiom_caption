@@ -5,13 +5,14 @@ from dataset import load_clean_descriptions, load_clean_conjectures, load_ids
 import config
 import os
 from enum import Enum
+import re
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--id_file", default=config.train_id_file, help="File containing the ids used to construct the tokenizer"
 )
 parser.add_argument(
-    "--tokenizer_data_path", default=config.proof_data, help="File containing the proof/conjecture/text data"
+    "--tokenizer_data_path", default=config.proof_data, help="File containing the proof|conjecture|text data"
 )
 parser.add_argument(
     "--vocab_word_limit",
@@ -22,7 +23,7 @@ parser.add_argument(
 parser.add_argument(
     "--tokenizer_mode",
     default="axioms",
-    choices=["axioms", "words", "conjecture"],
+    choices=["axioms", "words", "conj_char", "conj_word"],
     help="Set preprocessing based on natural language, conjecture or axioms",
 )
 
@@ -34,7 +35,8 @@ class TokenizerMode(Enum):
 
     AXIOMS = "axioms"
     WORDS = "words"
-    CONJECTURE = "conjecture"
+    CONJ_CHAR = "conj_char"
+    CONJ_WORD = "conj_word"
 
     def __str__(self):
         return self.value
@@ -58,7 +60,7 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
             split=config.TOKEN_DELIMITER,
             oov_token=config.TOKEN_OOV,
         )
-    elif tokenizer_mode is TokenizerMode.CONJECTURE:
+    elif tokenizer_mode is TokenizerMode.CONJ_CHAR:
         tokenizer = Tokenizer(
             lower=False,
             num_words=None,  # Want to inlcude all character tokens
@@ -66,6 +68,17 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
             char_level=True,
             # split=config.TOKEN_DELIMITER,
             oov_token=config.TOKEN_OOV,
+        )
+    elif tokenizer_mode is TokenizerMode.CONJ_WORD:
+        # Same as character but all each symbol is a single token
+        # Ensure space around the parenthasis for correct parsing
+        lines = [re.sub("(,|\[|\]|\(|\))", r" \1 ", line) for line in lines]
+        tokenizer = Tokenizer(
+            filters=".",  # Remove . that might be left at the end
+            lower=False,
+            split=" ",  # Split on all whitespace, should now all be words
+            oov_token=config.TOKEN_OOV,
+            char_level=False,
         )
 
     else:
@@ -85,7 +98,7 @@ def main():
         tokenizer_data = load_clean_descriptions(
             args.tokenizer_data_path, load_ids(args.id_file), order=None
         )  # The order is irrelevant for this purpose
-    elif tokenizer_mode is TokenizerMode.CONJECTURE:
+    elif tokenizer_mode is TokenizerMode.CONJ_WORD or tokenizer_mode is TokenizerMode.CONJ_CHAR:
         # Load clean conejctures
         tokenizer_data = load_clean_conjectures(args.tokenizer_data_path, load_ids(args.id_file))
     else:
