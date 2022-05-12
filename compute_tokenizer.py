@@ -63,7 +63,7 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
     elif tokenizer_mode is TokenizerMode.CONJ_CHAR:
         tokenizer = Tokenizer(
             lower=False,
-            num_words=None,  # Want to inlcude all character tokens
+            num_words=vocab_word_limit,
             filters=" ",  # Filter whitespace
             char_level=True,
             # split=config.TOKEN_DELIMITER,
@@ -75,6 +75,7 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
         lines = [re.sub("(,|\[|\]|\(|\))", r" \1 ", line) for line in lines]
         tokenizer = Tokenizer(
             filters=".",  # Remove . that might be left at the end
+            num_words=vocab_word_limit,
             lower=False,
             split=" ",  # Split on all whitespace, should now all be words
             oov_token=config.TOKEN_OOV,
