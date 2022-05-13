@@ -287,17 +287,9 @@ def main(
     train_id_file,
     val_id_file,
     save_model,
-    remove_unknown,
-    context,
-    tokenizer_path,
-    encoder_input,
-    conjecture_tokenizer,
     working_dir,
+    context,
 ):
-
-    # Check if working_dir is set, otherwise, default to model_dir
-    if working_dir is None:
-        working_dir = model_dir
 
     # Instantiate Tensorflow environment
     """
@@ -307,26 +299,27 @@ def main(
     """
     tf.config.run_functions_eagerly(config.DEVELOPING)
 
-    # Ensure that the encoder input is instantiated as the correct type
-    if not isinstance(encoder_input, EncoderInput):
-        encoder_input = EncoderInput(encoder_input)
-
-    # Get pre-trained tokenizer
-    if tokenizer_path is None:
-        tokenizer_path = os.path.join(os.path.dirname(train_id_file), "tokenizer.json")
-    tokenizer, vocab_size = get_tokenizer(tokenizer_path)
-    tf.print("Loaded tokenizer from file: ", tokenizer_path)
-    tf.print("Number of words: ", vocab_size)
+    # Check if working_dir is set, otherwise, default to model_dir
+    if working_dir is None:
+        working_dir = model_dir
 
     # Load model params from model file - and set the encoder input
-    model_params = get_model_params(model_dir, encoder_input, context=context)
+    model_params = get_model_params(model_dir)
 
-    # Set the sequence_vocab_size if using sequence encoder input FIXME - not very clean
-    if encoder_input is EncoderInput.SEQUENCE:
-        _, sequence_vocab_size = get_tokenizer(
-            conjecture_tokenizer,
+    # Get pre-trained tokenizer for the captions - supply context for switching between axioms and natural language
+    caption_tokenizer, vocab_size = get_tokenizer(
+        train_id_file, str(context), proof_data, model_params.axiom_vocab_size
+    )
+
+    if model_params.encoder_input is EncoderInput.SEQUENCE:
+        conjecture_tokenizer, conjecture_vocab_size = get_tokenizer(
+            train_id_file, "conj_word", problem_features, model_params.conjecture_vocab_size
         )
-        model_params.sequence_vocab_size = sequence_vocab_size
+        # Need to set the conjecture vocab size if it was None|all, to determine the input layer
+        if model_params.conjecture_vocab_size is None:
+            model_params.conjecture_vocab_size = conjecture_vocab_size
+    else:
+        conjecture_tokenizer = None
 
     # Get the axiom frequencies from this dataset
     axiom_frequency = get_axiom_frequency(model_params.axiom_order, train_id_file, proof_data)
@@ -336,38 +329,37 @@ def main(
         train_id_file,
         proof_data,
         problem_features,
-        caption_tokenizer=tokenizer,
+        caption_tokenizer=caption_tokenizer,
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
-        remove_unknown=remove_unknown,
-        encoder_input=encoder_input,
+        remove_unknown=model_params.remove_unknown,
+        encoder_input=model_params.encoder_input,
         conjecture_tokenizer=conjecture_tokenizer,
     )
-    tf.print("Max len: ", max_len)
+    tf.print("Max caption length: ", max_len)
     # Compute validation dataset based on the max length of the training data
     val_data, _ = get_dataset(
         val_id_file,
         proof_data,
         problem_features,
-        caption_tokenizer=tokenizer,
+        caption_tokenizer=caption_tokenizer,
         max_cap_len=max_len,
         order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
-        remove_unknown=remove_unknown,
-        encoder_input=encoder_input,
+        remove_unknown=model_params.remove_unknown,
+        encoder_input=model_params.encoder_input,
         conjecture_tokenizer=conjecture_tokenizer,
     )
 
     # Remove axiom frequencies as it is no longer needed and can be very large
     del axiom_frequency
 
+    # Not longer needed
+    del conjecture_tokenizer
+
     # Initialise the model
     model = initialise_model(model_params.model_type, vocab_size, model_params, training_data=train_data)
     tf.print("Training on: ", model)
-
-    # TODO adding tensorboard stuff here - need to add more log points for this to apply
-    # tb_callback = tf.keras.callbacks.TensorBoard(LOG_DIR)
-    # tb_callback.set_model(model)
 
     # Initialise the optimiser
     optimizer = tf.keras.optimizers.Adam(learning_rate=model_params.learning_rate)
@@ -382,7 +374,13 @@ def main(
 
     # Call training loop
     history = train_loop(
-        tokenizer, model, ckpt_manager, optimizer, train_data, val_data, es_patience=config.ES_PATIENCE
+        caption_tokenizer,
+        model,
+        ckpt_manager,
+        optimizer,
+        train_data,
+        val_data,
+        es_patience=config.ES_PATIENCE,
     )
 
     # Save the model
