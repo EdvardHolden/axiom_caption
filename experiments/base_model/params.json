@@ -11,8 +11,9 @@
     "no_dense_units" : 64,
     "dropout_rate": 0.2,
     "learning_rate": 0.001,
-    "remove_unkown": true,
+    "remove_unknown": true,
     "axiom_vocab_size": "6000",
     "encoder_input": "sequence",
     "conjecture_vocab_size": "all"
 }
+
