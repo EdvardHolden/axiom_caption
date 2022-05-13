@@ -1,7 +1,7 @@
 import argparse
 import json
 from keras.preprocessing.text import Tokenizer
-from dataset import load_clean_descriptions, load_clean_conjectures, load_ids
+from dataset import load_clean_descriptions, load_clean_conjectures, load_ids, get_tokenizer_save_path
 import config
 import os
 from enum import Enum
@@ -96,18 +96,6 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
 
     tokenizer.fit_on_texts(lines)
     return tokenizer
-
-
-def get_tokenizer_save_path(dest, id_file, tokenizer_mode, vocab_word_limit) -> str:
-
-    # Convert None to all for ebtter name representation
-    if vocab_word_limit is None:
-        vocab_word_limit = "all"
-
-    # Save the tokenizer
-    save_path = os.path.join(dest, f"tokenizer_{id_file}_{tokenizer_mode}_{vocab_word_limit}.json")
-
-    return save_path
 
 
 def save_tokenizer(tokenizer, save_path):

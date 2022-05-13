@@ -8,8 +8,8 @@ from enum import Enum
 
 
 class Context(Enum):
-    PROOF = "proof"
-    FLICKR = "flickr"
+    AXIOMS = "axioms"
+    WORDS = "words"
 
     def __str__(self):
         return self.value
@@ -48,34 +48,11 @@ def get_train_parser(add_help=True):
     parser.add_argument(
         "--val_id_file", default=config.val_id_file, help="File containing the validation ids"
     )
-    parser.add_argument(
-        "--tokenizer_path",
-        default=None,
-        help="Path to the tokenizer. Uses tokenizer.json in directory of the train id if not specified",
-    )
 
     # Feature options
     parser.add_argument("--proof_data", default=config.proof_data, help="File containing the image features")
     parser.add_argument(
         "--problem_features", default=config.problem_features, help="File containing the image descriptions"
-    )
-    parser.add_argument(
-        "--remove_unknown",
-        action="store_true",
-        default=False,
-        help="Remove tokens mapped to oov. Can reduce the number of samples.",
-    )
-
-    parser.add_argument(
-        "--encoder_input",
-        default="flat",
-        choices=["flat", "sequence"],
-        help="Changes between flat (normal) entity inputs and sequence (conjecture) input to the encoder",
-    )
-    parser.add_argument(
-        "--conjecture_tokenizer",
-        default=None,
-        help="The path to the conjecture tokenizer. Only used if encoder_input is set to sequence",
     )
 
     # Model options
@@ -96,8 +73,8 @@ def get_train_parser(add_help=True):
         "--context",
         choices=list(Context),
         type=Context,
-        default="proof",
-        help="Alternate context between Flickr8 and Proof datasets",
+        default="axioms",
+        help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
     )
 
     return parser
@@ -171,20 +148,10 @@ def launch_training_job(job_dir: str, args: Namespace) -> None:
     # FIXME could make this more compact
     # Add all other remaining training parameters
     for param in default_parameters:
-        # Cannot handle flags so only set them if true
-        if param == "remove_unknown":
-            if args.__dict__[param]:  # if set to true
-                cmd += " --remove_unknown "
-        elif param == "save_model":
+        if param == "save_model":
             if args.__dict__[param]:  # if set to true
                 cmd += " --save_model "
         # Cannot handle None values so only set if not None
-        elif param == "tokenizer_path":
-            if args.__dict__[param] is not None:
-                cmd += f" --{param} {args.__dict__[param]} "
-        elif param == "conjecture_tokenizer":
-            if args.__dict__[param] is not None:
-                cmd += f" --{param} {args.__dict__[param]} "
         elif param == "working_dir":
             if args.__dict__[param] is not None:
                 cmd += f" --{param} {args.__dict__[param]} "

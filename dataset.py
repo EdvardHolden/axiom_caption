@@ -7,13 +7,53 @@ import json
 from keras.preprocessing.text import tokenizer_from_json
 from keras.preprocessing.sequence import pad_sequences
 from utils import debug, AxiomOrder
+from pathlib import Path
 import numpy as np
+from subprocess import check_call
 
 import config
 from utils import EncoderInput
 
 
-def get_tokenizer(tokenizer_path, verbose=0):
+def get_tokenizer(id_file, tokenizer_mode, tokenizer_data_path, vocab_word_limit):
+
+    tokenizer_path = get_tokenizer_save_path(
+        os.path.dirname(id_file),
+        Path(id_file).stem,
+        tokenizer_mode,
+        vocab_word_limit,
+    )
+
+    # Check if the set tokenzier does not exist
+    if not os.path.exists(tokenizer_path):
+        print(f"Cannot find tokenizer for: {tokenizer_path}")
+        print("Computing new tokenizer given the parameters ...")
+
+        # Make cmd string for computing the tokenizer and run the script
+        cmd = f"{config.PYTHON} compute_tokenizer.py --id_file {id_file} "
+        cmd += f" --tokenizer_data_path {tokenizer_data_path} --tokenizer_mode {tokenizer_mode} "
+        if vocab_word_limit is not None:
+            cmd += f" --vocab_word_limit {vocab_word_limit} "
+
+        check_call(cmd, shell=True, stdout=None)
+
+    # Load and return (tokenizer,  vocab limit)
+    return load_tokenizer(tokenizer_path)
+
+
+def get_tokenizer_save_path(dest, id_file, tokenizer_mode, vocab_word_limit) -> str:
+
+    # Convert None to all for better name representation
+    if vocab_word_limit is None:
+        vocab_word_limit = "all"
+
+    # Save the tokenizer
+    save_path = os.path.join(dest, f"tokenizer_{tokenizer_mode}_{id_file}_{vocab_word_limit}.json")
+
+    return save_path
+
+
+def load_tokenizer(tokenizer_path, verbose=1):
     # Function for loading the tokenizer from path
     with open(tokenizer_path) as f:
         tokenizer = tokenizer_from_json(json.load(f))
@@ -24,7 +64,9 @@ def get_tokenizer(tokenizer_path, verbose=0):
         vocab_size = len(tokenizer.word_index)
 
     if verbose > 0:
-        print("Vocabulary Size: %d" % vocab_size)
+        print(f"Loaded tokenizer from path {tokenizer_path}")
+        print(f"Vocabulary Size: {vocab_size}")
+
     return tokenizer, vocab_size
 
 
@@ -174,13 +216,8 @@ def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids):
     # Load the features from the pickle file
     conjectures = load_clean_conjectures(conjecture_path, ids)
 
-    # Load the tokenizer
-    if conjecture_tokenizer is None:
-        raise ValueError("ERROR: Must supply separate tokenizer for the conjecture strings")
-    tokenizer, _ = get_tokenizer(conjecture_tokenizer)
-
     for prob_id, conj in conjectures.items():
-        conjectures[prob_id] = tokenizer.texts_to_sequences([conj])[0]
+        conjectures[prob_id] = conjecture_tokenizer.texts_to_sequences([conj])[0]
 
     # Quickly compute maximum conjectur length
     max_len = max(len(v) for v in conjectures.values())
@@ -371,7 +408,7 @@ def main():
 
     # Function for testing the dataset creation
     tokenizer_path = os.path.join(os.path.dirname(config.train_id_file), "tokenizer.json")
-    tokenizer, _ = get_tokenizer(tokenizer_path)
+    tokenizer, _ = load_tokenizer(tokenizer_path)
 
     """
     # Test with validation file as we want this to run quicker

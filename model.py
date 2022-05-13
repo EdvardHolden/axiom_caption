@@ -185,10 +185,10 @@ class Encoder(tf.keras.layers.Layer):
         super(Encoder, self).__init__(name=name, **kwargs)
 
         # Set the vocabulary size
-        self.vocab_size = params.sequence_vocab_size
+        self.vocab_size = params.conjecture_vocab_size
 
         # The embedding layer converts tokens to vectors
-        self.embedding = tf.keras.layers.Embedding(params.sequence_vocab_size, params.embedding_size)
+        self.embedding = tf.keras.layers.Embedding(params.conjecture_vocab_size, params.embedding_size)
 
         # Get the RNN type
         rnn = get_rnn(params.rnn_type)
@@ -681,7 +681,7 @@ def get_rnn(rnn_type):
     return rnn
 
 
-def get_model_params(model_dir, encoder_input, context=Context.PROOF):
+def get_model_params(model_dir):
 
     # Load parameters from model directory and create namespace
     with open(os.path.join(model_dir, "params.json"), "r") as f:
@@ -692,14 +692,12 @@ def get_model_params(model_dir, encoder_input, context=Context.PROOF):
     if params.axiom_order:
         params.axiom_order = AxiomOrder(params.axiom_order)
 
-    # Set the encoder input style of the model
-    if isinstance(encoder_input, EncoderInput):
-        params.encoder_input = encoder_input
-    else:
-        params.encoder_input = EncoderInput(encoder_input)
+    if params.encoder_input:
+        params.encoder_input = EncoderInput(params.encoder_input)
 
-    # Enable max pooling if we are operating on image features
-    params.global_max_pool = context == Context.FLICKR
+    if params.conjecture_vocab_size == "all":
+        # We use None for all in the code
+        params.conjecture_vocab_size = None
 
     return params
 
