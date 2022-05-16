@@ -14,7 +14,7 @@ from itertools import chain
 import numpy as np
 import socket
 
-from dataset import get_tokenizer
+from dataset import load_tokenizer
 from dataset import load_photo_features
 from model import get_model_params
 from model import load_model
@@ -22,6 +22,7 @@ from evaluate import generate_step, get_new_trained_model
 from utils import get_sampler_parser
 
 import tensorflow as tf
+from enum import Enum
 
 random.seed(7)
 
@@ -33,15 +34,26 @@ TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 # Top dir of the result directory
 BASE_RES_DIR = "generated_problems/"
 
+# Enum type for the different generating modes
+class Mode(Enum):
+    CLEAN = "clean"
+    IDEAL = "ideal"
+    POSITIVE_AXIOMS = "positive_axioms"
+    CAPTION = "caption"
+    CAPTION_SINE = "caption_sine"
+    SINE = "sine"
+
+    def __str__(self):
+        return self.value
 
 def get_generate_parser():
 
     parser = get_sampler_parser()
     parser.add_argument(
         "--mode",
-        # default="clean",
         default="caption",
-        choices=["clean", "ideal", "sine", "caption", "caption_sine"],
+        type=Mode,
+        choices=list(Mode),
         help="The mode used to generate the modified DeepMath problems",
     )
     parser.add_argument("--sine_sd", default=None)
@@ -58,16 +70,10 @@ def get_generate_parser():
         help="Directory containing the base problems",
     )
     parser.add_argument(
-        "--add_extra_axioms",
-        default=False,
-        action="store_true",
-        help="Add a set number of extra axioms to each problem. Same axioms added to each problem.",
-    )
-    parser.add_argument(
-        "--number_of_extra_axioms",
-        default=1000,
+        "--extra_axioms",
+        default=None,
         type=int,
-        help="Number of extra axioms to add to each generated problem. Only used if add_extra_axioms flag is set",
+        help="Number of extra axioms to add to each generated problem is set."
     )
 
     parser.add_argument(
@@ -290,9 +296,7 @@ def compute_caption(
     tokenizer, model, problem_feature, sampler, max_length, no_samples, sampler_temperature, sampler_top_k
 ):
 
-    # TODO add sampling into models and get from argparser
 
-    # TODO add sampling type?
     # Run the model to get the predicted tokens
     # axiom_caption = generate_step( tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k)
     axiom_caption = generate_step(
@@ -326,22 +330,33 @@ def compute_caption(
     return axiom_caption
 
 
-def get_result_dir(result_dir, mode, sine_st, sine_sd, add_extra_axioms, number_of_extra_axioms):
-    if mode == "clean":
-        result_dir = os.path.join(result_dir, "clean")
-    elif mode == "ideal":
-        result_dir = os.path.join(result_dir, "ideal")
-    elif mode == "sine":
-        result_dir = os.path.join(result_dir, f"sine_{sine_st}_{sine_sd}")
-    elif mode == "caption":
-        result_dir = os.path.join(result_dir, "caption")
-    elif mode == "caption_sine":
-        result_dir = os.path.join(result_dir, f"caption_sine_{sine_st}_{sine_sd}")
-    else:
-        raise ValueError(f'Generative mode "{mode}" not implemented')
+def get_result_dir(result_dir, mode, sine_st, sine_sd, extra_axioms, sampler, sampler_temperature, sampler_top_k, no_samples, max_length):
+    # Add sampler arguments
 
-    if add_extra_axioms:
-        result_dir += f"_extra_axioms_{number_of_extra_axioms}"
+    # Set the base destionation
+    result_dir = os.path.join(result_dir, str(mode))
+
+    # Add sine parameters
+    if mode in [Mode.SINE, Mode.CAPTION_SINE]:
+        result_dir += f"_{sine_st}_{sine_sd}"
+
+    # Add sampling method if caption model is in use
+    if mode in [Mode.CAPTION, Mode.CAPTION_SINE]:
+        # Add sampling method
+        result_dir += f"_{sampler}"
+
+        # Add method details if set
+        if sampler == "temperature":
+            sampler += f"_{sampler_temperature}"
+        elif sampler == "top_k":
+            sampler += f"_{sampler_top_k}"
+
+        # Add sampling size arguments
+        result_dir += f"no_samples_{no_samples}_length_{max_length}"
+
+    # Add the numbr of extra axioms if set
+    if extra_axioms is not None:
+        result_dir += f"_extra_axioms_{extra_axioms}"
 
     # Create direcotry if not exist
     if not os.path.exists(result_dir):
@@ -410,9 +425,16 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
     # Load problem formulae as a list
     prob = load_and_process_problem(prob_path, deepmath=deepmath)
 
+
     # If the problem should be ideal, we just remove the last half of the axioms are they are false
-    if mode == "ideal":
+    if mode is Mode.IDEAL:
         prob = prob[: len(prob) // 2 + 1]
+
+    elif mode is Mode.POSITIVE_AXIOMS:
+        # Remove conjecture
+        prob = prob[1:]
+        prob = prob[: len(prob) // 2]
+        # Only keep positive axioms (first half)
 
     # Add extra axioms if provided
     if len(extra_axioms) > 0:
@@ -420,6 +442,7 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
 
     # Ensure all numbers are quoted
     prob = quote_number_in_problem(list(prob))
+
 
     # Run clean/sine mode and clausify the problem
     clausified_problem = clausify(prob, sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
@@ -480,9 +503,14 @@ def main():
             args.mode,
             args.sine_st,
             args.sine_sd,
-            args.add_extra_axioms,
-            args.number_of_extra_axioms,
+            args.extra_axioms,
+            args.sampler,
+            args.sampler_temperature,
+            args.sampler_top_k,
+            no_samples,
+            args.max_length,
         )
+    print("Writing results to: ", result_dir)
 
     # Get path to all problems
     problem_paths = get_problems_from_path(args.problem_dir, deepmath=deepmath)
@@ -493,14 +521,15 @@ def main():
         problem_paths = random.sample(problem_paths, k=5)
 
     # If captioning, load all the required resources
-    if args.mode in ["caption", "caption_sine"]:
+    if args.mode in [Mode.CAPTION, Mode.CAPTION_SINE]:
         problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
-        tokenizer, vocab_size = get_tokenizer("data/deepmath/tokenizer.json")
+        # TODO need to modify this work with the new laoding of params
+        tokenizer, vocab_size = load_tokenizer("data/deepmath/tokenizer.json")
         model = get_model(args.model_dir, vocab_size)
 
     # Add extra axioms if set
-    if args.add_extra_axioms:
-        extra_axioms = get_extra_axioms(problem_paths, args.number_of_extra_axioms, deepmath)
+    if args.extra_axioms is not None:
+        extra_axioms = get_extra_axioms(problem_paths, args.extra_axioms, deepmath)
     else:
         extra_axioms = set()
 
@@ -508,7 +537,7 @@ def main():
 
     # Compute the problems
     # In clean/ideal/sine mode we use a process pool for speedup
-    if args.mode in ["clean", "ideal", "sine"]:
+    if args.mode in [Mode.CLEAN, Mode.IDEAL, Mode.SINE, Mode.POSITIVE_AXIOMS]:
 
         star_args = [
             (prob_path, args.mode, args.sine_st, args.sine_sd, result_dir, extra_axioms, deepmath)
@@ -520,7 +549,7 @@ def main():
         pool.join()
 
     # Run other problem modes
-    elif args.mode in ["caption", "caption_sine"]:
+    elif args.mode in [Mode.CAPTION, Mode.CAPTION_SINE]:
 
         # Process each problem
         for prob_path in tqdm(problem_paths):
@@ -534,7 +563,7 @@ def main():
             new_problem = set([conjecture])
 
             # Update initial axioms with the extra axioms if set
-            if args.add_extra_axioms:
+            if args.extra_axioms is not None:
                 # These only affect the extraction of rare axioms
                 initial_axioms.update(extra_axioms)
 
@@ -564,7 +593,7 @@ def main():
             clausified_problem = clausify(new_problem, sine_st=None, sine_sd=None)
 
             # Check if we should also include clauses from sine
-            if args.mode == "caption_sine":
+            if args.mode is Mode.CAPTION_SINE:
                 # Clausify with sine
                 sine_problem = clausify(new_problem, sine_st=args.sine_st, sine_sd=args.sine_sd)
                 # Combine the clausified axioms with the sine output
