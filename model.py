@@ -20,7 +20,7 @@ import json
 import os
 
 from dataset import AxiomOrder
-from utils import Context, EncoderInput
+from utils import Context, EncoderInput, AttentionMechanism
 
 
 def adapt_normalization_layer(model, embedding_vectors):
@@ -396,10 +396,7 @@ class InjectDecoder(tf.keras.Model):
 
         self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
 
-        if model_params.attention:
-            self.attention = BahdanauAttention(model_params)
-        else:
-            self.attention = None
+        self.attention = get_attention_mechanism(model_params)
 
         self.word_decoder = WordDecoder(vocab_size, model_params)
 
@@ -513,36 +510,26 @@ class BahdanauAttention(tf.keras.Model):
         return Model(inputs=[x, hidden], outputs=self.call(x, hidden))
 
 
-# TODO test this attention!
-class BahdanauAttentionNew(tf.keras.Model):
+class AdditiveFlatAttention(tf.keras.Model):
     def __init__(self, params):
-        super(BahdanauAttentionNew, self).__init__()
+        super(AdditiveFlatAttention, self).__init__()
         self.W1 = tf.keras.layers.Dense(params.no_rnn_units)
         self.W2 = tf.keras.layers.Dense(params.no_rnn_units)
         self.V = tf.keras.layers.Dense(params.no_dense_units)
 
-    def call(self, features, hidden):
-        # features(CNN_encoder output) shape == (batch_size, 64, embedding_dim)
-        # TODO maybe update description and dimension sizes?
+        # self.softmax = tf.keras.layers.Softmax(axis=1) # Dimensions?
+        self.softmax = tf.keras.layers.Softmax()
 
-        # hidden shape == (batch_size, hidden_size)
-        # hidden_with_time_axis shape == (batch_size, 1, hidden_size)
-        # hidden_with_time_axis = tf.expand_dims(hidden, 1)
+    def call(self, features, hidden, mask=None):
 
-        # attention_hidden_layer shape == (batch_size, 64, units)
         attention_hidden_layer = tf.nn.tanh(self.W1(features) + self.W2(hidden))
 
-        # score shape == (batch_size, 64, 1)
-        # This gives you an unnormalized score for each image feature.
+        # Give score for each embedding value
         score = self.V(attention_hidden_layer)
 
-        # attention_weights shape == (batch_size, 64, 1)
-        # attention_weights = tf.nn.softmax(attention_hidden_layer, axis=1)
-        attention_weights = tf.nn.softmax(score, axis=1)  # TODO might add masking here?
+        attention_weights = self.softmax(score, mask=mask)
 
-        # context_vector shape after sum == (batch_size, hidden_size)
-
-        # context_vector = attention_weights
+        # Weigh the features
         context_vector = attention_weights * features
         # context_vector = tf.reduce_sum(context_vector, axis=1)
 
@@ -681,6 +668,17 @@ def get_rnn(rnn_type):
     return rnn
 
 
+def get_attention_mechanism(model_params):
+    if model_params.attention is AttentionMechanism.BAHDANAU:
+        return BahdanauAttention(model_params)
+    elif model_params.attention is AttentionMechanism.FLAT:
+        return AdditiveFlatAttention(model_params)
+    elif model_params.attention is AttentionMechanism.NONE:
+        return None
+    else:
+        raise ValueError(f"Cannot retrieve attention mechanism: {model_params.attention}")
+
+
 def get_model_params(model_dir):
 
     # Load parameters from model directory and create namespace
@@ -691,6 +689,9 @@ def get_model_params(model_dir):
     # Set the axiom order
     if params.axiom_order:
         params.axiom_order = AxiomOrder(params.axiom_order)
+
+    if params.attention:
+        params.attention = AttentionMechanism(params.attention)
 
     if params.encoder_input:
         params.encoder_input = EncoderInput(params.encoder_input)

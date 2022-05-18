@@ -32,7 +32,7 @@ The parameters are as follows:
 
 * model_type: ["inject_decoder", "inject", "dense"] - Set mode type. Dense is a normal dense model and inject_decoder is a faster version of inject.
 * axiom_order: ["original", "lexicographic", "length", "frequency", "random", "random_global"] - How to order the axioms in the captions.
-* attention: [true, false] - whether to use attention for the sequence decoder models.
+* attention: ["none", "bahdanau", "flat"] - Which attention mechanism (if any) to use for the sequence decoder models.
 * stateful: [true, false] - whether the RNNs should be stateful.
 * normalize: [true, false] - whether to normalize the emebdding input features.
 * batch_norm: [true, false] - whether to apply batch normalization.

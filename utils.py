@@ -23,6 +23,12 @@ class EncoderInput(Enum):
         return self.value
 
 
+class AttentionMechanism(Enum):
+    BAHDANAU = "bahdanau"
+    FLAT = "flat"
+    NONE = "none"
+
+
 # Set axiom order type
 class AxiomOrder(Enum):
     ORIGINAL = "original"
@@ -145,7 +151,6 @@ def launch_training_job(job_dir: str, args: Namespace) -> None:
     # Get the default parameters from the training script
     default_parameters = sorted(get_train_parser().parse_args([]).__dict__.keys())
 
-    # FIXME could make this more compact
     # Add all other remaining training parameters
     for param in default_parameters:
         if param == "save_model":
