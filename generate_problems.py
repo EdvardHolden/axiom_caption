@@ -14,12 +14,13 @@ from itertools import chain
 import numpy as np
 import socket
 
-from dataset import load_tokenizer
+from dataset import get_tokenizer
 from dataset import load_photo_features
 from model import get_model_params
 from model import load_model
 from evaluate import generate_step, get_new_trained_model
-from utils import get_sampler_parser
+from utils import get_sampler_parser, Context
+import config
 
 import tensorflow as tf
 from enum import Enum
@@ -101,6 +102,15 @@ def get_generate_parser():
         choices=["deepmath", "mptp"],
         help="The problem format of the benchmark",
     )
+
+    parser.add_argument(
+        "--context",
+        choices=list(Context),
+        type=Context,
+        default="axioms",
+        help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
+     )
+
 
     return parser
 
@@ -352,7 +362,7 @@ def get_result_dir(result_dir, mode, sine_st, sine_sd, extra_axioms, sampler, sa
             sampler += f"_{sampler_top_k}"
 
         # Add sampling size arguments
-        result_dir += f"no_samples_{no_samples}_length_{max_length}"
+        result_dir += f"_no_samples_{no_samples}_length_{max_length}"
 
     # Add the numbr of extra axioms if set
     if extra_axioms is not None:
@@ -397,7 +407,7 @@ def validate_input_arguments(args):
 def get_model(model_dir, vocab_size):
     model_params = get_model_params(model_dir)
     loaded_model = load_model(os.path.join(model_dir, "ckpt_dir"))
-    model = model = get_new_trained_model(loaded_model, model_params, vocab_size)
+    model = get_new_trained_model(loaded_model, model_params, vocab_size)
 
     return model
 
@@ -524,7 +534,11 @@ def main():
     if args.mode in [Mode.CAPTION, Mode.CAPTION_SINE]:
         problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
         # TODO need to modify this work with the new laoding of params
-        tokenizer, vocab_size = load_tokenizer("data/deepmath/tokenizer.json")
+
+        tokenizer, vocab_size = get_tokenizer(config.train_id_file, str(args.context), config.proof_data, get_model_params(args.model_dir).axiom_vocab_size)
+
+
+        # Load the model
         model = get_model(args.model_dir, vocab_size)
 
     # Add extra axioms if set

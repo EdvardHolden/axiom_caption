@@ -246,20 +246,18 @@ def evaluate_model(
 
 def get_new_trained_model(trained_model, model_params, vocab_size):
 
-    # First we create some new dummy data
-    inp1 = tf.random.uniform([1, 400])
-    inp2 = tf.ones([1, 1], dtype=tf.dtypes.int32)
-    hidden = tf.zeros((1, model_params.no_rnn_units))
-
-    # Make dummy data into a dataset in case normalisation is set.
-    # This will create the layer, but the weights will be updated from the trained model
-    normalisation_data = tf.data.Dataset.from_tensor_slices((inp1, inp2))
+    # Loading the dataset (without tokenizer) as dummy data stopped working
+    normalisation_data, _ = get_dataset(config.val_id_file, config.proof_data, config.problem_features, batch_size=1)
 
     model = initialise_model(
         model_params.model_type, vocab_size, model_params, training_data=normalisation_data
     )  # Loaded weights will override this
 
+
     # Run the model call once to infer the main input shapes? - fails otherwise
+    inp1 = tf.random.uniform([1, 400])
+    inp2 = tf.ones([1, 1], dtype=tf.dtypes.int32)
+    hidden = tf.zeros((1, model_params.no_rnn_units))
     model([inp1, inp2, hidden])
 
     # Set the weights of the new model with the weights of the old model
