@@ -341,7 +341,7 @@ class DenseModel(tf.keras.Model):
 
         self.axiom_order = model_params.axiom_order
 
-        self.image_encoder = ImageEncoder(model_params)
+        self.encoder = ImageEncoder(model_params)
 
         self.word_embedder = tf.keras.layers.Embedding(
             vocab_size, model_params.embedding_size, name="layer_word_embedding"
@@ -358,7 +358,7 @@ class DenseModel(tf.keras.Model):
         input_image, input_word, hidden_state = inputs
 
         # Compute image embedding
-        image_emb = self.image_encoder(input_image, training=training)
+        image_emb = self.encoder(input_image, training=training)
 
         # Pass word through embedding layer
         # word_emb = tf.squeeze( self.word_embedder(input_word, training=training))  # TODO maybe use flatten instead?
