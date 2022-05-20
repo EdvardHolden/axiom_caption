@@ -41,6 +41,27 @@ def get_tokenizer(id_file, tokenizer_mode, tokenizer_data_path, vocab_word_limit
     return load_tokenizer(tokenizer_path)
 
 
+def get_caption_conjecture_tokenizers(model_params, proof_data, context, train_id_file, problem_features):
+    # TODO or should this be split as they do not really belong together?
+
+    # Get pre-trained tokenizer for the captions - supply context for switching between axioms and natural language
+    caption_tokenizer, vocab_size = get_tokenizer(
+        train_id_file, str(context), proof_data, model_params.axiom_vocab_size
+    )
+
+    if model_params.encoder_input is EncoderInput.SEQUENCE:
+        conjecture_tokenizer, conjecture_vocab_size = get_tokenizer(
+            train_id_file, "conj_word", problem_features, model_params.conjecture_vocab_size
+        )
+        # Need to set the conjecture vocab size if it was None|all, to determine the input layer
+        if model_params.conjecture_vocab_size is None:
+            model_params.conjecture_vocab_size = conjecture_vocab_size
+    else:
+        conjecture_tokenizer = None
+
+    return caption_tokenizer, vocab_size, conjecture_tokenizer
+
+
 def get_tokenizer_save_path(dest, id_file, tokenizer_mode, vocab_word_limit) -> str:
 
     # Convert None to all for better name representation
