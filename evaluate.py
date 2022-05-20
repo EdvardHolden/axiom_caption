@@ -1,5 +1,4 @@
 import config
-import argparse
 import os
 from itertools import starmap
 import numpy as np
@@ -8,9 +7,10 @@ from tqdm import tqdm
 import random
 from pathlib import Path
 
-from dataset import get_dataset, get_tokenizer, compute_max_caption_length
+from dataset import get_dataset, compute_max_caption_length, get_caption_conjecture_tokenizers
 from model import get_model_params, load_model, reset_model_decoder_state, initialise_model
-from utils import get_sampler_parser
+from model import get_hidden_state, ImageEncoder, Encoder
+from utils import get_sampler_parser, Context
 
 
 from tensorflow.sets import size, intersection, union
@@ -47,10 +47,17 @@ def get_evaluate_parser(add_help=True):
     parser.add_argument("-v", "--verbose", action="count", default=0)
 
     parser.add_argument(
-        "--remove_unknown",
-        action="store_true",
-        default=False,
-        help="Remove tokens mapped to oov. May reduce the number of samples.",
+        "--context",
+        choices=list(Context),
+        type=Context,
+        default="axioms",
+        help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
+    )
+
+    parser.add_argument(
+        "--tokenizer_id_file",
+        default=config.train_id_file,
+        help="The ID file used to compute the tokenizer is the training setting",
     )
 
     return parser
@@ -167,16 +174,31 @@ def generate_step(
     reset_model_decoder_state(model)
 
     # Initialise the hidden shape of the model - makes the above lines redundant
-    hidden = tf.zeros((caption.shape[0], model.no_rnn_units))
+    hidden = get_hidden_state(model, caption.shape[0])
 
     # Get start token
     dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * caption.shape[0], 1)
+
+    # Placeholder for mask if not used
+    mask = None
+
+    # Check if using separate decoder/encoder for faster training
+    if isinstance(model, tuple):
+        # Call and update variables according to the type of encoder being used
+        if isinstance(model[0], ImageEncoder):
+            img_tensor = model[0](img_tensor, training=False)
+        elif isinstance(model[0], Encoder):
+            img_tensor, hidden, mask = model[0](img_tensor, training=False)
 
     # Run the model until we reach the max length or the end token
     for i in range(max_len):
 
         # Predict probabilities
-        pred, hidden = model([img_tensor, dec_input, hidden], training=False)
+        # pred, hidden = model([img_tensor, dec_input, hidden], training=False)
+        if isinstance(model, tuple):
+            pred, hidden = model[1]([img_tensor, dec_input, hidden], training=False, mask=mask)
+        else:
+            pred, hidden = model([img_tensor, dec_input, hidden], training=False)
 
         # Sample the next token(s)
         if sampler == "greedy":
@@ -247,21 +269,33 @@ def evaluate_model(
 def get_new_trained_model(trained_model, model_params, vocab_size):
 
     # Loading the dataset (without tokenizer) as dummy data stopped working
-    normalisation_data, _ = get_dataset(config.val_id_file, config.proof_data, config.problem_features, batch_size=1)
+    normalisation_data, _ = get_dataset(
+        config.val_id_file, config.proof_data, config.problem_features, batch_size=1
+    )
 
     model = initialise_model(
         model_params.model_type, vocab_size, model_params, training_data=normalisation_data
     )  # Loaded weights will override this
 
-
     # Run the model call once to infer the main input shapes? - fails otherwise
     inp1 = tf.random.uniform([1, 400])
     inp2 = tf.ones([1, 1], dtype=tf.dtypes.int32)
     hidden = tf.zeros((1, model_params.no_rnn_units))
-    model([inp1, inp2, hidden])
+
+    # Run model to infer input shapes
+    if isinstance(model, tuple):
+        inp1 = model[0](inp1)
+        model[1]([inp1, inp2, hidden])
+    else:
+        model([inp1, inp2, hidden])
 
     # Set the weights of the new model with the weights of the old model
-    model.set_weights(trained_model.get_weights())
+    if isinstance(model, tuple):
+        model[0].set_weights(trained_model[0].get_weights())
+        model[1].set_weights(trained_model[1].get_weights())
+
+    else:
+        model.set_weights(trained_model.get_weights())
 
     return model
 
@@ -276,7 +310,8 @@ def main(
     no_samples,
     sampler_temperature,
     sampler_top_k,
-    remove_unknown,
+    context,
+    tokenizer_id_file,
     verbose,
 ):
 
@@ -285,9 +320,15 @@ def main(
         f"Sampler configuration: (sampler: {sampler}) (no_samples: {no_samples}) (sampler_temperature: {sampler_temperature}) (sampler_top_k: {sampler_top_k})"
     )
 
-    # Get pre-trained tokenizer - assume all ids are in the same directory
-    tokenizer_path = os.path.join(os.path.dirname(problem_ids[0]), "tokenizer.json")
-    tokenizer, vocab_size = get_tokenizer(tokenizer_path, verbose=1)
+    # Get the axiom ordering from the model parameter file
+    model_params = get_model_params(model_dir)
+    axiom_order = None  # We do not care about the order in this case as all metrics are based on the set
+    print("Using axiom order: ", axiom_order)
+
+    # Load the tokenizers for this evaluation setting
+    caption_tokenizer, vocab_size, conjecture_tokenizer = get_caption_conjecture_tokenizers(
+        model_params, proof_data, context, tokenizer_id_file, problem_features
+    )
 
     # If maximum length is not provided, we compute it based on the training set in config
     if max_length is None:
@@ -296,14 +337,15 @@ def main(
         max_len = max_length
     print("Max caption length: ", max_len)
 
-    # Get the axiom ordering from the model parameter file
-    model_params = get_model_params(model_dir)
-    axiom_order = None  # We do not care about the order in this case as all metrics are based on the set
-    print("Using axiom order: ", axiom_order)
-
     # Load the checkpointed model
-    model_dir = os.path.join(model_dir, "ckpt_dir")
-    loaded_model = load_model(model_dir)
+    ckpt_dir = os.path.join(model_dir, "ckpt_dir")
+    if model_params.model_type == "inject_decoder":
+        encoder = load_model(os.path.join(ckpt_dir, "encoder"))
+        decoder = load_model(os.path.join(ckpt_dir, "decoder"))
+        loaded_model = (encoder, decoder)
+    else:
+        loaded_model = load_model(ckpt_dir)
+    print("Evaluating on model: ", loaded_model)
 
     # As stateful=True might be set, we need to get a new fresh model with the weights of the loaded
     # model. This is to use a different batch size in the evaluation instead of the training batch size.
@@ -316,19 +358,24 @@ def main(
         for ids in problem_ids:
 
             print(f"## Evaluating on: {Path(ids).stem}")
+
+            # Get ground truth
             test_data, _ = get_dataset(
                 ids,
                 proof_data,
                 problem_features,
                 batch_size=1,
-                order=axiom_order,
-                tokenizer=tokenizer,
-                remove_unknown=remove_unknown,
+                caption_tokenizer=caption_tokenizer,
+                order=model_params.axiom_order,
+                # axiom_frequency=axiom_frequency,
+                remove_unknown=model_params.remove_unknown,
+                encoder_input=model_params.encoder_input,
+                conjecture_tokenizer=conjecture_tokenizer,
             )
 
             # Run evaluation
             scores = evaluate_model(
-                tokenizer,
+                caption_tokenizer,
                 model,
                 test_data,
                 max_len,

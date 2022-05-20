@@ -11,6 +11,7 @@ from dataset import (
     get_tokenizer,
     compute_axiom_frequency,
     compute_random_global_axiom_frequency,
+    get_caption_conjecture_tokenizers,
 )
 from model import (
     get_model_params,
@@ -21,7 +22,7 @@ from model import (
     ImageEncoder,
 )
 from evaluate import jaccard_score, coverage_score
-from utils import get_train_parser, AxiomOrder, EncoderInput
+from utils import get_train_parser, AxiomOrder
 
 # Make script deterministic to see if we can avoid the gpu issue
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
@@ -201,7 +202,7 @@ def add_new_metrics(history, new_stats, prefix=""):
     return history
 
 
-def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, es_patience=None):
+def train_loop(tokenizer, model, ckpt_managers, optimizer, train_data, val_data, es_patience=None):
 
     # Dictionary to store all the metrics
     metrics = {}
@@ -233,7 +234,8 @@ def train_loop(tokenizer, model, ckpt_manager, optimizer, train_data, val_data, 
 
         # Save the model after every epoch
         if epoch % 1 == 0:
-            ckpt_manager.save()
+            for ckpt in ckpt_managers:
+                ckpt.save()
 
         tf.print(f"Epoch {epoch + 1} Total Train Loss {metrics['train_loss'][-1]:.6f}")
         tf.print(f"Epoch {epoch + 1} Total Val   Loss {metrics['val_loss'][-1]:.6f}")
@@ -306,20 +308,10 @@ def main(
     # Load model params from model file - and set the encoder input
     model_params = get_model_params(model_dir)
 
-    # Get pre-trained tokenizer for the captions - supply context for switching between axioms and natural language
-    caption_tokenizer, vocab_size = get_tokenizer(
-        train_id_file, str(context), proof_data, model_params.axiom_vocab_size
+    # Load the tokenizers for this training setting
+    caption_tokenizer, vocab_size, conjecture_tokenizer = get_caption_conjecture_tokenizers(
+        model_params, proof_data, context, train_id_file, problem_features
     )
-
-    if model_params.encoder_input is EncoderInput.SEQUENCE:
-        conjecture_tokenizer, conjecture_vocab_size = get_tokenizer(
-            train_id_file, "conj_word", problem_features, model_params.conjecture_vocab_size
-        )
-        # Need to set the conjecture vocab size if it was None|all, to determine the input layer
-        if model_params.conjecture_vocab_size is None:
-            model_params.conjecture_vocab_size = conjecture_vocab_size
-    else:
-        conjecture_tokenizer = None
 
     # Get the axiom frequencies from this dataset
     axiom_frequency = get_axiom_frequency(model_params.axiom_order, train_id_file, proof_data)
@@ -367,29 +359,43 @@ def main(
     # Initialise the checkpoint manager
     checkpoint_path = os.path.join(working_dir, "ckpt_dir")
     if isinstance(model, tuple):
-        ckpt = tf.train.Checkpoint(encoder=model[0], decoder=model[1])
+        # USe separate checkpoints for encoder and decoder
+        encoder_ckpt = tf.train.Checkpoint(model[0])
+        decoder_ckpt = tf.train.Checkpoint(model[1])
+
+        encoder_checkpoint_path = os.path.join(checkpoint_path, "encoder")
+        decoder_checkpoint_path = os.path.join(checkpoint_path, "decoder")
+
+        ckpt_managers = [
+            tf.train.CheckpointManager(encoder_ckpt, encoder_checkpoint_path, max_to_keep=5),
+            tf.train.CheckpointManager(decoder_ckpt, decoder_checkpoint_path, max_to_keep=5),
+        ]
     else:
         ckpt = tf.train.Checkpoint(model)
-    ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
+        ckpt_managers = [tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)]
 
     # Call training loop
     history = train_loop(
         caption_tokenizer,
         model,
-        ckpt_manager,
+        ckpt_managers,
         optimizer,
         train_data,
         val_data,
         es_patience=config.ES_PATIENCE,
     )
 
-    # Save the model
-    if save_model:
-        model.save(checkpoint_path)
-
     # Save the training history
     with open(os.path.join(working_dir, "history.pkl"), "wb") as f:
         dump(history, f)
+
+    # Save the model
+    if save_model:
+        if isinstance(model, tuple):
+            model[0].save(encoder_checkpoint_path)
+            model[1].save(decoder_checkpoint_path)
+        else:
+            model.save(checkpoint_path)
 
 
 def run_main():

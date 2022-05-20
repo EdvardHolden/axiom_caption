@@ -120,7 +120,8 @@ def initialise_model(model_type, vocab_size, model_params, training_data=None):
     return model
 
 
-class ImageEncoder(layers.Layer):
+# class ImageEncoder(layers.Layer):
+class ImageEncoder(tf.keras.Model):
     def __init__(
         self,
         params,
@@ -649,6 +650,7 @@ def get_model(model_type, vocab_size, params):
 
 
 def load_model(ckpt_dir):
+
     loaded_model = tf.keras.models.load_model(ckpt_dir)
     latest_checkpoint = tf.train.latest_checkpoint(ckpt_dir)
     load_status = loaded_model.load_weights(latest_checkpoint)
