@@ -38,6 +38,15 @@ parser.add_argument(
     default=None,
     help="Number of samples to use for computing the score (None for all)",
 )
+parser.add_argument(
+    "--problem_format",
+    default="deepmath",
+    choices=["deepmath", "mptp"],
+    help="The problem format of the benchmark",
+)
+DATASET_PATH = "/shareddata/home/holden/gnn-entailment-caption/nndata/"
+parser.add_argument('--problem_dir', default=DATASET_PATH,
+                    help='The directory of the problems processed by SInE')
 
 
 NO_WORKERS = 8
@@ -48,10 +57,12 @@ clause_name_problem_re = "^fof\((\w+), axiom"
 
 
 # Wou ld be good with multiprocessing on the problems!
-DATASET_PATH = "/home/eholden/gnn-entailment-caption/nndata/"
+#DATASET_PATH = "/home/eholden/gnn-entailment-caption/nndata/"
+#DATASET_PATH = "/shareddata/home/holden/mizar40_nndata/"
+# TODO add separate variable for problem_dir! and if not set, set it to DATASET Path
 
-ST_VALUES = [1, 2, 3]
-SD_VALUES = [0, 1, 2, 3, 4]
+ST_VALUES = [1, 1.2, 1.5, 2]
+SD_VALUES = [0, 1, 2, 3]
 
 
 def get_sine_clause_names(prob):
@@ -70,16 +81,17 @@ def get_clause_names(prob):
     return res
 
 
-def sine_score_problem(prob_path, sine_st, sine_sd, selected_axioms):
+def sine_score_problem(prob_path, sine_st, sine_sd, selected_axioms, deepmath):
 
-    prob = load_and_process_problem(prob_path)
-    prob_processed = sine_process(prob, sine_st=sine_st, sine_sd=sine_sd)
+    prob = load_and_process_problem(prob_path, deepmath=deepmath)
+    prob_processed = sine_process(prob, sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
     del prob
 
     # Extract the clause names from the sine processed problem
     sine_names = get_sine_clause_names(prob_processed)
 
-    # Extract the clause names from the original problem
+
+    # Get the ground truth of names
     with open(DATASET_PATH + Path(prob_path).stem, "rb") as f:  # Need to open the original dataset file
         prob_original = f.read()
     prob_names = get_original_clause_names(prob_original)
@@ -99,11 +111,11 @@ def sine_score_problem(prob_path, sine_st, sine_sd, selected_axioms):
     return Path(prob_path).stem, {"jaccard": jaccard, "coverage": coverage}
 
 
-def sine_score_set(problem_paths, sine_st, sine_sd, selected_axioms_dict):
+def sine_score_set(problem_paths, sine_st, sine_sd, selected_axioms_dict, deepmath):
 
     # Iterate over each problem and compute their SiNe representation and their scores - include the set of selected axioms
     map_args = [
-        (prob_path, sine_st, sine_sd, selected_axioms_dict.get(Path(prob_path).stem, set()))
+        (prob_path, sine_st, sine_sd, selected_axioms_dict.get(Path(prob_path).stem, set()), deepmath)
         for prob_path in problem_paths
     ]
     pool = Pool(NO_WORKERS)
@@ -153,12 +165,18 @@ def main():
     args = parser.parse_args()
 
     # Get path to all problems
-    problem_paths = get_problems_from_path(DATASET_PATH, limit=args.number_of_samples)
+    problem_paths = get_problems_from_path(args.problem_dir, limit=args.number_of_samples)
+
+    # Deduce the problem format
+    deepmath = args.problem_format == "deepmath"
+
 
     # We compute the sequence problems first as it is unaffected by the sine parameters.
     # Load tokenizer if needed
     # TODO maybe split this and make it into separate functions?
+    # FIXME the loading of the tokenizer and other things is depracted
     selected_axioms_dict = {}
+    '''
     if args.model_dir is not None or args.include_rare_axioms:
         tokenizer, _ = get_tokenizer("data/deepmath/tokenizer.json")
 
@@ -197,6 +215,7 @@ def main():
         for prob_path in problem_paths:
             prob = Path(prob_path).stem
             selected_axioms_dict[prob] = rare_axioms.get(prob, set()).union(sequence_axioms.get(prob, set()))
+    '''
 
     # Initialise results matrix
     results = [[-1] * len(ST_VALUES)] * len(SD_VALUES)
@@ -205,7 +224,7 @@ def main():
     for nt, st in enumerate(ST_VALUES):
         for nd, sd in enumerate(SD_VALUES):
             print(f"sd:{sd} st{st}")
-            res = sine_score_set(problem_paths, st, sd, selected_axioms_dict)
+            res = sine_score_set(problem_paths, st, sd, selected_axioms_dict, deepmath)
             results[nd][nt] = res
 
     print_results_table(results)
