@@ -271,9 +271,9 @@ def clausify(prob, sine_st=None, sine_sd=None, prob_name=None):
     return run_clausifier(prob, cmd, sine_st, sine_sd, prob_name)
 
 
-def sine_process(prob, sine_st=None, sine_sd=None):
+def sine_process(prob, sine_st=None, sine_sd=None, prob_name=None):
     cmd = f"{CLAUSIFIER} --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 1 "
-    return run_clausifier(prob, cmd, sine_st, sine_sd)
+    return run_clausifier(prob, cmd, sine_st, sine_sd, prob_name)
 
 
 def save_problem(dir_name, prob_name, prob):
