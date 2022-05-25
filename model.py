@@ -120,8 +120,8 @@ def initialise_model(model_type, vocab_size, model_params, training_data=None):
     return model
 
 
-# class ImageEncoder(layers.Layer):
-class ImageEncoder(tf.keras.Model):
+#class ImageEncoder(layers.Layer):
+class ImageEncoder(tf.keras.Model): # TODO possible issue here?
     def __init__(
         self,
         params,

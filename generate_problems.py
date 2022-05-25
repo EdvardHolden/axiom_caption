@@ -18,7 +18,7 @@ from dataset import get_tokenizer
 from dataset import load_photo_features
 from model import get_model_params
 from model import load_model
-from evaluate import generate_step, get_new_trained_model
+from evaluate import generate_step, get_new_trained_model, get_model
 from utils import get_sampler_parser, Context
 import config
 
@@ -33,7 +33,7 @@ CLAUSIFIER = "~/bin/vclausify_rel"
 TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 
 # Top dir of the result directory
-BASE_RES_DIR = "generated_problems/"
+BASE_RES_DIR = "generated_problems/mizar_40/"
 
 # Enum type for the different generating modes
 class Mode(Enum):
@@ -59,7 +59,9 @@ def get_generate_parser():
     )
     parser.add_argument("--sine_sd", default=None)
     parser.add_argument("--sine_st", default=None)
-    parser.add_argument("--result_dir", default=None, help="Base folder for writing generated problems")
+    parser.add_argument("--result_dir", default=None, help="Root folder for writing generated problems")
+
+    parser.add_argument('--result_prefix', default=None, help='File name prefix of the result dir (if result_dir is not set)')
 
     if socket.gethostname() == "kontor":
         default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
@@ -110,6 +112,7 @@ def get_generate_parser():
         default="axioms",
         help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
      )
+
 
 
     return parser
@@ -340,11 +343,15 @@ def compute_caption(
     return axiom_caption
 
 
-def get_result_dir(result_dir, mode, sine_st, sine_sd, extra_axioms, sampler, sampler_temperature, sampler_top_k, no_samples, max_length):
+def get_result_dir(result_dir, mode, sine_st, sine_sd, extra_axioms, sampler, sampler_temperature, sampler_top_k, no_samples, max_length, prefix=None, postfix=None):
     # Add sampler arguments
+
+    if prefix is not None:
+        result_dir += prefix
 
     # Set the base destionation
     result_dir = os.path.join(result_dir, str(mode))
+
 
     # Add sine parameters
     if mode in [Mode.SINE, Mode.CAPTION_SINE]:
@@ -367,6 +374,9 @@ def get_result_dir(result_dir, mode, sine_st, sine_sd, extra_axioms, sampler, sa
     # Add the numbr of extra axioms if set
     if extra_axioms is not None:
         result_dir += f"_extra_axioms_{extra_axioms}"
+
+    if postfix is not None:
+        result_dir += postfix
 
     # Create direcotry if not exist
     if not os.path.exists(result_dir):
@@ -402,14 +412,6 @@ def validate_input_arguments(args):
             or (args.sine_sd is None and args.sine_st is None)
         ):
             raise ValueError("Both sd and st must be set for the SiNE mode")
-
-
-def get_model(model_dir, vocab_size):
-    model_params = get_model_params(model_dir)
-    loaded_model = load_model(os.path.join(model_dir, "ckpt_dir"))
-    model = get_new_trained_model(loaded_model, model_params, vocab_size)
-
-    return model
 
 
 def quote_number_in_problem(prob):
@@ -519,6 +521,7 @@ def main():
             args.sampler_top_k,
             no_samples,
             args.max_length,
+            args.result_prefix
         )
     print("Writing results to: ", result_dir)
 
@@ -536,7 +539,6 @@ def main():
         # TODO need to modify this work with the new laoding of params
 
         tokenizer, vocab_size = get_tokenizer(config.train_id_file, str(args.context), config.proof_data, get_model_params(args.model_dir).axiom_vocab_size)
-
 
         # Load the model
         model = get_model(args.model_dir, vocab_size)
@@ -608,8 +610,8 @@ def main():
 
             # Check if we should also include clauses from sine
             if args.mode is Mode.CAPTION_SINE:
-                # Clausify with sine
-                sine_problem = clausify(new_problem, sine_st=args.sine_st, sine_sd=args.sine_sd)
+                # Clausify the original problem with sine and add to set
+                sine_problem = clausify(quote_number_in_problem(prob), sine_st=args.sine_st, sine_sd=args.sine_sd)
                 # Combine the clausified axioms with the sine output
                 clausified_problem += b"\n" + sine_problem
             # Save to folder

@@ -266,6 +266,26 @@ def evaluate_model(
     return {"coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
 
 
+def get_model(model_dir, vocab_size):
+
+    # Load the model parameters
+    model_params = get_model_params(model_dir)
+
+    # Load the checkpointed model
+    ckpt_dir = os.path.join(model_dir, "ckpt_dir")
+    if model_params.model_type == "inject_decoder":
+        encoder = load_model(os.path.join(ckpt_dir, "encoder"))
+        decoder = load_model(os.path.join(ckpt_dir, "decoder"))
+        loaded_model = (encoder, decoder)
+    else:
+        loaded_model = load_model(ckpt_dir)
+
+    # As stateful=True might be set, we need to get a new fresh model with the weights of the loaded
+    # model. This is to use a different batch size in the evaluation instead of the training batch size.
+    model = get_new_trained_model(loaded_model, model_params, vocab_size)
+    return model
+
+
 def get_new_trained_model(trained_model, model_params, vocab_size):
 
     # Loading the dataset (without tokenizer) as dummy data stopped working
@@ -337,19 +357,8 @@ def main(
         max_len = max_length
     print("Max caption length: ", max_len)
 
-    # Load the checkpointed model
-    ckpt_dir = os.path.join(model_dir, "ckpt_dir")
-    if model_params.model_type == "inject_decoder":
-        encoder = load_model(os.path.join(ckpt_dir, "encoder"))
-        decoder = load_model(os.path.join(ckpt_dir, "decoder"))
-        loaded_model = (encoder, decoder)
-    else:
-        loaded_model = load_model(ckpt_dir)
-    print("Evaluating on model: ", loaded_model)
-
-    # As stateful=True might be set, we need to get a new fresh model with the weights of the loaded
-    # model. This is to use a different batch size in the evaluation instead of the training batch size.
-    model = get_new_trained_model(loaded_model, model_params, vocab_size)
+    model = get_model(model_dir, vocab_size)
+    print("Evaluating on model: ", model)
 
     # Get the test dataset with batch 1 as we need to treat each caption separately
     # Also, we want the raw text so not providing a tokenizer
@@ -366,8 +375,9 @@ def main(
                 problem_features,
                 batch_size=1,
                 caption_tokenizer=caption_tokenizer,
-                order=model_params.axiom_order,
-                # axiom_frequency=axiom_frequency,
+                #order=model_params.axiom_order,
+                order=None, # We do not need an order for this as we treating it as a set for evaluation
+                #axiom_frequency=axiom_frequency,
                 remove_unknown=model_params.remove_unknown,
                 encoder_input=model_params.encoder_input,
                 conjecture_tokenizer=conjecture_tokenizer,
