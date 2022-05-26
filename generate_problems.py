@@ -47,6 +47,7 @@ class Mode(Enum):
     def __str__(self):
         return self.value
 
+
 def get_generate_parser():
 
     parser = get_sampler_parser()
@@ -61,7 +62,9 @@ def get_generate_parser():
     parser.add_argument("--sine_st", default=None)
     parser.add_argument("--result_dir", default=None, help="Root folder for writing generated problems")
 
-    parser.add_argument('--result_prefix', default=None, help='File name prefix of the result dir (if result_dir is not set)')
+    parser.add_argument(
+        "--result_prefix", default=None, help="File name prefix of the result dir (if result_dir is not set)"
+    )
 
     if socket.gethostname() == "kontor":
         default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
@@ -76,7 +79,7 @@ def get_generate_parser():
         "--extra_axioms",
         default=None,
         type=int,
-        help="Number of extra axioms to add to each generated problem is set."
+        help="Number of extra axioms to add to each generated problem is set.",
     )
 
     parser.add_argument(
@@ -111,9 +114,7 @@ def get_generate_parser():
         type=Context,
         default="axioms",
         help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
-     )
-
-
+    )
 
     return parser
 
@@ -245,6 +246,8 @@ def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name):
         outs, errs = proc.communicate()
 
     if "--print_clausifier_premises" in cmd:
+        # For some reason, the clausified problem could be added to stderr in this version
+        outs += b"\n" + errs
         if proc.returncode != 0 and proc.returncode != 1:  # For some reason it returns 1 for this
             print(f"Clausifier finished on {prob_name} with exitcode: {proc.returncode}")
             print(cmd)
@@ -272,7 +275,12 @@ def clausify(prob, sine_st=None, sine_sd=None, prob_name=None):
 
 
 def sine_process(prob, sine_st=None, sine_sd=None, prob_name=None):
-    cmd = f"{CLAUSIFIER} --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 1 "
+    # --proof (-p) Specifies whether proof (or similar e.g. model/saturation) will be output
+    # --print_clausifier_premises Output how the clausified problem was derived.
+    # --output_axiom_names Preserve names of axioms from the problem file in the proof output
+
+    # cmd = f"{CLAUSIFIER} --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 1 "
+    cmd = f"{CLAUSIFIER} --mode clausify --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 1 "
     return run_clausifier(prob, cmd, sine_st, sine_sd, prob_name)
 
 
@@ -309,7 +317,6 @@ def compute_caption(
     tokenizer, model, problem_feature, sampler, max_length, no_samples, sampler_temperature, sampler_top_k
 ):
 
-
     # Run the model to get the predicted tokens
     # axiom_caption = generate_step( tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k)
     axiom_caption = generate_step(
@@ -343,7 +350,20 @@ def compute_caption(
     return axiom_caption
 
 
-def get_result_dir(result_dir, mode, sine_st, sine_sd, extra_axioms, sampler, sampler_temperature, sampler_top_k, no_samples, max_length, prefix=None, postfix=None):
+def get_result_dir(
+    result_dir,
+    mode,
+    sine_st,
+    sine_sd,
+    extra_axioms,
+    sampler,
+    sampler_temperature,
+    sampler_top_k,
+    no_samples,
+    max_length,
+    prefix=None,
+    postfix=None,
+):
     # Add sampler arguments
 
     if prefix is not None:
@@ -351,7 +371,6 @@ def get_result_dir(result_dir, mode, sine_st, sine_sd, extra_axioms, sampler, sa
 
     # Set the base destionation
     result_dir = os.path.join(result_dir, str(mode))
-
 
     # Add sine parameters
     if mode in [Mode.SINE, Mode.CAPTION_SINE]:
@@ -437,7 +456,6 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
     # Load problem formulae as a list
     prob = load_and_process_problem(prob_path, deepmath=deepmath)
 
-
     # If the problem should be ideal, we just remove the last half of the axioms are they are false
     if mode is Mode.IDEAL:
         prob = prob[: len(prob) // 2 + 1]
@@ -454,7 +472,6 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
 
     # Ensure all numbers are quoted
     prob = quote_number_in_problem(list(prob))
-
 
     # Run clean/sine mode and clausify the problem
     clausified_problem = clausify(prob, sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
@@ -521,7 +538,7 @@ def main():
             args.sampler_top_k,
             no_samples,
             args.max_length,
-            args.result_prefix
+            args.result_prefix,
         )
     print("Writing results to: ", result_dir)
 
@@ -538,7 +555,12 @@ def main():
         problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
         # TODO need to modify this work with the new laoding of params
 
-        tokenizer, vocab_size = get_tokenizer(config.train_id_file, str(args.context), config.proof_data, get_model_params(args.model_dir).axiom_vocab_size)
+        tokenizer, vocab_size = get_tokenizer(
+            config.train_id_file,
+            str(args.context),
+            config.proof_data,
+            get_model_params(args.model_dir).axiom_vocab_size,
+        )
 
         # Load the model
         model = get_model(args.model_dir, vocab_size)
@@ -611,7 +633,9 @@ def main():
             # Check if we should also include clauses from sine
             if args.mode is Mode.CAPTION_SINE:
                 # Clausify the original problem with sine and add to set
-                sine_problem = clausify(quote_number_in_problem(prob), sine_st=args.sine_st, sine_sd=args.sine_sd)
+                sine_problem = clausify(
+                    quote_number_in_problem(prob), sine_st=args.sine_st, sine_sd=args.sine_sd
+                )
                 # Combine the clausified axioms with the sine output
                 clausified_problem += b"\n" + sine_problem
             # Save to folder

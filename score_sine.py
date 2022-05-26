@@ -44,6 +44,7 @@ else:
 RE_CLAUSE_FILE = b"file\('(\/|\w)*',(\w*)\)\)."
 RE_POSITIVE_CLAUSE_NAME_PROBLEM = b"^\+ fof\((\w+), axiom"  # only positive axioms
 RE_CLAUSE_NAME_PROBLEM = "^fof\((\w+), axiom"
+# RE_CLAUSE_NAME_PROBLEM = "fof\((\w+), axiom"
 
 
 def get_score_parser():
@@ -88,11 +89,12 @@ def get_score_parser():
 
 def get_sine_clause_names(prob):
     res = re.findall(RE_CLAUSE_FILE, prob)
+    # res = re.findall(RE_CLAUSE_NAME_PROBLEM, prob)
     res = [r[1] for r in res]
     return res
 
 
-def get_original_clause_names(prob):
+def get_positive_clause_names(prob):
     res = re.findall(RE_POSITIVE_CLAUSE_NAME_PROBLEM, prob, flags=re.MULTILINE)
     return res
 
@@ -104,28 +106,32 @@ def get_clause_names(prob):
 
 def sine_score_problem(prob_path, sine_st, sine_sd, selected_axioms, deepmath):
 
+    # Load the clauses from the problem
     prob = load_and_process_problem(prob_path, deepmath=deepmath)
+
+    # Clausify the problem - optionally with SInE
     prob_processed = sine_process(prob, sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
     del prob
 
     # Extract the clause names from the sine processed problem
-    sine_names = get_sine_clause_names(prob_processed)
+    # Get processed clause names
+    processed_names = get_sine_clause_names(prob_processed)
 
     # Get the ground truth of names
     with open(DATASET_PATH + Path(prob_path).stem, "rb") as f:  # Need to open the original dataset file
         prob_original = f.read()
-    prob_names = get_original_clause_names(prob_original)
+    prob_names = get_positive_clause_names(prob_original)
     del prob_original
 
     if len(prob_names) == 0:
         print(f"ERROR: No clause names for problem {prob_path}", file=sys.stderr)
 
     # Add selected axioms to the set of sine names
-    sine_names = set(sine_names).union(selected_axioms)
+    processed_names = set(processed_names).union(selected_axioms)
 
     # Compute the scores - no avg as it is single entry anyways
-    jaccard = jaccard_score_np([prob_names], [sine_names], avg=False)[0]
-    coverage = coverage_score_np([prob_names], [sine_names], avg=False)[0]
+    jaccard = jaccard_score_np([prob_names], [processed_names], avg=False)[0]
+    coverage = coverage_score_np([prob_names], [processed_names], avg=False)[0]
 
     # Return result
     return Path(prob_path).stem, {"jaccard": jaccard, "coverage": coverage}
@@ -240,7 +246,8 @@ def main():
     # Get path to all problems
     problem_paths = get_problems_from_path(args.problem_dir, limit=args.number_of_samples)
     assert len(problem_paths) > 0, "No problems found at the given problem directory"
-    print("Comparing ground truth with base problems from: ", args.problem_dir)
+    print(f"Comparing ground in : {DATASET_PATH}")
+    print("with problems in    :", args.problem_dir)
 
     # Deduce the problem format
     deepmath = args.problem_format == "deepmath"
