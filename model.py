@@ -14,7 +14,7 @@ from keras.layers import Flatten
 from keras.layers import Normalization
 from keras.layers import BatchNormalization
 from keras.layers.pooling import GlobalMaxPooling2D
-from keras.layers.merge import concatenate
+from keras.layers import concatenate
 from argparse import Namespace
 import json
 import os
@@ -275,7 +275,6 @@ class WordEncoder(layers.Layer):
 class WordDecoder(layers.Layer):
     def __init__(
         self,
-        vocab_size,
         params,
         name="word_decoder",
         **kwargs,
@@ -300,7 +299,6 @@ class WordDecoder(layers.Layer):
         self.d1 = Dropout(params.dropout_rate)
         self.fc = Dense(params.no_dense_units, activation="relu")
         self.d2 = Dropout(params.dropout_rate)
-        self.out = Dense(vocab_size)
 
     def call(self, inputs, training=None):
         x = inputs
@@ -316,7 +314,7 @@ class WordDecoder(layers.Layer):
         x = self.fc(x)
         x = tf.reshape(x, (-1, x.shape[2]))
         x = self.d2(x, training=training)
-        x = self.out(x)
+        # x = self.out(x)
 
         return x, hidden
 
@@ -400,7 +398,9 @@ class InjectDecoder(tf.keras.Model):
 
         self.attention = get_attention_mechanism(model_params)
 
-        self.word_decoder = WordDecoder(vocab_size, model_params)
+        self.word_decoder = WordDecoder(model_params)
+
+        self.out_layer = Dense(vocab_size)
 
         self.repeat = RepeatVector(1)
 
@@ -413,16 +413,26 @@ class InjectDecoder(tf.keras.Model):
         # Pass word through embedding layer
         word_emb = self.word_embedder(input_word, training=training)
 
-        # Add attention embedding
-        if self.attention is not None:
+        # Run Bahdanau attention if set
+        if self.attention is not None and (
+            isinstance(self.attention, BahdanauAttention) or isinstance(self.attention, AdditiveFlatAttention)
+        ):
             image_emb, _ = self.attention(image_emb, hidden_state, mask=mask)
 
-        # Concatenate the features - original paper passes attention vector instead
-        image_emb = self.repeat(image_emb)  # Quickfix for expanding the dimension
-        merged_emb = concatenate([image_emb, word_emb])
+        # Expand dims of image_emb and concatenate with the word embedding
+        merged_emb = concatenate([self.repeat(image_emb), word_emb])
 
         # Give to decoder
-        output, hidden_state = self.word_decoder(merged_emb, training=training)
+        decoder_out, hidden_state = self.word_decoder(merged_emb, training=training)
+
+        # Run Loung attention if set
+        if self.attention is not None and isinstance(self.attention, tf.keras.layers.Attention):
+            context = self.attention([decoder_out, image_emb], training=training)
+            decoder_out = concatenate([context, decoder_out])
+
+        # Run output layer to get the predictions
+        output = self.out_layer(decoder_out)
+
         return output, hidden_state
 
     def get_config(self):
@@ -573,7 +583,7 @@ class MergeInjectModel(tf.keras.Model):
         else:
             self.attention = None
 
-        self.word_decoder = WordDecoder(vocab_size, model_params)
+        self.word_decoder = WordDecoder(model_params)
 
         # Add repeat vector for avoid calling the image encoder all the time
         # QUICKFIX - setting length to 1 to expand the dimension of the output for concat
@@ -676,6 +686,11 @@ def get_attention_mechanism(model_params):
         return BahdanauAttention(model_params)
     elif model_params.attention is AttentionMechanism.FLAT:
         return AdditiveFlatAttention(model_params)
+    elif model_params.attention is AttentionMechanism.LOUNG_CONCAT:
+        return tf.keras.layers.Attention(score_mode="concat", dropout=model_params.dropout_rate)
+    elif model_params.attention is AttentionMechanism.LOUNG_DOT:
+        return tf.keras.layers.Attention(score_mode="dot", dropout=model_params.dropout_rate)
+
     elif model_params.attention is AttentionMechanism.NONE:
         return None
     else:
@@ -710,8 +725,9 @@ def check_inject():
     # Load base model parameters
     params = get_model_params("experiments/base_model")
     params.normalize = False  # quick hack
-    # params.attention = AttentionMechanism.NONE  # quick hack
-    params.attention = AttentionMechanism.FLAT  # quick hack
+    params.attention = AttentionMechanism.NONE  # quick hack
+    # params.attention = AttentionMechanism.FLAT  # quick hack
+
     params.stateful = False  # FIXME is this right?
     print("model params: ", params)
 
@@ -740,7 +756,7 @@ def check_inject():
 
     # WordDecoder
     print("\n# # # WordDecoder # # #")
-    m = WordDecoder(vocab_size, params)
+    m = WordDecoder(params)
     m.build_graph().summary()
 
     # InjectDecoder

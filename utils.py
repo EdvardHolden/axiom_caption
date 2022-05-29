@@ -27,6 +27,8 @@ class AttentionMechanism(Enum):
     BAHDANAU = "bahdanau"
     FLAT = "flat"
     NONE = "none"
+    LOUNG_DOT = "loung_dot"
+    LOUNG_CONCAT = "loung_concat"
 
 
 # Set axiom order type

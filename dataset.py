@@ -5,7 +5,9 @@ import random
 import os
 import json
 from keras.preprocessing.text import tokenizer_from_json
-from keras.preprocessing.sequence import pad_sequences
+
+# from keras.preprocessing.sequence import pad_sequences
+from keras.utils import pad_sequences
 from utils import debug, AxiomOrder
 from pathlib import Path
 import numpy as np
