@@ -120,8 +120,8 @@ def initialise_model(model_type, vocab_size, model_params, training_data=None):
     return model
 
 
-#class ImageEncoder(layers.Layer):
-class ImageEncoder(tf.keras.Model): # TODO possible issue here?
+# class ImageEncoder(layers.Layer):
+class ImageEncoder(tf.keras.Model):  # TODO possible issue here?
     def __init__(
         self,
         params,
@@ -392,6 +392,7 @@ class InjectDecoder(tf.keras.Model):
         super(InjectDecoder, self).__init__(name=name, **kwargs)
         self.vocab_size = vocab_size
         self.no_rnn_units = model_params.no_rnn_units
+        self.no_dense_units = model_params.no_dense_units
 
         self.axiom_order = model_params.axiom_order
 
@@ -430,7 +431,7 @@ class InjectDecoder(tf.keras.Model):
         return config
 
     def build_graph(self):
-        x = [Input(shape=(400,)), Input(shape=(1,)), Input(shape=(self.no_rnn_units,))]
+        x = [Input(shape=(self.no_dense_units,)), Input(shape=(1,)), Input(shape=(self.no_rnn_units,))]
         return Model(inputs=x, outputs=self.call(x))
 
 
@@ -709,7 +710,8 @@ def check_inject():
     # Load base model parameters
     params = get_model_params("experiments/base_model")
     params.normalize = False  # quick hack
-    params.attention = True  # quick hack
+    # params.attention = AttentionMechanism.NONE  # quick hack
+    params.attention = AttentionMechanism.FLAT  # quick hack
     params.stateful = False  # FIXME is this right?
     print("model params: ", params)
 
@@ -739,6 +741,11 @@ def check_inject():
     # WordDecoder
     print("\n# # # WordDecoder # # #")
     m = WordDecoder(vocab_size, params)
+    m.build_graph().summary()
+
+    # InjectDecoder
+    print("\n# # # InjectDecoder # # #")
+    m = InjectDecoder(vocab_size, params)
     m.build_graph().summary()
 
 
@@ -790,5 +797,5 @@ def check_encoder():
 
 if __name__ == "__main__":
     # check_models()
-    # check_inject()
-    check_encoder()
+    check_inject()
+    # check_encoder()
