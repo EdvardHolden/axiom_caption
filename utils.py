@@ -2,47 +2,9 @@ import os
 import json
 from subprocess import check_call
 from argparse import Namespace
-from enum import Enum
 
 import config
 from parser import get_train_parser
-
-
-class Context(Enum):
-    AXIOMS = "axioms"
-    WORDS = "words"
-
-    def __str__(self):
-        return self.value
-
-
-class EncoderInput(Enum):
-    SEQUENCE = "sequence"
-    FLAT = "flat"
-
-    def __str__(self):
-        return self.value
-
-
-class AttentionMechanism(Enum):
-    BAHDANAU = "bahdanau"
-    FLAT = "flat"
-    NONE = "none"
-    LOUNG_DOT = "loung_dot"
-    LOUNG_CONCAT = "loung_concat"
-
-
-# Set axiom order type
-class AxiomOrder(Enum):
-    ORIGINAL = "original"
-    LEXICOGRAPHIC = "lexicographic"
-    LENGTH = "length"
-    FREQUENCY = "frequency"
-    RANDOM = "random"
-    RANDOM_GLOBAL = "random_global"
-
-    def __str__(self):
-        return self.value
 
 
 def create_job_dir(root_dir, job_name, params=None):

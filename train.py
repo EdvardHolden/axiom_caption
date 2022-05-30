@@ -21,7 +21,7 @@ from model import (
     ImageEncoder,
 )
 from evaluate import jaccard_score, coverage_score
-from utils import AxiomOrder
+from enum_types import AxiomOrder
 from parser import get_train_parser
 
 # Make script deterministic to see if we can avoid the gpu issue

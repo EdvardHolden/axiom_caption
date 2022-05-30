@@ -8,13 +8,13 @@ from keras.preprocessing.text import tokenizer_from_json
 
 # from keras.preprocessing.sequence import pad_sequences
 from keras.utils import pad_sequences
-from utils import debug, AxiomOrder
+from utils import debug
+from enum_types import AxiomOrder, EncoderInput
 from pathlib import Path
 import numpy as np
 from subprocess import check_call
 
 import config
-from utils import EncoderInput
 
 
 def get_tokenizer(id_file, tokenizer_mode, tokenizer_data_path, vocab_word_limit):

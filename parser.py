@@ -2,7 +2,7 @@ import argparse
 import socket
 import os
 
-from utils import Context, Mode
+from enum_types import Context, GenerationMode
 import config
 
 
@@ -166,8 +166,8 @@ def get_generate_parser():
     parser.add_argument(
         "--mode",
         default="caption",
-        type=Mode,
-        choices=list(Mode),
+        type=GenerationMode,
+        choices=list(GenerationMode),
         help="The mode used to generate the modified DeepMath problems",
     )
     parser.add_argument("--sine_sd", default=None)
