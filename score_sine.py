@@ -18,7 +18,7 @@ import socket
 import os
 
 from model import get_model_params
-from model import load_model
+from evaluate import get_model
 from generate_problems import (
     get_problems_from_path,
     load_and_process_problem,
@@ -30,6 +30,7 @@ from evaluate import jaccard_score_np, coverage_score_np
 from dataset import get_tokenizer
 from dataset import load_photo_features
 import config
+from utils import get_sampler_parser
 
 
 # Set the number of workers - only used in multiprocessing
@@ -49,7 +50,8 @@ RE_CLAUSE_NAME_PROBLEM = "^fof\((\w+), axiom"
 
 def get_score_parser():
 
-    parser = argparse.ArgumentParser()
+    #parser = argparse.ArgumentParser()
+    parser = get_sampler_parser()
 
     parser.add_argument("--sine_sd", type=int, nargs="+", default=None)
     parser.add_argument("--sine_st", type=float, nargs="+", default=None)
@@ -186,14 +188,19 @@ def get_rare_axioms(prob_path, tokenizer):
     return Path(prob_path).stem, rare_axiom_names
 
 
-def get_selected_axioms(model_dir, feature_path, problem_paths, include_rare_axioms):
-    print("Warning: DEPRECATED! - need to update mdel and params loading!")
+def get_selected_axioms(model_dir, feature_path, problem_paths, include_rare_axioms, sampler, max_length, no_samples, sampler_temperature, sampler_top_k):
 
     # Initialise ctionary which stores the additional axioms for each problem
     selected_axioms_dict = {}
 
-    # FIXMe this should be two separate function
-    tokenizer, _ = get_tokenizer("data/deepmath/tokenizer.json")
+    # Get the tokenizer from the model params
+    tokenizer, vocab_size = get_tokenizer(
+        config.train_id_file,
+        'axioms',
+        config.proof_data,
+        get_model_params(model_dir).axiom_vocab_size,
+    )
+
 
     # Include rare axioms if set
     rare_axioms = {}
@@ -211,13 +218,13 @@ def get_selected_axioms(model_dir, feature_path, problem_paths, include_rare_axi
     if model_dir is not None:
         print("Predicting axioms")
         problem_features = load_photo_features(feature_path, [Path(p).stem for p in problem_paths])
-        model_params = get_model_params(model_dir)
-        model_dir = os.path.join(model_dir, "ckpt_dir")
-        model = load_model(model_dir)
-        model.no_rnn_units = model_params.no_rnn_units
+
+        # Load the model
+        model = get_model(model_dir, vocab_size)
 
         for prob_path in problem_paths:
-            axiom_caption = compute_caption(tokenizer, model, problem_features[Path(prob_path).stem])
+            axiom_caption = compute_caption(tokenizer, model, problem_features[Path(prob_path).stem], sampler, max_length, no_samples, sampler_temperature, sampler_top_k)
+
             # Extract the clause names
             axiom_caption = get_clause_names("\n".join(axiom_caption))
 
@@ -258,7 +265,8 @@ def main():
         # Add axioms from the captioning model / include_rare
         print("WARNING deperecated - need to update functions")
         selected_axioms_dict = get_selected_axioms(
-            args.model_dir, args.feature_path, args.problem_paths, args.include_rare_axioms
+            args.model_dir, args.feature_path, problem_paths, args.include_rare_axioms,
+            args.sampler, args.max_length, args.no_samples[0], args.sampler_temperature, args.sampler_top_k
         )
     else:
         # Set the empty dictionary if not including any extra axioms
