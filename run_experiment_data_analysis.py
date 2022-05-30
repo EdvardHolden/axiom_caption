@@ -1,7 +1,7 @@
 import numpy as np
 import os
 import config
-from dataset import get_tokenizer, load_ids, load_clean_descriptions
+from dataset import load_tokenizer, load_ids, load_clean_descriptions
 
 # TODO make argparser?
 BASE_DIR = "data/deepmath/"
@@ -37,8 +37,10 @@ def compute_set_stats(tokenizer, proof_data_path, dataset_dir, id_set):
 def main():
 
     # Load tokenizer
-    tokenizer_path = os.path.join(BASE_DIR, "tokenizer.json")
-    tokenizer, vocab_size = get_tokenizer(tokenizer_path)
+    # TODO
+    #tokenizer_path = os.path.join(BASE_DIR, "tokenizer.json")
+    tokenizer_path = os.path.join(BASE_DIR, "tokenizer_axioms_train_6000.json")
+    tokenizer, vocab_size = load_tokenizer(tokenizer_path)
 
     # Get path
 
