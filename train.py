@@ -8,7 +8,6 @@ import random
 import config
 from dataset import (
     get_dataset,
-    get_tokenizer,
     compute_axiom_frequency,
     compute_random_global_axiom_frequency,
     get_caption_conjecture_tokenizers,
@@ -22,7 +21,8 @@ from model import (
     ImageEncoder,
 )
 from evaluate import jaccard_score, coverage_score
-from utils import get_train_parser, AxiomOrder
+from utils import AxiomOrder
+from parser import get_train_parser
 
 # Make script deterministic to see if we can avoid the gpu issue
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"

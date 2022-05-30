@@ -8,7 +8,6 @@ If we do not supply any SInE options, we compare the given directory to the grou
 for evaluation the performance metrics of the problems computed by 'generate_problems.py'
 """
 
-import argparse
 import re
 import sys
 import numpy as np
@@ -30,7 +29,7 @@ from evaluate import jaccard_score_np, coverage_score_np
 from dataset import get_tokenizer
 from dataset import load_photo_features
 import config
-from utils import get_sampler_parser
+from utils import get_score_parser
 
 
 # Set the number of workers - only used in multiprocessing
@@ -46,47 +45,6 @@ RE_CLAUSE_FILE = b"file\('(\/|\w)*',(\w*)\)\)."
 RE_POSITIVE_CLAUSE_NAME_PROBLEM = b"^\+ fof\((\w+), axiom"  # only positive axioms
 RE_CLAUSE_NAME_PROBLEM = "^fof\((\w+), axiom"
 # RE_CLAUSE_NAME_PROBLEM = "fof\((\w+), axiom"
-
-
-def get_score_parser():
-
-    #parser = argparse.ArgumentParser()
-    parser = get_sampler_parser()
-
-    parser.add_argument("--sine_sd", type=int, nargs="+", default=None)
-    parser.add_argument("--sine_st", type=float, nargs="+", default=None)
-
-    parser.add_argument(
-        "--model_dir", default=None, help="Path to sequence model, used if including predictions"
-    )
-    parser.add_argument(
-        "--include_rare_axioms", default=False, action="store_true", help="Include rare axioms"
-    )
-    parser.add_argument(
-        "--feature_path",
-        default=config.problem_features,
-        help="Path to the problem embeddings used with the captioning model",
-    )
-    parser.add_argument(
-        "--number_of_samples",
-        type=int,
-        default=None,
-        help="Number of samples to use for computing the score (None for all)",
-    )
-    parser.add_argument(
-        "--problem_format",
-        default="deepmath",
-        choices=["deepmath", "mptp"],
-        help="The problem format of the benchmark",
-    )
-
-    parser.add_argument(
-        "--problem_dir",
-        default=DATASET_PATH,
-        help="The directory of the problems processed (typically by SInE)",
-    )
-
-    return parser
 
 
 def get_sine_clause_names(prob):
@@ -188,7 +146,17 @@ def get_rare_axioms(prob_path, tokenizer):
     return Path(prob_path).stem, rare_axiom_names
 
 
-def get_selected_axioms(model_dir, feature_path, problem_paths, include_rare_axioms, sampler, max_length, no_samples, sampler_temperature, sampler_top_k):
+def get_selected_axioms(
+    model_dir,
+    feature_path,
+    problem_paths,
+    include_rare_axioms,
+    sampler,
+    max_length,
+    no_samples,
+    sampler_temperature,
+    sampler_top_k,
+):
 
     # Initialise ctionary which stores the additional axioms for each problem
     selected_axioms_dict = {}
@@ -196,11 +164,10 @@ def get_selected_axioms(model_dir, feature_path, problem_paths, include_rare_axi
     # Get the tokenizer from the model params
     tokenizer, vocab_size = get_tokenizer(
         config.train_id_file,
-        'axioms',
+        "axioms",
         config.proof_data,
         get_model_params(model_dir).axiom_vocab_size,
     )
-
 
     # Include rare axioms if set
     rare_axioms = {}
@@ -223,7 +190,16 @@ def get_selected_axioms(model_dir, feature_path, problem_paths, include_rare_axi
         model = get_model(model_dir, vocab_size)
 
         for prob_path in problem_paths:
-            axiom_caption = compute_caption(tokenizer, model, problem_features[Path(prob_path).stem], sampler, max_length, no_samples, sampler_temperature, sampler_top_k)
+            axiom_caption = compute_caption(
+                tokenizer,
+                model,
+                problem_features[Path(prob_path).stem],
+                sampler,
+                max_length,
+                no_samples,
+                sampler_temperature,
+                sampler_top_k,
+            )
 
             # Extract the clause names
             axiom_caption = get_clause_names("\n".join(axiom_caption))
@@ -250,6 +226,10 @@ def main():
     ):
         raise ValueError("Both depth and treshold for SInE must be set.")
 
+    # Set the problem_dir if not set
+    if args.problem_dir is None:
+        args.problem_dir = DATASET_PATH
+
     # Get path to all problems
     problem_paths = get_problems_from_path(args.problem_dir, limit=args.number_of_samples)
     assert len(problem_paths) > 0, "No problems found at the given problem directory"
@@ -265,8 +245,15 @@ def main():
         # Add axioms from the captioning model / include_rare
         print("WARNING deperecated - need to update functions")
         selected_axioms_dict = get_selected_axioms(
-            args.model_dir, args.feature_path, problem_paths, args.include_rare_axioms,
-            args.sampler, args.max_length, args.no_samples[0], args.sampler_temperature, args.sampler_top_k
+            args.model_dir,
+            args.feature_path,
+            problem_paths,
+            args.include_rare_axioms,
+            args.sampler,
+            args.max_length,
+            args.no_samples[0],
+            args.sampler_temperature,
+            args.sampler_top_k,
         )
     else:
         # Set the empty dictionary if not including any extra axioms

@@ -6,61 +6,18 @@ import tensorflow as tf
 from tqdm import tqdm
 import random
 from pathlib import Path
+from tensorflow.sets import size, intersection, union
 
 from dataset import get_dataset, compute_max_caption_length, get_caption_conjecture_tokenizers
 from model import get_model_params, load_model, reset_model_decoder_state, initialise_model
 from model import get_hidden_state, ImageEncoder, Encoder
-from utils import get_sampler_parser, Context
+from parser import get_evaluate_parser
 
-
-from tensorflow.sets import size, intersection, union
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 random.seed(42)
 np.random.seed(42)
 tf.random.set_seed(42)
-
-
-def get_evaluate_parser(add_help=True):
-
-    # Get the parser, need to remove 'help' if being used as a parent parser
-    parser = get_sampler_parser()
-
-    parser.add_argument(
-        "--model_dir", default="experiments/base_model", help="Directory containing params.json"
-    )
-    parser.add_argument(
-        "--problem_ids",
-        default=[config.test_id_file],
-        nargs="+",
-        type=str,
-        help="List of files containing IDs for evaluation",
-    )
-
-    parser.add_argument(
-        "--problem_features", default=config.problem_features, help="File containing the image features"
-    )
-    parser.add_argument(
-        "--proof_data", default=config.proof_data, help="File containing the image descriptions"
-    )
-
-    parser.add_argument("-v", "--verbose", action="count", default=0)
-
-    parser.add_argument(
-        "--context",
-        choices=list(Context),
-        type=Context,
-        default="axioms",
-        help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
-    )
-
-    parser.add_argument(
-        "--tokenizer_id_file",
-        default=config.train_id_file,
-        help="The ID file used to compute the tokenizer is the training setting",
-    )
-
-    return parser
 
 
 # TODO maybe add some BeamSearch in here?
@@ -375,9 +332,9 @@ def main(
                 problem_features,
                 batch_size=1,
                 caption_tokenizer=caption_tokenizer,
-                #order=model_params.axiom_order,
-                order=None, # We do not need an order for this as we treating it as a set for evaluation
-                #axiom_frequency=axiom_frequency,
+                # order=model_params.axiom_order,
+                order=None,  # We do not need an order for this as we treating it as a set for evaluation
+                # axiom_frequency=axiom_frequency,
                 remove_unknown=model_params.remove_unknown,
                 encoder_input=model_params.encoder_input,
                 conjecture_tokenizer=conjecture_tokenizer,

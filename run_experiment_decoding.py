@@ -5,7 +5,7 @@ from tqdm import tqdm
 import config
 
 import evaluate
-from evaluate import get_evaluate_parser
+from parser import get_evaluate_parser
 
 # TODO break this down the middle and run it on 2-3 machines?
 """

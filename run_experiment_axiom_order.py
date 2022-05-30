@@ -6,40 +6,10 @@ import json
 from tqdm import tqdm
 import utils
 
-from utils import get_train_parser, launch_training_job
+from utils import launch_training_job
+from parser import get_order_exp_parser
 
 AXIOM_ORDERS = ["original", "lexicographic", "length", "random", "frequency", "random_global"]
-
-
-def get_order_exp_parser():
-    """
-    This function extends the training parser with the parameters
-    required for the order experiments. This is to make it easier
-    to change parameters such as dataset IDs and proof data between
-    different experiments.
-
-    It also return the set of parameters for the training script as
-    these are useful when building the cmd for running the training job.
-    """
-
-    # Get the parser for the train script
-    parser = get_train_parser()
-
-    # Extend the argument parser
-    parser.add_argument(
-        "--experiment_dir",
-        default="experiments/axiom_order",
-        help="Directory for reporting the embedding results",
-    )
-
-    parser.add_argument(
-        "--rerun",
-        default=False,
-        action="store_true",
-        help="Force rerunning of a config even if the job dir already exists",
-    )
-
-    return parser
 
 
 def main():
@@ -78,7 +48,6 @@ def main():
         print(f"Skipped a total of {no_skipped_runs} job runs")
 
     print("# Finito")
-    # """
 
 
 if __name__ == "__main__":

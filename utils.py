@@ -1,10 +1,11 @@
 import os
 import json
-import config
 from subprocess import check_call
-import argparse
 from argparse import Namespace
 from enum import Enum
+
+import config
+from parser import get_train_parser
 
 
 class Context(Enum):
@@ -42,87 +43,6 @@ class AxiomOrder(Enum):
 
     def __str__(self):
         return self.value
-
-
-def get_train_parser(add_help=True):
-
-    # Get the parser, need to remove 'help' if being used as a parent parser
-    parser = argparse.ArgumentParser(add_help=add_help)
-
-    # Dataset ID options
-    parser.add_argument(
-        "--train_id_file", default=config.train_id_file, help="File containing the training ids"
-    )
-    parser.add_argument(
-        "--val_id_file", default=config.val_id_file, help="File containing the validation ids"
-    )
-
-    # Feature options
-    parser.add_argument("--proof_data", default=config.proof_data, help="File containing the image features")
-    parser.add_argument(
-        "--problem_features", default=config.problem_features, help="File containing the image descriptions"
-    )
-
-    # Model options
-    parser.add_argument("--model_dir", default=config.base_model, help="Directory containing params.json")
-
-    parser.add_argument(
-        "--working_dir",
-        default=None,
-        help="Directory for saving ckp, model and history. Same as model_dir if not set.",
-    )
-
-    # FIXME this might not remove that much memory load due to the checkpoints
-    parser.add_argument(
-        "--save_model", default=False, action="store_true", help="Set if final model should be saved"
-    )
-
-    parser.add_argument(
-        "--context",
-        choices=list(Context),
-        type=Context,
-        default="axioms",
-        help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
-    )
-
-    return parser
-
-
-def get_sampler_parser(add_help=True):
-
-    # Get the parser, need to remove 'help' if being used as a parent parser
-    parser = argparse.ArgumentParser(add_help=add_help)
-
-    # Sampling options
-    parser.add_argument(
-        "--sampler",
-        default="greedy",
-        choices=["greedy", "temperature", "top_k"],
-        help="The method used to sample the next word in the prediction",
-    )
-    parser.add_argument(
-        "--no_samples",
-        default=[1],
-        type=int,
-        nargs="+",
-        help="The number of samples to draw at each iteration (only one is passed to the model)",
-    )
-    parser.add_argument(
-        "--sampler_temperature",
-        default=1.0,
-        type=float,
-        help="The temperature when using the temperature sampler (0, 1]",
-    )
-    parser.add_argument(
-        "--sampler_top_k",
-        default=10,
-        type=int,
-        help="The top k predictions to use when recomputing the prediction distributions",
-    )
-
-    parser.add_argument("--max_length", default=22, type=int, help="The maximum length of the predictions")
-
-    return parser
 
 
 def create_job_dir(root_dir, job_name, params=None):

@@ -3,43 +3,11 @@
 import os
 import itertools
 import json
-import subprocess
-from subprocess import check_call
-import config
 from tqdm import tqdm
+
 import utils
-
-from utils import launch_training_job, get_train_parser
-
-
-def get_hyperparam_parser():
-    """
-    This function extends the training parser with the parameters
-    required for tuning the hyperparameters.
-    """
-
-    # Get the parser for the train script
-    parser = get_train_parser()
-
-    # Extend the argument parser
-    parser.add_argument(
-        "--experiment_dir",
-        default="experiments/learning_rate",
-        help="Directory for reporting the model experiments",
-    )
-    parser.add_argument(
-        "--parameter_space",
-        type=str,
-        default="hyperparameter_space/example.json",
-        help="Path to json file describing the parameter space",
-    )
-    parser.add_argument(
-        "--rerun",
-        default=False,
-        action="store_true",
-        help="Force rerunning of a config even if the job dir already exists",
-    )
-    return parser
+from utils import launch_training_job
+from parser import get_hyperparam_parser
 
 
 def main():
@@ -59,7 +27,9 @@ def main():
     for param_config in tqdm(hp_parameters):
 
         # Make config description - limit to only variable parameters
-        job_name = "_".join([p + "_" + str(v) for p, v in sorted(param_config.items()) if len(hp_space[p]) > 1])
+        job_name = "_".join(
+            [p + "_" + str(v) for p, v in sorted(param_config.items()) if len(hp_space[p]) > 1]
+        )
 
         print(f"\n### Processing job: {job_name}")
 

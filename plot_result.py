@@ -1,21 +1,14 @@
 import matplotlib.pyplot as plt
-import argparse
 import pickle
 import os
 
-parser = argparse.ArgumentParser()
-parser.add_argument("model_dir", help="Directory containing the history.pkl of interest")
-parser.add_argument(
-    "--metric",
-    default="loss",
-    choices=["loss", "l", "coverage", "c", "jaccard", "j"],
-    help="The metric to plot",
-)
+from parser import get_plot_result_parser
 
 
 def main():
 
     # Parse input arguments
+    parser = get_plot_result_parser()
     args = parser.parse_args()
 
     # Quick hack for abbrevations

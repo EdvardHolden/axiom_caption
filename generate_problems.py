@@ -12,14 +12,12 @@ from multiprocessing import Pool
 import random
 from itertools import chain
 import numpy as np
-import socket
 
 from dataset import get_tokenizer
 from dataset import load_photo_features
 from model import get_model_params
-from model import load_model
-from evaluate import generate_step, get_new_trained_model, get_model
-from utils import get_sampler_parser, Context
+from evaluate import generate_step, get_model
+from parser import get_generate_parser
 import config
 
 import tensorflow as tf
@@ -46,77 +44,6 @@ class Mode(Enum):
 
     def __str__(self):
         return self.value
-
-
-def get_generate_parser():
-
-    parser = get_sampler_parser()
-    parser.add_argument(
-        "--mode",
-        default="caption",
-        type=Mode,
-        choices=list(Mode),
-        help="The mode used to generate the modified DeepMath problems",
-    )
-    parser.add_argument("--sine_sd", default=None)
-    parser.add_argument("--sine_st", default=None)
-    parser.add_argument("--result_dir", default=None, help="Root folder for writing generated problems")
-
-    parser.add_argument(
-        "--result_prefix", default=None, help="File name prefix of the result dir (if result_dir is not set)"
-    )
-
-    if socket.gethostname() == "kontor":
-        default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
-    else:
-        default_problem_dir = "/shareddata/home/holden/gnn-entailment-caption/nndata"
-    parser.add_argument(
-        "--problem_dir",
-        default=default_problem_dir,
-        help="Directory containing the base problems",
-    )
-    parser.add_argument(
-        "--extra_axioms",
-        default=None,
-        type=int,
-        help="Number of extra axioms to add to each generated problem is set.",
-    )
-
-    parser.add_argument(
-        "--feature_path",
-        default="data/embeddings/deepmath/graph_features_deepmath_all.pkl",
-        help="Path to the problem embeddings",
-    )
-    parser.add_argument(
-        "--model_dir",
-        default="experiments/hyperparam/initial/attention_False_axiom_order_length_batch_norm_False_dropout_rate_0.1_embedding_size_200_learning_rate_0.001_model_type_merge_inject_no_dense_units_32_no_rnn_units_32_normalize_True_rnn_type_lstm/",
-        help="Path to the model used in the captioning modes",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=max(os.cpu_count() - 2, 1),
-        help="Number of workers for multiprocessing (used in some modes)",
-    )
-    parser.add_argument(
-        "-d", "--debug", action="store_true", default=False, help="Limit generation to 100 instances"
-    )
-    parser.add_argument(
-        "--problem_format",
-        default="deepmath",
-        choices=["deepmath", "mptp"],
-        help="The problem format of the benchmark",
-    )
-
-    parser.add_argument(
-        "--context",
-        choices=list(Context),
-        type=Context,
-        default="axioms",
-        help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
-    )
-
-    return parser
 
 
 # Re pattern for finding each element in a clause
