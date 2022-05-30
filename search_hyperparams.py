@@ -58,8 +58,9 @@ def main():
     no_skipped_runs = 0
     for param_config in tqdm(hp_parameters):
 
-        # Make config description
-        job_name = "_".join([p + "_" + str(v) for p, v in sorted(param_config.items())])
+        # Make config description - limit to only variable parameters
+        job_name = "_".join([p + "_" + str(v) for p, v in sorted(param_config.items()) if len(hp_space[p]) > 1])
+
         print(f"\n### Processing job: {job_name}")
 
         # If we are not forcing reruns and the jobdir already exists, we skip this configuration
