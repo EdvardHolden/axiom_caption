@@ -50,7 +50,7 @@ def loss_function(real, pred):
 
 
 @tf.function
-def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
+def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_rate=0.0, training=True):
 
     # Initial loss on the batch is zero
     loss = 0
@@ -94,8 +94,13 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, training=True):
             # Compute loss of predictions
             loss += loss_function(target[:, i], y_hat)
 
-            # Use teacher forcing to decide next model input
-            dec_input = tf.expand_dims(target[:, i], 1)
+            # Check if applying teacher-forcing in training mode
+            if training and tf.random.uniform(()) < teacher_forcing_rate:
+                # Teacher forcing - using the correct input target
+                dec_input = tf.expand_dims(target[:, i], 1)
+            else:
+                # Using the predicted tokens
+                dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
 
     # Compute the total loss for the sequence
     sequence_loss = loss / int(target.shape[1])
@@ -144,7 +149,7 @@ epoch_loss = tf.keras.metrics.Mean()
 num_steps = tf.Variable(0)
 
 
-def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
+def epoch_step(model, tokenizer, optimizer, data, teacher_forcing_rate=0.0, training=False, epoch=None):
     """
     Runs one epoch of data over the model. Used to train/validate the model.
 
@@ -165,7 +170,13 @@ def epoch_step(model, tokenizer, optimizer, data, training=False, epoch=None):
         num_steps.assign_add(1)
 
         batch_loss, s_loss, predictions = train_step(
-            tokenizer, model, optimizer, img_tensor, captions, training=training
+            tokenizer,
+            model,
+            optimizer,
+            img_tensor,
+            captions,
+            teacher_forcing_rate=teacher_forcing_rate,
+            training=training,
         )
 
         # Check if reporting batch
@@ -202,7 +213,9 @@ def add_new_metrics(history, new_stats, prefix=""):
     return history
 
 
-def train_loop(tokenizer, model, ckpt_managers, optimizer, train_data, val_data, es_patience=None):
+def train_loop(
+    tokenizer, model, ckpt_managers, optimizer, train_data, val_data, teacher_forcing_rate, es_patience=None
+):
 
     # Dictionary to store all the metrics
     metrics = {}
@@ -225,7 +238,9 @@ def train_loop(tokenizer, model, ckpt_managers, optimizer, train_data, val_data,
         start = time.time()
 
         # Train the model for one epoch
-        train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=True, epoch=epoch)
+        train_epoch_metrics = epoch_step(
+            model, tokenizer, optimizer, train_data, teacher_forcing_rate, training=True, epoch=epoch
+        )
         metrics = add_new_metrics(metrics, train_epoch_metrics, prefix="train_")
 
         # Run model over the validation data
@@ -382,6 +397,7 @@ def main(
         optimizer,
         train_data,
         val_data,
+        model_params.teacher_forcing_rate,
         es_patience=config.ES_PATIENCE,
     )
 
