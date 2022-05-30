@@ -52,3 +52,17 @@ class GenerationMode(Enum):
 
     def __str__(self):
         return self.value
+
+
+class TokenizerMode(Enum):
+    """
+    Helper class for setting the parameters of the tokenizer.
+    """
+
+    AXIOMS = "axioms"
+    WORDS = "words"
+    CONJ_CHAR = "conj_char"
+    CONJ_WORD = "conj_word"
+
+    def __str__(self):
+        return self.value

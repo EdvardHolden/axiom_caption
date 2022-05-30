@@ -2,27 +2,13 @@ import json
 from keras.preprocessing.text import Tokenizer
 import config
 import os
-from enum import Enum
 import re
 from pathlib import Path
 
 
 from dataset import load_clean_descriptions, load_clean_conjectures, load_ids, get_tokenizer_save_path
+from enum_types import TokenizerMode
 from parser import get_compute_tokenizer_parser
-
-
-class TokenizerMode(Enum):
-    """
-    Helper class for setting the parameters of the tokenizer.
-    """
-
-    AXIOMS = "axioms"
-    WORDS = "words"
-    CONJ_CHAR = "conj_char"
-    CONJ_WORD = "conj_word"
-
-    def __str__(self):
-        return self.value
 
 
 def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
