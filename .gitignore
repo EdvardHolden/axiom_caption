@@ -6,3 +6,5 @@
 *.odt
 *.pkl
 *.md
+*.out
+*.json
