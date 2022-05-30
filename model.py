@@ -19,8 +19,7 @@ from argparse import Namespace
 import json
 import os
 
-from dataset import AxiomOrder
-from utils import Context, EncoderInput, AttentionMechanism
+from enum_types import AxiomOrder, Context, EncoderInput, AttentionMechanism
 
 
 def adapt_normalization_layer(model, embedding_vectors):

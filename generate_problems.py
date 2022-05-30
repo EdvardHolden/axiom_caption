@@ -12,18 +12,16 @@ from multiprocessing import Pool
 import random
 from itertools import chain
 import numpy as np
-import socket
 
 from dataset import get_tokenizer
 from dataset import load_photo_features
+from enum_types import GenerationMode
 from model import get_model_params
-from model import load_model
-from evaluate import generate_step, get_new_trained_model, get_model
-from utils import get_sampler_parser, Context
+from evaluate import generate_step, get_model
+from parser import get_generate_parser
 import config
 
 import tensorflow as tf
-from enum import Enum
 
 random.seed(7)
 
@@ -34,90 +32,6 @@ TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 
 # Top dir of the result directory
 BASE_RES_DIR = "generated_problems/mizar_40/"
-
-# Enum type for the different generating modes
-class Mode(Enum):
-    CLEAN = "clean"
-    IDEAL = "ideal"
-    POSITIVE_AXIOMS = "positive_axioms"
-    CAPTION = "caption"
-    CAPTION_SINE = "caption_sine"
-    SINE = "sine"
-
-    def __str__(self):
-        return self.value
-
-
-def get_generate_parser():
-
-    parser = get_sampler_parser()
-    parser.add_argument(
-        "--mode",
-        default="caption",
-        type=Mode,
-        choices=list(Mode),
-        help="The mode used to generate the modified DeepMath problems",
-    )
-    parser.add_argument("--sine_sd", default=None)
-    parser.add_argument("--sine_st", default=None)
-    parser.add_argument("--result_dir", default=None, help="Root folder for writing generated problems")
-
-    parser.add_argument(
-        "--result_prefix", default=None, help="File name prefix of the result dir (if result_dir is not set)"
-    )
-
-    if socket.gethostname() == "kontor":
-        default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
-    else:
-        default_problem_dir = "/shareddata/home/holden/gnn-entailment-caption/nndata"
-    parser.add_argument(
-        "--problem_dir",
-        default=default_problem_dir,
-        help="Directory containing the base problems",
-    )
-    parser.add_argument(
-        "--extra_axioms",
-        default=None,
-        type=int,
-        help="Number of extra axioms to add to each generated problem is set.",
-    )
-
-    parser.add_argument(
-        "--feature_path",
-        default="data/embeddings/deepmath/graph_features_deepmath_all.pkl",
-        help="Path to the problem embeddings",
-    )
-    parser.add_argument(
-        "--model_dir",
-        default="experiments/hyperparam/initial/attention_False_axiom_order_length_batch_norm_False_dropout_rate_0.1_embedding_size_200_learning_rate_0.001_model_type_merge_inject_no_dense_units_32_no_rnn_units_32_normalize_True_rnn_type_lstm/",
-        help="Path to the model used in the captioning modes",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=max(os.cpu_count() - 2, 1),
-        help="Number of workers for multiprocessing (used in some modes)",
-    )
-    parser.add_argument(
-        "-d", "--debug", action="store_true", default=False, help="Limit generation to 100 instances"
-    )
-    parser.add_argument(
-        "--problem_format",
-        default="deepmath",
-        choices=["deepmath", "mptp"],
-        help="The problem format of the benchmark",
-    )
-
-    parser.add_argument(
-        "--context",
-        choices=list(Context),
-        type=Context,
-        default="axioms",
-        help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
-    )
-
-    return parser
-
 
 # Re pattern for finding each element in a clause
 ELEMENT_PATTERN = re.compile("([\(\),=&?<>|])")
@@ -373,11 +287,11 @@ def get_result_dir(
     result_dir = os.path.join(result_dir, str(mode))
 
     # Add sine parameters
-    if mode in [Mode.SINE, Mode.CAPTION_SINE]:
+    if mode in [GenerationMode.SINE, GenerationMode.CAPTION_SINE]:
         result_dir += f"_{sine_st}_{sine_sd}"
 
     # Add sampling method if caption model is in use
-    if mode in [Mode.CAPTION, Mode.CAPTION_SINE]:
+    if mode in [GenerationMode.CAPTION, GenerationMode.CAPTION_SINE]:
         # Add sampling method
         result_dir += f"_{sampler}"
 
@@ -457,10 +371,10 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
     prob = load_and_process_problem(prob_path, deepmath=deepmath)
 
     # If the problem should be ideal, we just remove the last half of the axioms are they are false
-    if mode is Mode.IDEAL:
+    if mode is GenerationMode.IDEAL:
         prob = prob[: len(prob) // 2 + 1]
 
-    elif mode is Mode.POSITIVE_AXIOMS:
+    elif mode is GenerationMode.POSITIVE_AXIOMS:
         # Remove conjecture
         prob = prob[1:]
         prob = prob[: len(prob) // 2]
@@ -551,7 +465,7 @@ def main():
         problem_paths = random.sample(problem_paths, k=5)
 
     # If captioning, load all the required resources
-    if args.mode in [Mode.CAPTION, Mode.CAPTION_SINE]:
+    if args.mode in [GenerationMode.CAPTION, GenerationMode.CAPTION_SINE]:
         problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
         # TODO need to modify this work with the new laoding of params
 
@@ -575,7 +489,7 @@ def main():
 
     # Compute the problems
     # In clean/ideal/sine mode we use a process pool for speedup
-    if args.mode in [Mode.CLEAN, Mode.IDEAL, Mode.SINE, Mode.POSITIVE_AXIOMS]:
+    if args.mode in [GenerationMode.CLEAN, GenerationMode.IDEAL, GenerationMode.SINE, GenerationMode.POSITIVE_AXIOMS]:
 
         star_args = [
             (prob_path, args.mode, args.sine_st, args.sine_sd, result_dir, extra_axioms, deepmath)
@@ -587,7 +501,7 @@ def main():
         pool.join()
 
     # Run other problem modes
-    elif args.mode in [Mode.CAPTION, Mode.CAPTION_SINE]:
+    elif args.mode in [GenerationMode.CAPTION, GenerationMode.CAPTION_SINE]:
 
         # Process each problem
         for prob_path in tqdm(problem_paths):
@@ -631,7 +545,7 @@ def main():
             clausified_problem = clausify(new_problem, sine_st=None, sine_sd=None)
 
             # Check if we should also include clauses from sine
-            if args.mode is Mode.CAPTION_SINE:
+            if args.mode is GenerationMode.CAPTION_SINE:
                 # Clausify the original problem with sine and add to set
                 sine_problem = clausify(
                     quote_number_in_problem(prob), sine_st=args.sine_st, sine_sd=args.sine_sd

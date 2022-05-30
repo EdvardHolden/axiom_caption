@@ -1,54 +1,14 @@
-import argparse
 import json
 from keras.preprocessing.text import Tokenizer
-from dataset import load_clean_descriptions, load_clean_conjectures, load_ids, get_tokenizer_save_path
 import config
 import os
-from enum import Enum
 import re
 from pathlib import Path
 
 
-def get_compute_tokenizer_parser():
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--id_file",
-        default=config.train_id_file,
-        help="File containing the ids used to construct the tokenizer",
-    )
-    parser.add_argument(
-        "--tokenizer_data_path",
-        default=config.proof_data,
-        help="File containing the proof|conjecture|text data",
-    )
-    parser.add_argument(
-        "--vocab_word_limit",
-        default=None,
-        type=int,
-        help="Number of top K words to include in the vocabulary. None for all words",
-    )
-    parser.add_argument(
-        "--tokenizer_mode",
-        default="axioms",
-        choices=["axioms", "words", "conj_char", "conj_word"],
-        help="Set preprocessing based on natural language, conjecture or axioms",
-    )
-    return parser
-
-
-class TokenizerMode(Enum):
-    """
-    Helper class for setting the parameters of the tokenizer.
-    """
-
-    AXIOMS = "axioms"
-    WORDS = "words"
-    CONJ_CHAR = "conj_char"
-    CONJ_WORD = "conj_word"
-
-    def __str__(self):
-        return self.value
+from dataset import load_clean_descriptions, load_clean_conjectures, load_ids, get_tokenizer_save_path
+from enum_types import TokenizerMode
+from parser import get_compute_tokenizer_parser
 
 
 def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
