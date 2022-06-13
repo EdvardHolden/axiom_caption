@@ -31,7 +31,7 @@ CLAUSIFIER = "~/bin/vclausify_rel"
 TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 
 # Top dir of the result directory
-BASE_RES_DIR = "generated_problems/mizar_40/"
+BASE_RES_DIR = "generated_problems/merged/"
 
 # Re pattern for finding each element in a clause
 ELEMENT_PATTERN = re.compile("([\(\),=&?<>|])")
@@ -76,6 +76,33 @@ def get_tmp_out_file():
     return filepath
 
 
+def include_axiom_files(problem_path, axioms, deepmath):
+
+    # By convention, inclusion happens in the first n lines only
+    no_axiom_files = 0
+    for n, ax in enumerate(axioms):
+        # break when there is nothing more to include
+        if ax[0] != "%" and not ax[:7] == "include":
+            break
+        no_axiom_files += 1
+
+        # Get hold of file
+        axiom_file_name = re.findall("\(.+?\)", ax)[0][2:-2]
+        axiom_file_path = os.path.join(os.path.dirname(problem_path), axiom_file_name)
+
+        # Extract the axioms
+        file_axioms = load_and_process_problem(axiom_file_path, deepmath=deepmath)
+
+        # Add axioms to the set
+        axioms.extend(file_axioms)
+
+    # Delete inclusion statements as the axioms are now included
+    for n in range(no_axiom_files):
+        del axioms[0]
+
+    return axioms
+
+
 def load_and_process_problem(path, deepmath=False):
     """
     Loads a problem from the text file into lists consiting of string of formulae.
@@ -83,6 +110,8 @@ def load_and_process_problem(path, deepmath=False):
     problems, the prefix of each formula is removed. It handles axiom includes
     by calling itself on the axiom file.
     """
+
+    # Refractor this whole function to make it much more readable
 
     # Load lines
     with open(path, "r") as f:
@@ -93,43 +122,17 @@ def load_and_process_problem(path, deepmath=False):
         if deepmath:
             conjecture = next(f)[2:].replace("axiom", "conjecture", 1).strip()
             formulae += [conjecture]
-        else:
-            # MPTP files start with a comment and a conjecture
-            _ = next(f)  # Comment
-            conjecture = next(f)  # Conjecture
-            assert "conjecture," in conjecture
-            formulae += [conjecture]
 
         # Load the axioms
         axioms = f.read().splitlines()
 
-        # If deepmath remove the label tag
-        if deepmath:
-            axioms = [ax[2:] for ax in axioms]
+    # If deepmath remove the pos/neg label tag
+    if deepmath:
+        axioms = [ax[2:] for ax in axioms]
 
-        # No inclusion of axioms files for the deepmath format
-        if not deepmath:
-            # By convention, inclusion happens in the first n lines only
-            no_axiom_files = 0
-            for n, ax in enumerate(axioms):
-                # If no inclusion
-                if not ax[:7] == "include":
-                    break
-                no_axiom_files += 1
-
-                # Get hold of file
-                axiom_file_name = re.findall("\(.+?\)", ax)[0][2:-2]
-                axiom_file_path = os.path.join(os.path.dirname(path), axiom_file_name)
-
-                # Extract the axioms
-                file_axioms = load_and_process_problem(axiom_file_path, deepmath=deepmath)
-
-                # Add axioms to the set
-                axioms.extend(file_axioms)
-
-            # Delete inclusion statements as the axioms are now included
-            for n in range(no_axiom_files):
-                del axioms[0]
+    # No inclusion of axioms files for the deepmath format
+    if not deepmath:
+        axioms = include_axiom_files(path, axioms, deepmath)
 
     # Add axioms to the set of problem formulae
     formulae.extend(axioms)
@@ -141,7 +144,7 @@ def load_and_process_problem(path, deepmath=False):
     return formulae
 
 
-def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name):
+def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name, skolem_prefix=b''):
 
     # Build sine string
     if sine_st is not None and sine_sd is not None:
@@ -174,6 +177,9 @@ def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name):
             print("Error: ", errs)
             print(cmd)
 
+    # Set a prefix for the Skolem functions in case the clausified problem is merged with other clauses
+    outs = re.sub(b'(sK\d+)', skolem_prefix + b'\\1', outs)
+
     # Try to delete the file to save memory
     try:
         os.remove(tmp_file)
@@ -184,11 +190,11 @@ def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name):
     return outs
 
 
-def clausify(prob, sine_st=None, sine_sd=None, prob_name=None):
+def clausify(prob, skolem_prefix, sine_st=None, sine_sd=None, prob_name=None):
 
     # Set clausifier mode and call clausifier
     cmd = f"{CLAUSIFIER} --mode clausify "
-    return run_clausifier(prob, cmd, sine_st, sine_sd, prob_name)
+    return run_clausifier(prob, cmd, sine_st, sine_sd, prob_name, skolem_prefix)
 
 
 def sine_process(prob, sine_st=None, sine_sd=None, prob_name=None):
@@ -391,7 +397,7 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
     prob = quote_number_in_problem(list(prob))
 
     # Run clean/sine mode and clausify the problem
-    clausified_problem = clausify(prob, sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
+    clausified_problem = clausify(prob, skolem_prefix=b'ST_', sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
 
     # Save to folder
     save_problem(result_dir, Path(prob_path).name, clausified_problem)
@@ -545,13 +551,13 @@ def main():
             new_problem = quote_number_in_problem(new_problem)
 
             # Clausify the problem
-            clausified_problem = clausify(new_problem, sine_st=None, sine_sd=None)
+            clausified_problem = clausify(new_problem, skolem_prefix=b"CAPTION_", sine_st=None, sine_sd=None)
 
             # Check if we should also include clauses from sine
             if args.mode is GenerationMode.CAPTION_SINE:
                 # Clausify the original problem with sine and add to set
                 sine_problem = clausify(
-                    quote_number_in_problem(prob), sine_st=args.sine_st, sine_sd=args.sine_sd
+                    quote_number_in_problem(prob), skolem_prefix=b"SINE_", sine_st=args.sine_st, sine_sd=args.sine_sd
                 )
                 # Combine the clausified axioms with the sine output
                 clausified_problem += b"\n" + sine_problem
