@@ -134,6 +134,9 @@ def load_and_process_problem(path, deepmath=False):
     # Add axioms to the set of problem formulae
     formulae.extend(axioms)
 
+    # Remove any newlines for consistency
+    formulae = [f.strip() for f in formulae]
+
     # Return the problem as a list of formulas
     return formulae
 
@@ -194,7 +197,7 @@ def sine_process(prob, sine_st=None, sine_sd=None, prob_name=None):
     # --output_axiom_names Preserve names of axioms from the problem file in the proof output
 
     # cmd = f"{CLAUSIFIER} --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 1 "
-    cmd = f"{CLAUSIFIER} --mode clausify --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 1 "
+    cmd = f"{CLAUSIFIER} --mode clausify --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 4 " # TODO changed timelimit from 1 to 4
     return run_clausifier(prob, cmd, sine_st, sine_sd, prob_name)
 
 
