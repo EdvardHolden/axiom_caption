@@ -25,7 +25,9 @@ def main():
         res1 = load_and_process_problem(os.path.join(MIZAR_PATH, prob), deepmath=False)
         res2 = load_and_process_problem(os.path.join(DEEPMATH_PATH, prob), deepmath=True)
         res = set(res1).union(set(res2))
-        res = set(res)
+        res = sorted(set(res))
+        # Remove any commented lines
+        res = [r for r in res if r[0] != '%']
 
         save_problem(DEST, prob, '\n'.join(res).encode())
 
