@@ -31,7 +31,8 @@ CLAUSIFIER = "~/bin/vclausify_rel"
 TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 
 # Top dir of the result directory
-BASE_RES_DIR = "generated_problems/merged/"
+#BASE_RES_DIR = "generated_problems/merged/"
+BASE_RES_DIR = "generated_problems/skolem/"
 
 # Re pattern for finding each element in a clause
 ELEMENT_PATTERN = re.compile("([\(\),=&?<>|])")
@@ -81,7 +82,12 @@ def include_axiom_files(problem_path, axioms, deepmath):
     # By convention, inclusion happens in the first n lines only
     no_axiom_files = 0
     for n, ax in enumerate(axioms):
-        # break when there is nothing more to include
+
+        # Skip commented lines
+        if ax[0] == "%":
+            continue
+
+        # Break when there is nothing more to include
         if ax[0] != "%" and not ax[:7] == "include":
             break
         no_axiom_files += 1
@@ -139,6 +145,15 @@ def load_and_process_problem(path, deepmath=False):
 
     # Remove any newlines for consistency
     formulae = [f.strip() for f in formulae]
+
+    # Need to ensure that the first entry is the conjecture
+    if not deepmath and 'conjecture' not in formulae[0]:
+        # Find the conecture and pusgh it to the front - Assumes only one FOF conjecture
+        for n, f in enumerate(formulae):
+            if 'conjecture' in f:
+                conjecture = formulae.pop(n)
+                break
+        formulae = [conjecture] + formulae
 
     # Return the problem as a list of formulas
     return formulae
@@ -397,7 +412,7 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
     prob = quote_number_in_problem(list(prob))
 
     # Run clean/sine mode and clausify the problem
-    clausified_problem = clausify(prob, skolem_prefix=b'ST_', sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
+    clausified_problem = clausify(prob, skolem_prefix=b'st_', sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
 
     # Save to folder
     save_problem(result_dir, Path(prob_path).name, clausified_problem)
@@ -516,6 +531,7 @@ def main():
         for prob_path in tqdm(problem_paths):
             prob = load_and_process_problem(prob_path, deepmath)
 
+            # TODO it is no longer known whether the first line is a conjecture!!
             # Split the problem into initial axioms and conjecture
             conjecture = prob[0]
             initial_axioms = set(prob[1:])
@@ -528,6 +544,8 @@ def main():
                 # These only affect the extraction of rare axioms
                 initial_axioms.update(extra_axioms)
 
+            # TODO make new function here?
+            # TODO main issue is that the conjecture is not added.
             # Extract axioms that are found in proof but cannot be predicted
             rare_axioms = extract_rare_axioms(tokenizer, initial_axioms)
             # Add the rare axioms to the problem
@@ -551,13 +569,13 @@ def main():
             new_problem = quote_number_in_problem(new_problem)
 
             # Clausify the problem
-            clausified_problem = clausify(new_problem, skolem_prefix=b"CAPTION_", sine_st=None, sine_sd=None)
+            clausified_problem = clausify(new_problem, skolem_prefix=b"caption_", sine_st=None, sine_sd=None)
 
             # Check if we should also include clauses from sine
             if args.mode is GenerationMode.CAPTION_SINE:
                 # Clausify the original problem with sine and add to set
                 sine_problem = clausify(
-                    quote_number_in_problem(prob), skolem_prefix=b"SINE_", sine_st=args.sine_st, sine_sd=args.sine_sd
+                    quote_number_in_problem(prob), skolem_prefix=b"sine_", sine_st=args.sine_st, sine_sd=args.sine_sd
                 )
                 # Combine the clausified axioms with the sine output
                 clausified_problem += b"\n" + sine_problem
