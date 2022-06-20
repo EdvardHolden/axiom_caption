@@ -29,7 +29,7 @@ from evaluate import jaccard_score_np, coverage_score_np
 from dataset import get_tokenizer
 from dataset import load_photo_features
 import config
-from utils import get_score_parser
+from parser import get_score_parser
 
 
 # Set the number of workers - only used in multiprocessing
