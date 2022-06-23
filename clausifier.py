@@ -181,7 +181,4 @@ def get_clauses_from_sine(prob, prob_path, sine_st, sine_sd, deepmath):
             if f"fof({clause_name.decode()}," in formula:  # Check for name - needs to be byte
                 result += [formula]
 
-    print("\n".join(result))
-    print(len(result))
-
     return result

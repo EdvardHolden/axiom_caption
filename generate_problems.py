@@ -24,7 +24,8 @@ random.seed(7)
 
 # Top dir of the result directory
 # BASE_RES_DIR = "generated_problems/merged/"
-BASE_RES_DIR = "generated_problems/skolem/"
+#BASE_RES_DIR = "generated_problems/skolem/"
+BASE_RES_DIR = "generated_problems/test/"
 
 
 def extract_rare_axioms(tokenizer, axioms):
@@ -327,8 +328,6 @@ def main():
             # Add the caption to the problem
             new_problem.update(axiom_caption)
 
-            # Ensure all numbers are quoted
-            new_problem = quote_number_in_problem(new_problem)
 
             # Check if we should also include clauses from sine
             if args.mode is GenerationMode.CAPTION_SINE:
@@ -338,6 +337,9 @@ def main():
 
                 # Combine the clausified axioms with the sine output
                 new_problem.update(sine_formulae)
+
+            # Ensure all numbers are quoted
+            new_problem = quote_number_in_problem(new_problem)
 
             # Clausify the problem - this is only done once and in the final step, hence no application of SInE
             clausified_problem = clausify(new_problem, skolem_prefix=None, sine_st=None, sine_sd=None)
