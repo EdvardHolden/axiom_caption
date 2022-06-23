@@ -6,7 +6,7 @@ from multiprocessing import Pool
 import random
 import numpy as np
 
-from clausifier import clausify, quote_number_in_problem
+from clausifier import clausify, quote_number_in_problem, get_clauses_from_sine
 from dataset import get_tokenizer
 from dataset import load_photo_features
 from enum_types import GenerationMode
@@ -296,7 +296,6 @@ def main():
         for prob_path in tqdm(problem_paths):
             prob = load_and_process_problem(prob_path, deepmath)
 
-            # TODO it is no longer known whether the first line is a conjecture!!
             # Split the problem into initial axioms and conjecture
             conjecture = prob[0]
             initial_axioms = set(prob[1:])
@@ -309,8 +308,6 @@ def main():
                 # These only affect the extraction of rare axioms
                 initial_axioms.update(extra_axioms)
 
-            # TODO make new function here?
-            # TODO main issue is that the conjecture is not added.
             # Extract axioms that are found in proof but cannot be predicted
             rare_axioms = extract_rare_axioms(tokenizer, initial_axioms)
             # Add the rare axioms to the problem
@@ -333,23 +330,18 @@ def main():
             # Ensure all numbers are quoted
             new_problem = quote_number_in_problem(new_problem)
 
-            # Clausify the problem
-            clausified_problem = clausify(new_problem, skolem_prefix=b"caption_", sine_st=None, sine_sd=None)
-
-            # TODO sort out the NOW excess clausifier calls
-            # Esnure set before making the fional string?
-
             # Check if we should also include clauses from sine
             if args.mode is GenerationMode.CAPTION_SINE:
-                # Clausify the original problem with sine and add to set
-                sine_problem = clausify(
-                    quote_number_in_problem(prob),
-                    skolem_prefix=b"sine_",
-                    sine_st=args.sine_st,
-                    sine_sd=args.sine_sd,
-                )
+
+                # Get the formulae output from SInE
+                sine_formulae = get_clauses_from_sine(prob, prob_path, args.sine_st, args.sine_sd, deepmath)
+
                 # Combine the clausified axioms with the sine output
-                clausified_problem += b"\n" + sine_problem
+                new_problem.update(sine_formulae)
+
+            # Clausify the problem - this is only done once and in the final step, hence no application of SInE
+            clausified_problem = clausify(new_problem, skolem_prefix=None, sine_st=None, sine_sd=None)
+
             # Save to folder
             save_problem(result_dir, Path(prob_path).name, clausified_problem)
 
