@@ -6,8 +6,7 @@ from pathlib import Path
 from tqdm import tqdm
 import os
 
-from generate_problems import load_and_process_problem, get_problems_from_path, save_problem
-
+from process_problem import save_problem, get_problems_from_path, load_and_process_problem
 
 DEEPMATH_PATH = '/shareddata/home/holden/gnn-entailment-caption/nndata/'
 MIZAR_PATH = '/shareddata/home/holden/mizar40_nndata/'
