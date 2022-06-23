@@ -38,7 +38,7 @@ def get_tmp_out_file():
     return filepath
 
 
-def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name, skolem_prefix=b""):
+def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name, skolem_prefix=None):
 
     # Build sine string
     if sine_st is not None and sine_sd is not None:
@@ -72,7 +72,8 @@ def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name, skolem_prefix=b""):
             print(cmd)
 
     # Set a prefix for the Skolem functions in case the clausified problem is merged with other clauses
-    outs = re.sub(b"(sK\d+)", skolem_prefix + b"\\1", outs)
+    if skolem_prefix is not None:
+        outs = re.sub(b"(sK\d+)", skolem_prefix + b"\\1", outs)
 
     # Try to delete the file to save memory
     try:
