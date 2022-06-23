@@ -19,18 +19,19 @@ import os
 from model import get_model_params
 from evaluate import get_model
 from generate_problems import (
-    get_problems_from_path,
-    load_and_process_problem,
-    sine_process,
     extract_rare_axioms,
     compute_caption,
 )
+from process_problem import get_problems_from_path, load_and_process_problem
+from clausifier import get_clause_names, get_clausified_names
 from evaluate import jaccard_score_np, coverage_score_np
 from dataset import get_tokenizer
 from dataset import load_photo_features
 import config
 from parser import get_score_parser
 
+# Regular expression used to find positive axioms in the deepmath dataset
+RE_POSITIVE_CLAUSE_NAME_PROBLEM = b"^\+ fof\((\w+), axiom"  # only positive axioms
 
 # Set the number of workers - only used in multiprocessing
 NO_WORKERS = os.cpu_count() - 1
@@ -41,26 +42,11 @@ else:
     DATASET_PATH = "/shareddata/home/holden/gnn-entailment-caption/nndata/"
 
 
-RE_CLAUSE_FILE = b"file\('(\/|\w)*',(\w*)\)\)."
-RE_POSITIVE_CLAUSE_NAME_PROBLEM = b"^\+ fof\((\w+), axiom"  # only positive axioms
-RE_CLAUSE_NAME_PROBLEM = "^fof\((\w+), axiom"
 # RE_CLAUSE_NAME_PROBLEM = "fof\((\w+), axiom"
-
-
-def get_sine_clause_names(prob):
-    res = re.findall(RE_CLAUSE_FILE, prob)
-    # res = re.findall(RE_CLAUSE_NAME_PROBLEM, prob)
-    res = [r[1] for r in res]
-    return res
 
 
 def get_positive_clause_names(prob):
     res = re.findall(RE_POSITIVE_CLAUSE_NAME_PROBLEM, prob, flags=re.MULTILINE)
-    return res
-
-
-def get_clause_names(prob):
-    res = re.findall(RE_CLAUSE_NAME_PROBLEM, prob, flags=re.MULTILINE)
     return res
 
 
@@ -69,13 +55,8 @@ def sine_score_problem(prob_path, sine_st, sine_sd, selected_axioms, deepmath):
     # Load the clauses from the problem
     prob = load_and_process_problem(prob_path, deepmath=deepmath)
 
-    # Clausify the problem - optionally with SInE
-    prob_processed = sine_process(prob, sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
-    del prob
-
-    # Extract the clause names from the sine processed problem
-    # Get processed clause names
-    processed_names = get_sine_clause_names(prob_processed)
+    processed_names = get_clausified_names(prob, sine_st, sine_sd, prob_path)
+    del prob  # Delete full problem reference to save space
 
     # Get the ground truth of names
     with open(DATASET_PATH + Path(prob_path).stem, "rb") as f:  # Need to open the original dataset file

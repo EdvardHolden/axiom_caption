@@ -1,18 +1,12 @@
-import glob
-import tempfile
-import atexit
-import shutil
 import os
-import re
-import subprocess
 from pathlib import Path
 from keras.preprocessing.text import text_to_word_sequence
 from tqdm import tqdm
 from multiprocessing import Pool
 import random
-from itertools import chain
 import numpy as np
 
+from clausifier import clausify, quote_number_in_problem, get_clauses_from_sine
 from dataset import get_tokenizer
 from dataset import load_photo_features
 from enum_types import GenerationMode
@@ -23,212 +17,15 @@ import config
 
 import tensorflow as tf
 
+from process_problem import save_problem, get_problems_from_path, load_and_process_problem
+
 random.seed(7)
 
-CLAUSIFIER = "~/bin/vclausify_rel"
-
-# Create temporary folder for storing clausifier results
-TMP_DIR = tempfile.mkdtemp(prefix="iprover_out_")
 
 # Top dir of the result directory
-#BASE_RES_DIR = "generated_problems/merged/"
-BASE_RES_DIR = "generated_problems/skolem/"
-
-# Re pattern for finding each element in a clause
-ELEMENT_PATTERN = re.compile("([\(\),=&?<>|])")
-
-# Find an quote all numbers appearing in a formula
-def quote_number_in_formula(formula):
-    # Split formula elements
-    elements = ELEMENT_PATTERN.split(formula)
-    # Quote all the digits FIXME cannot use shorthand
-    # elements = ["'" + e.strip() + "'" if e.strip().isdigit() else e for e in elements]
-    formula = []
-    digits = set()
-    for e in elements:
-        # Quote all digits
-        if e.strip().isdigit():
-            digit = e.strip()
-            # Add quoted digit
-            formula += "'" + digit + "'"
-            # Add to set of digits
-            digits.add(digit)
-        else:
-            # Add non-digit
-            formula += e
-
-    # Join the formula back up and return
-    return digits, "".join(formula)
-
-
-@atexit.register
-def clean_tmp_folder():
-    # Clean tmp folder
-    try:
-        shutil.rmtree(TMP_DIR)
-    except FileNotFoundError:
-        pass
-
-
-def get_tmp_out_file():
-    # Create the tmp file in the current tmp directory and return the file name
-    fd, filepath = tempfile.mkstemp(prefix=TMP_DIR + "/")
-    os.close(fd)  # Close the open file descriptor
-    return filepath
-
-
-def include_axiom_files(problem_path, axioms, deepmath):
-
-    # By convention, inclusion happens in the first n lines only
-    no_axiom_files = 0
-    for n, ax in enumerate(axioms):
-
-        # Skip commented lines
-        if ax[0] == "%":
-            continue
-
-        # Break when there is nothing more to include
-        if ax[0] != "%" and not ax[:7] == "include":
-            break
-        no_axiom_files += 1
-
-        # Get hold of file
-        axiom_file_name = re.findall("\(.+?\)", ax)[0][2:-2]
-        axiom_file_path = os.path.join(os.path.dirname(problem_path), axiom_file_name)
-
-        # Extract the axioms
-        file_axioms = load_and_process_problem(axiom_file_path, deepmath=deepmath)
-
-        # Add axioms to the set
-        axioms.extend(file_axioms)
-
-    # Delete inclusion statements as the axioms are now included
-    for n in range(no_axiom_files):
-        del axioms[0]
-
-    return axioms
-
-
-def load_and_process_problem(path, deepmath=False):
-    """
-    Loads a problem from the text file into lists consiting of string of formulae.
-    It currently assumes that each formulae is on a separate line. For deepmath
-    problems, the prefix of each formula is removed. It handles axiom includes
-    by calling itself on the axiom file.
-    """
-
-    # Refractor this whole function to make it much more readable
-
-    # Load lines
-    with open(path, "r") as f:
-        # List to store all the fof formulae
-        formulae = []
-
-        # If deepmath the first formula is a conjecture, load it and replace the axiom tag
-        if deepmath:
-            conjecture = next(f)[2:].replace("axiom", "conjecture", 1).strip()
-            formulae += [conjecture]
-
-        # Load the axioms
-        axioms = f.read().splitlines()
-
-    # If deepmath remove the pos/neg label tag
-    if deepmath:
-        axioms = [ax[2:] for ax in axioms]
-
-    # No inclusion of axioms files for the deepmath format
-    if not deepmath:
-        axioms = include_axiom_files(path, axioms, deepmath)
-
-    # Add axioms to the set of problem formulae
-    formulae.extend(axioms)
-
-    # Remove any newlines for consistency
-    formulae = [f.strip() for f in formulae]
-
-    # Need to ensure that the first entry is the conjecture
-    if not deepmath and 'conjecture' not in formulae[0]:
-        # Find the conecture and pusgh it to the front - Assumes only one FOF conjecture
-        for n, f in enumerate(formulae):
-            if 'conjecture' in f:
-                conjecture = formulae.pop(n)
-                break
-        formulae = [conjecture] + formulae
-
-    # Return the problem as a list of formulas
-    return formulae
-
-
-def run_clausifier(prob, cmd, sine_st, sine_sd, prob_name, skolem_prefix=b''):
-
-    # Build sine string
-    if sine_st is not None and sine_sd is not None:
-        cmd += f" -ss axioms -sd {sine_sd} -st {sine_st} "
-
-    # Put processed problem in a tmp file such that we can process it
-    tmp_file = get_tmp_out_file()
-    with open(tmp_file, "w") as f:
-        f.write("\n".join(prob))
-    # Add file path to cmd
-    cmd += f" {tmp_file} "
-
-    # Make subprocess
-    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    try:
-        outs, errs = proc.communicate(timeout=15)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        outs, errs = proc.communicate()
-
-    if "--print_clausifier_premises" in cmd:
-        # For some reason, the clausified problem could be added to stderr in this version
-        outs += b"\n" + errs
-        if proc.returncode != 0 and proc.returncode != 1:  # For some reason it returns 1 for this
-            print(f"Clausifier finished on {prob_name} with exitcode: {proc.returncode}")
-            print(cmd)
-    else:
-        if proc.returncode != 0 or errs != b"":
-            print(f"Clausifier finished on {prob_name} with exitcode: {proc.returncode}")
-            print("Error: ", errs)
-            print(cmd)
-
-    # Set a prefix for the Skolem functions in case the clausified problem is merged with other clauses
-    outs = re.sub(b'(sK\d+)', skolem_prefix + b'\\1', outs)
-
-    # Try to delete the file to save memory
-    try:
-        os.remove(tmp_file)
-        pass
-    except Exception as err:
-        print(f"Warning could not remove file {tmp_file} because: {err}")
-
-    return outs
-
-
-def clausify(prob, skolem_prefix, sine_st=None, sine_sd=None, prob_name=None):
-
-    # Set clausifier mode and call clausifier
-    cmd = f"{CLAUSIFIER} --mode clausify "
-    return run_clausifier(prob, cmd, sine_st, sine_sd, prob_name, skolem_prefix)
-
-
-def sine_process(prob, sine_st=None, sine_sd=None, prob_name=None):
-    # --proof (-p) Specifies whether proof (or similar e.g. model/saturation) will be output
-    # --print_clausifier_premises Output how the clausified problem was derived.
-    # --output_axiom_names Preserve names of axioms from the problem file in the proof output
-
-    # cmd = f"{CLAUSIFIER} --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 1 "
-    cmd = f"{CLAUSIFIER} --mode clausify --proof tptp --print_clausifier_premises on --output_axiom_names on --time_limit 4 " # TODO changed timelimit from 1 to 4
-    return run_clausifier(prob, cmd, sine_st, sine_sd, prob_name)
-
-
-def save_problem(dir_name, prob_name, prob):
-    try:
-        with open(os.path.join(dir_name, prob_name), "wb") as f:
-            f.write(prob)
-    except OSError as err:
-        print("Error: ", err)
-        print("Could not save generated problem for: ", prob_name)
+# BASE_RES_DIR = "generated_problems/merged/"
+#BASE_RES_DIR = "generated_problems/skolem/"
+BASE_RES_DIR = "generated_problems/test/"
 
 
 def extract_rare_axioms(tokenizer, axioms):
@@ -342,25 +139,6 @@ def get_result_dir(
     return result_dir
 
 
-def get_problems_from_path(problem_dir, limit=None, deepmath=True):
-
-    # Get path to all problems
-    problem_paths = glob.glob(os.path.join(problem_dir, "") + "*")
-    """
-    if deepmath:
-        problem_paths = glob.glob(os.path.join(problem_dir, "") + "*")
-    else:
-        problem_paths = glob.glob(os.path.join(problem_dir, "") + "*.p")
-    """
-
-    if limit is not None:
-        return_limit = min(limit, len(problem_paths))
-        problem_paths = problem_paths[:return_limit]
-    print(f"Number of problems {len(problem_paths)}")
-
-    return problem_paths
-
-
 def validate_input_arguments(args):
     if args.mode in ["sine", "caption_sine"]:
         if (
@@ -369,25 +147,6 @@ def validate_input_arguments(args):
             or (args.sine_sd is None and args.sine_st is None)
         ):
             raise ValueError("Both sd and st must be set for the SiNE mode")
-
-
-def quote_number_in_problem(prob):
-
-    # Quote numbers in each formula
-    numbers, prob = zip(*list(map(quote_number_in_formula, prob)))
-
-    # Get the set of numbers in the problem from each formulae
-    numbers = set(chain.from_iterable(numbers))
-
-    # If there are more than one number, add distinct number axiom
-    if len(numbers) > 1:
-        distinct_number_axiom = "fof(a1, axiom, $distinct({0})).".format(
-            ", ".join(["'" + n + "'" for n in sorted(numbers)])
-        )
-        # Add axiom to the tuple of formulae
-        prob += tuple([distinct_number_axiom])
-
-    return prob
 
 
 def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms, deepmath):
@@ -412,7 +171,9 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
     prob = quote_number_in_problem(list(prob))
 
     # Run clean/sine mode and clausify the problem
-    clausified_problem = clausify(prob, skolem_prefix=b'st_', sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem)
+    clausified_problem = clausify(
+        prob, skolem_prefix=b"st_", sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem
+    )
 
     # Save to folder
     save_problem(result_dir, Path(prob_path).name, clausified_problem)
@@ -481,11 +242,11 @@ def main():
     print("Writing results to: ", result_dir)
 
     # Get path to all problems
-    problem_paths = get_problems_from_path(args.problem_dir, deepmath=deepmath)
+    problem_paths = get_problems_from_path(args.problem_dir)
     if len(problem_paths) == 0:
         raise ValueError(f'Error please check problem dir path, found no problem at "{args.problem_dir}"')
     if args.debug:
-        print("Debug mode: Limiting to 100 problems")
+        print("Debug mode: Limiting to K random problems")
         problem_paths = random.sample(problem_paths, k=5)
 
     # If captioning, load all the required resources
@@ -513,7 +274,12 @@ def main():
 
     # Compute the problems
     # In clean/ideal/sine mode we use a process pool for speedup
-    if args.mode in [GenerationMode.CLEAN, GenerationMode.IDEAL, GenerationMode.SINE, GenerationMode.POSITIVE_AXIOMS]:
+    if args.mode in [
+        GenerationMode.CLEAN,
+        GenerationMode.IDEAL,
+        GenerationMode.SINE,
+        GenerationMode.POSITIVE_AXIOMS,
+    ]:
 
         star_args = [
             (prob_path, args.mode, args.sine_st, args.sine_sd, result_dir, extra_axioms, deepmath)
@@ -531,7 +297,6 @@ def main():
         for prob_path in tqdm(problem_paths):
             prob = load_and_process_problem(prob_path, deepmath)
 
-            # TODO it is no longer known whether the first line is a conjecture!!
             # Split the problem into initial axioms and conjecture
             conjecture = prob[0]
             initial_axioms = set(prob[1:])
@@ -544,8 +309,6 @@ def main():
                 # These only affect the extraction of rare axioms
                 initial_axioms.update(extra_axioms)
 
-            # TODO make new function here?
-            # TODO main issue is that the conjecture is not added.
             # Extract axioms that are found in proof but cannot be predicted
             rare_axioms = extract_rare_axioms(tokenizer, initial_axioms)
             # Add the rare axioms to the problem
@@ -565,20 +328,22 @@ def main():
             # Add the caption to the problem
             new_problem.update(axiom_caption)
 
-            # Ensure all numbers are quoted
-            new_problem = quote_number_in_problem(new_problem)
-
-            # Clausify the problem
-            clausified_problem = clausify(new_problem, skolem_prefix=b"caption_", sine_st=None, sine_sd=None)
 
             # Check if we should also include clauses from sine
             if args.mode is GenerationMode.CAPTION_SINE:
-                # Clausify the original problem with sine and add to set
-                sine_problem = clausify(
-                    quote_number_in_problem(prob), skolem_prefix=b"sine_", sine_st=args.sine_st, sine_sd=args.sine_sd
-                )
+
+                # Get the formulae output from SInE
+                sine_formulae = get_clauses_from_sine(prob, prob_path, args.sine_st, args.sine_sd, deepmath)
+
                 # Combine the clausified axioms with the sine output
-                clausified_problem += b"\n" + sine_problem
+                new_problem.update(sine_formulae)
+
+            # Ensure all numbers are quoted
+            new_problem = quote_number_in_problem(new_problem)
+
+            # Clausify the problem - this is only done once and in the final step, hence no application of SInE
+            clausified_problem = clausify(new_problem, skolem_prefix=None, sine_st=None, sine_sd=None)
+
             # Save to folder
             save_problem(result_dir, Path(prob_path).name, clausified_problem)
 
