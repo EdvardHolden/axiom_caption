@@ -165,3 +165,22 @@ def get_clausified_names(prob, sine_st, sine_sd, prob_path):
     # Extract the clause names from the sine processed problem
     processed_names = get_sine_clause_names(prob_processed)
     return processed_names
+
+
+def get_clauses_from_sine(prob, prob_path, sine_st, sine_sd, deepmath):
+
+    processed_names = get_clausified_names(prob, sine_st, sine_sd, prob_path)
+
+    # Quadtratic matching - not good
+    # Every clause starts with 'fof({NAME}' so we can just check for that
+    # Check for every selected clause
+    result = []
+    for clause_name in processed_names:
+        for formula in prob[1:]:  # Skip the conjecture
+            if f"fof({clause_name.decode()}," in formula:  # Check for name - needs to be byte
+                result += [formula]
+
+    print("\n".join(result))
+    print(len(result))
+
+    return result
