@@ -66,3 +66,15 @@ class TokenizerMode(Enum):
 
     def __str__(self):
         return self.value
+
+
+class OutputFormat(Enum):
+    """
+    Class for setting whether a newly generated problem should be clausified or be in the original format.
+    """
+
+    CLAUSIFIED = "clausified"
+    ORIGINAL = "original"
+
+    def __str__(self):
+        return self.value

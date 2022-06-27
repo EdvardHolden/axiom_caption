@@ -9,7 +9,7 @@ import numpy as np
 from clausifier import clausify, quote_number_in_problem, get_clauses_from_sine
 from dataset import get_tokenizer
 from dataset import load_photo_features
-from enum_types import GenerationMode
+from enum_types import GenerationMode, OutputFormat
 from model import get_model_params
 from evaluate import generate_step, get_model
 from parser import get_generate_parser
@@ -24,7 +24,7 @@ random.seed(7)
 
 # Top dir of the result directory
 # BASE_RES_DIR = "generated_problems/merged/"
-#BASE_RES_DIR = "generated_problems/skolem/"
+# BASE_RES_DIR = "generated_problems/skolem/"
 BASE_RES_DIR = "generated_problems/test/"
 
 
@@ -96,6 +96,7 @@ def get_result_dir(
     sampler_top_k,
     no_samples,
     max_length,
+    output_format,
     prefix=None,
     postfix=None,
 ):
@@ -104,8 +105,14 @@ def get_result_dir(
     if prefix is not None:
         result_dir += prefix
 
-    # Set the base destionation
-    result_dir = os.path.join(result_dir, str(mode))
+    # Set the base destionation - use empty path to get correct string format
+    result_dir = os.path.join(result_dir, "")
+
+    # Add output format
+    result_dir += f"output_{output_format}"
+
+    # Add the mode
+    result_dir += f"_{mode}"
 
     # Add sine parameters
     if mode in [GenerationMode.SINE, GenerationMode.CAPTION_SINE]:
@@ -149,7 +156,9 @@ def validate_input_arguments(args):
             raise ValueError("Both sd and st must be set for the SiNE mode")
 
 
-def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms, deepmath):
+def standard_process_problem(
+    prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms, deepmath, output_format
+):
     # Load problem formulae as a list
     prob = load_and_process_problem(prob_path, deepmath=deepmath)
 
@@ -163,6 +172,14 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
         prob = prob[: len(prob) // 2]
         # Only keep positive axioms (first half)
 
+    elif mode is GenerationMode.SINE:
+        # Keep the conjecture
+        conj = prob[0]
+        # Process with SInE
+        prob = get_clauses_from_sine(prob, prob_path, sine_st, sine_sd, deepmath)
+        # Add conjecture
+        prob += [conj]
+
     # Add extra axioms if provided
     if len(extra_axioms) > 0:
         prob = set(prob).union(set(extra_axioms))
@@ -170,13 +187,14 @@ def standard_process_problem(prob_path, mode, sine_st, sine_sd, result_dir, extr
     # Ensure all numbers are quoted
     prob = quote_number_in_problem(list(prob))
 
-    # Run clean/sine mode and clausify the problem
-    clausified_problem = clausify(
-        prob, skolem_prefix=b"st_", sine_st=sine_st, sine_sd=sine_sd, prob_name=Path(prob_path).stem
-    )
+    # Clausify the problem isset
+    if output_format is OutputFormat.CLAUSIFIED:
+        prob = clausify(prob, skolem_prefix=None, sine_st=None, sine_sd=None, prob_name=Path(prob_path).stem)
+    elif output_format is output_format.ORIGINAL:
+        prob = "\n".join(prob).encode()
 
     # Save to folder
-    save_problem(result_dir, Path(prob_path).name, clausified_problem)
+    save_problem(result_dir, Path(prob_path).name, prob)
 
 
 def get_extra_axioms(problem_paths, no_axioms, deepmath):
@@ -237,6 +255,7 @@ def main():
             args.sampler_top_k,
             no_samples,
             args.max_length,
+            args.output_format,
             args.result_prefix,
         )
     print("Writing results to: ", result_dir)
@@ -282,7 +301,16 @@ def main():
     ]:
 
         star_args = [
-            (prob_path, args.mode, args.sine_st, args.sine_sd, result_dir, extra_axioms, deepmath)
+            (
+                prob_path,
+                args.mode,
+                args.sine_st,
+                args.sine_sd,
+                result_dir,
+                extra_axioms,
+                deepmath,
+                args.output_format,
+            )
             for prob_path in problem_paths
         ]
         pool = Pool(args.workers)
@@ -328,7 +356,6 @@ def main():
             # Add the caption to the problem
             new_problem.update(axiom_caption)
 
-
             # Check if we should also include clauses from sine
             if args.mode is GenerationMode.CAPTION_SINE:
 
@@ -341,11 +368,15 @@ def main():
             # Ensure all numbers are quoted
             new_problem = quote_number_in_problem(new_problem)
 
-            # Clausify the problem - this is only done once and in the final step, hence no application of SInE
-            clausified_problem = clausify(new_problem, skolem_prefix=None, sine_st=None, sine_sd=None)
+            # Only clausify the problem if set
+            if args.output_format is OutputFormat.CLAUSIFIED:
+                # Clausify the problem - this is only done once and in the final step, hence no application of SInE
+                prob = clausify(new_problem, skolem_prefix=None, sine_st=None, sine_sd=None)
+            elif args.output_format is OutputFormat.ORIGINAL:
+                prob = "\n".join(prob).encode()
 
             # Save to folder
-            save_problem(result_dir, Path(prob_path).name, clausified_problem)
+            save_problem(result_dir, Path(prob_path).name, prob)
 
     else:
         raise ValueError(f"Unrecognised mode '{args.mode}'")

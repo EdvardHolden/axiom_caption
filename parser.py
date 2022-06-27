@@ -2,7 +2,7 @@ import argparse
 import socket
 import os
 
-from enum_types import Context, GenerationMode
+from enum_types import Context, GenerationMode, OutputFormat
 import config
 
 
@@ -173,6 +173,14 @@ def get_generate_parser():
     parser.add_argument("--sine_sd", default=None)
     parser.add_argument("--sine_st", default=None)
     parser.add_argument("--result_dir", default=None, help="Root folder for writing generated problems")
+
+    parser.add_argument(
+        "--output_format",
+        default="clausified",
+        choices=list(OutputFormat),
+        type=OutputFormat,
+        help="Whether to clausify the final output problems",
+    )
 
     parser.add_argument(
         "--result_prefix", default=None, help="File name prefix of the result dir (if result_dir is not set)"
