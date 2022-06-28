@@ -98,10 +98,14 @@ def load_and_process_problem(path, deepmath=False):
     if not deepmath and "conjecture" not in formulae[0]:
         # Find the conecture and pusgh it to the front - Assumes only one FOF conjecture
         for n, f in enumerate(formulae):
+            # Positive axioms does not necessairly have a conejcture
+            conjecture = None
+
             if "conjecture" in f:
                 conjecture = formulae.pop(n)
                 break
-        formulae = [conjecture] + formulae
+        if conjecture is not None:
+            formulae = [conjecture] + formulae
 
     # Return the problem as a list of formulas
     return formulae
