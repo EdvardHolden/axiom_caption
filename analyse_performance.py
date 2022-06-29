@@ -1,13 +1,14 @@
 import os
 from pathlib import Path
 import pandas as pd
+import numpy as np
 
 from process_problem import load_and_process_problem, get_problems_from_path
 from evaluate import jaccard_score_np, coverage_score_np
 
 import sys
 sys.path.insert(0,'online')
-from online.get_scores import get_problem_stats, get_solved_problem_name_time
+from online.get_scores import get_solved_problem_name_time
 
 
 # The direcotry to the proof axioms
@@ -69,15 +70,21 @@ def run_initial_analysis(exp_id, problem_dir):
     # Merge dictionaries
     data = {}
     for prob_name in metrics:
-        # Perfromance only contains solved entries
+        # Performance only contains solved entries
         if prob_name in performance:
             data[prob_name] = {**metrics[prob_name], **performance[prob_name]}
+        else:
+            data[prob_name] = metrics[prob_name]
 
     # Convert to pandas - problem names used as index
     df = pd.DataFrame.from_dict(data).T
 
     # Report the statistics
-    print(df.describe())
+    print('## Solved partition')
+    print(df.loc[df["solved_time"].notnull()].describe())
+    print()
+    print('## Unsolved partition')
+    print(df.loc[df["solved_time"].isna()].describe())
 
 
 def get_performance_stats(exp_id):
@@ -100,6 +107,7 @@ def main():
     for exp_id, problem_dir in CONFIGS.items():
         print(f"## {problem_dir}")
         run_initial_analysis(exp_id, problem_dir)
+        print()
         print()
 
 
