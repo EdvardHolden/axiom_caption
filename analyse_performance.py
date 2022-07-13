@@ -24,6 +24,9 @@ CONFIGS = {115498: 'generated_problems/analysis/output_original_ideal', # Upper 
            #115633: 'generated_problems/analysis/output_original_caption_sine_1_1/', TODO need to recompute these problems
            115634: 'generated_problems/analysis/output_original_caption_sine_3_0/'}
 
+# Base config used to compute the ratio of the problem selected (output_original_clean -> clean)
+BASE_CONFIG = 'clean'
+
 
 # Make sure the result are not lost due to being truncated
 pd.set_option('display.max_rows', None)
@@ -46,6 +49,7 @@ if args.debug:
     LIMIT = 100
 else:
     LIMIT = None
+
 
 def load_generated_problem(problem_path):
 
@@ -92,42 +96,17 @@ def get_metrics(problem_paths):
     return results
 
 
+def analyse_partition_metrics(config, df):
 
-
-
-# TODO utterly stupid variabel naming!
-def analyse_problem_performance(exp_id, problem_dir, solved_set):
-
-    # Load the problems from path
-    problems = get_problems_from_path(problem_dir, limit=LIMIT, verbose=0)
-
-    # Get solved status and time
-    performance = get_performance_stats(exp_id)
-
-    # Get length, jaccard and coverage score of each problem
-    metrics = get_metrics(problems)
-
-    # Merge dictionaries
-    data = {}
-    for prob_name in metrics:
-        # Skip problem if solved_set is provided and it is not included in the set
-        if solved_set is not None and prob_name not in solved_set:
-            continue
-        # Performance only contains solved entries
-        if prob_name in performance:
-            data[prob_name] = {**metrics[prob_name], **performance[prob_name]}
-        else:
-            data[prob_name] = metrics[prob_name]
-
-    # Convert to pandas - problem names used as index
-    df = pd.DataFrame.from_dict(data).T
+    query_columns = [f"{config}_jaccard", f"{config}_coverage", f"{config}_length", f"{config}_ratio", f"{config}_time"]
 
     # Report the statistics
+    solved = df.loc[df[f"{config}_solved"]].index
     print('## Solved partition')
-    print(df.loc[df["solved_time"].notnull()].describe())
+    print(df[query_columns].loc[solved].describe())
     print()
     print('## Unsolved partition')
-    print(df.loc[df["solved_time"].isna()].describe())
+    print(df[query_columns[:-1]].loc[set(df.index) - set(solved)].describe())
 
 
 def get_performance_stats(exp_id):
@@ -141,13 +120,10 @@ def get_performance_stats(exp_id):
     return res
 
 
-def run_initial_analysis(solved_set):
-    print("# # # # # # # # # # # # #")
-    print("# # Initial Analysis  # #")
-    print()
-    for exp_id, problem_dir in CONFIGS.items():
-        print(f"## ## {problem_dir}")
-        analyse_problem_performance(exp_id, problem_dir, solved_set)
+def run_partition_analysis(configs, df):
+    for conf in configs:
+        print(f"## ## {conf}")
+        analyse_partition_metrics(conf, df)
         print()
         print()
 
@@ -155,15 +131,17 @@ def run_initial_analysis(solved_set):
 def get_performance_coverage_data(CONFIGS, common_substring=''):
 
     result = {}
+    configs = []
 
     # Want config_coverage, config_solved
     for exp_id, problem_dir in CONFIGS.items():
 
         conf = Path(problem_dir).stem.replace(common_substring, '')
+        configs += [conf]
 
         # Load the problems from path
         problems = get_problems_from_path(problem_dir, limit=LIMIT, verbose=0)
-        print('# Number of problems found: ', conf, len(problems))
+        print('# Number of problems found:', conf, len(problems))
 
         # Initialise - if needed
         if len(result) == 0:
@@ -183,29 +161,38 @@ def get_performance_coverage_data(CONFIGS, common_substring=''):
 
             if name in performance:
                 result[name].update({f"{conf}_solved": True})
-                result[name].update({f"{conf}_time": performance[name]["solved_time"]})
+                result[name].update({f"{conf}_time": float(performance[name]["solved_time"])})
             else:
                 result[name].update({f"{conf}_solved": False})
 
     df = pd.DataFrame.from_dict(result).T
 
-    return df
+    # Compute the ratio of selected formulae vs original formulae (slightly skewed for caption)
+    for conf in configs:
+        df[f'{conf}_ratio'] = df[f'{conf}_length'].values / df[f'{BASE_CONFIG}_length'].values
+
+    # Convert to "best" possible types - avoids representing everything as objects, which messes up .describe()
+    df = df.convert_dtypes()
+
+    return configs, df
 
 
 def print_avg_stats(df, base, other):
 
-    print(f"Avg coverage base  :", "{0:.2f}".format(np.average(df[f"{base}_coverage"])))
-    print(f"Avg jaccard  base  :", "{0:.2f}".format(np.average(df[f"{base}_jaccard"])))
-    print(f"Avg length   base  :", "{0:.2f}".format(np.average(df[f"{base}_length"])))
-    print(f"Avg coverage other :", "{0:.2f}".format(np.average(df[f"{other}_coverage"])))
-    print(f"Avg jaccard  other :", "{0:.2f}".format(np.average(df[f"{other}_jaccard"])))
-    print(f"Avg length   other :", "{0:.2f}".format(np.average(df[f"{other}_length"])))
+    print(f"Avg coverage base  : {np.average(df[f'{base}_coverage']):.2f}")
+    print(f"Avg coverage base  : {np.average(df[f'{base}_coverage']):.2f}")
+    print(f"Avg jaccard  base  : {np.average(df[f'{base}_jaccard']):.2f}")
+    print(f"Avg length   base  : {np.average(df[f'{base}_length']):.2f}")
+    print(f"Avg ratio    base  : {np.average(df[f'{base}_ratio']):.2f}")
+    print()
+    print(f"Avg coverage other : {np.average(df[f'{other}_coverage']):.2f}")
+    print(f"Avg jaccard  other : {np.average(df[f'{other}_jaccard']):.2f}")
+    print(f"Avg length   other : {np.average(df[f'{other}_length']):.2f}")
+    print(f"Avg ratio    other : {np.average(df[f'{other}_ratio']):.2f}")
 
 
 def print_detailed_overview(df, base, other):
 
-    #print(df[[f"{base}_solved", f"{base}_coverage", f"{base}_jaccard", f"{base}_length",
-    #          f"{other}_solved", f"{other}_coverage", f"{other}_jaccard", f"{other}_length"]])
     print(df[[f"{base}_coverage", f"{base}_jaccard", f"{base}_length",
               f"{other}_coverage", f"{other}_jaccard", f"{other}_length"]])
 
@@ -250,54 +237,102 @@ def compare_versions(df, base, other):
     print()
 
 
-def get_solved_set():
+def compute_solved_set(configs, df):
+
+    solved_all = set()
+    solved_method = set()
+
+    for conf in configs:
+        print(f"# Problems solved by {conf}: {sum(df[conf + '_solved'])}")
+
+        # Add solved problems to set
+        solved_all.update(df.loc[df[conf + "_solved"]].index)
+
+        if "ideal" not in conf:
+            solved_method.update(df.loc[df[conf + "_solved"]].index)
+
+    print()
+    print("# Number of problems solved in union:", len(solved_all))
+    print("# Number of problems solved in union (excluding ideal):", len(solved_method))
+    print()
+
+    # We return the set of problems excluding ideal
+    return solved_method
+
+def compute_problems_lost_by_combination(df, print_df=False):
+
+    # Compute the set difference
+    diff_problems = (set(df.loc[df['sine_3_0_solved']].index).union(set(df.loc[df['caption_solved']].index))).difference(set(df.loc[df['caption_sine_3_0_solved']].index))
+
+    print("Number of problems lost by combining sine and captioning:", len(diff_problems))
+    if len(diff_problems) > 0 and print_df:
+        print(df[['caption_sine_3_0_coverage', 'caption_sine_3_0_jaccard',
+                  'sine_3_0_solved', 'sine_3_0_coverage', 'sine_3_0_jaccard',
+                  'caption_solved', 'caption_coverage', 'caption_jaccard']].loc[diff_problems])
+
+
+def _get_solved_set(df, configs):
+
+    # Compute set of solved problems
     solved = set()
-    for exp, prob_dir in CONFIGS.items():
-        if "ideal" not in prob_dir:
-            print(prob_dir)
-            res = get_solved_problem_name(exp)
-            solved.update([r[0] for r in res])
-        else:
-            print("!! Skipping \"ideal\" when computing solved set")
-
-    if LIMIT is not None:
-        # Get problems from last path to truncate
-        problems = get_problems_from_path(prob_dir, limit=LIMIT, verbose=0)
-        solved = solved.intersection(set([Path(p).stem for p in problems]))
-
-    print("## Number of problems solved in union: ", len(solved))
+    for conf in configs:
+        solved.update(df.loc[df[f"{conf}_solved"]].index)
     return solved
+
+
+def compute_uniquely_solved(df, configs):
+
+    for conf in configs:
+        solved_others = _get_solved_set(df, set(configs).difference(set([conf])))
+        unique = set(df.loc[df[f"{conf}_solved"]].index).difference(solved_others)
+        print(f"{conf:16} : {len(unique)}")
+
 
 def main():
 
-    print('# ', args)
-
-    # Get the problems solved by all configurations for reference
-    solved_set = get_solved_set()
-    if not args.remove_unsolved:
-        # Do not keep the reference if not used
-        solved_set = None
+    print('#', args)
     print()
 
-    # Run some basic analysis on solved/unsolved for metrics of each configuration
-    run_initial_analysis(solved_set)
+    # Get the data needed
+    configs, df = get_performance_coverage_data(CONFIGS, common_substring='output_original_')
 
-    ## Specific analysis
+    # Run some basic analysis on solved/unsolved for metrics of each configuration
+    print()
+    print("# # # # # # # # # # # # #")
+    print("# # General Analysis  # #")
+    print()
+    # Compute the solved set
+    solved_set = compute_solved_set(configs, df)
+
+    # Compute problems that are inquely solved by a config
+    print("# Uniquely solved overall")
+    compute_uniquely_solved(df, configs)
+    print()
+    print("# Uniquely solved excluding ideal")
+    compute_uniquely_solved(df, [conf for conf in configs if 'ideal' not in conf])
+    print()
+
+
+    # Print stats of the solved/unsolved partition of each config
+    print()
+    print("# # # # # # # # # # # # #")
+    print("# # Partition Analysis  # #")
+    print()
+    # Check if we should limit the analysis to the set f solved problems (excluding ideal)
+    if args.remove_unsolved:
+        print("!! Limiting analysis to problems solved by at least one config other than \"ideal\"")
+        df = df.loc[solved_set]
+
+    run_partition_analysis(configs, df)
+
+    # Specific analysis
     print('\n\n')
     print("# # # # # # # # # # # # #")
     print("# # Specific Analysis # #")
 
-    # Get the data needed
-    df = get_performance_coverage_data(CONFIGS, common_substring='output_original_')
 
-    # Check that the best configuration (e.g. cap_sine_3_0) is a superset of its combination
-    #diff_problems = set(df.loc[df['caption_sine_3_0_solved']].index).difference(set(df.loc[df['sine_3_0_solved']].index).union(set(df.loc[df['caption_solved']].index)))
-    diff_problems = (set(df.loc[df['sine_3_0_solved']].index).union(set(df.loc[df['caption_solved']].index))).difference(set(df.loc[df['caption_sine_3_0_solved']].index))
-    print("Number of problems lost by combining sine and captioning:", len(diff_problems))
-    if len(diff_problems) > 0 and args.print_df:
-        print(df[['caption_sine_3_0_coverage', 'caption_sine_3_0_jaccard',
-                  'sine_3_0_solved', 'sine_3_0_coverage', 'sine_3_0_jaccard',
-                  'caption_solved', 'caption_coverage', 'caption_jaccard']].loc[diff_problems])
+    # Compute problem loss of combining caption and sine_3_0
+    compute_problems_lost_by_combination(df, print_df=args.print_df)
 
     # Compare the experiments
     print()
@@ -305,7 +340,6 @@ def main():
     print()
     compare_versions(df, 'sine_3_0', 'sine_1_1')
     print()
-    #'''
     compare_versions(df, 'caption', 'sine_3_0')
     print()
     compare_versions(df, 'sine_3_0', 'caption')
@@ -313,8 +347,6 @@ def main():
     compare_versions(df, 'caption_sine_3_0', 'sine_3_0')
     print()
     compare_versions(df, 'caption_sine_3_0', 'caption')
-    #'''
-
 
 
 if __name__ == "__main__":
