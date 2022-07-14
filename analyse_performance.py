@@ -3,20 +3,21 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import argparse
+from keras.preprocessing.text import text_to_word_sequence
 
 from process_problem import load_and_process_problem, get_problems_from_path
 from evaluate import jaccard_score_np, coverage_score_np
+from dataset import load_ids, load_tokenizer
 
 import sys
 sys.path.insert(0,'online')
-from online.get_scores import get_solved_problem_name_time, get_solved_problem_name
+from online.get_scores import get_solved_problem_name_time
 
 
 # The direcotry to the proof axioms
 PROOF_AXIOMS = 'generated_problems/analysis/output_original_positive_axioms/'
 
 CONFIGS = {115498: 'generated_problems/analysis/output_original_ideal', # Upper bound
-           #115554: 'generated_problems/analysis/output_original_clean/', # Raw merged problem
            115507: 'generated_problems/analysis/output_original_clean/', # Raw merged problem
            115555: 'generated_problems/analysis/output_original_sine_1_1/',
            115556: 'generated_problems/analysis/output_original_sine_3_0/',
@@ -26,6 +27,12 @@ CONFIGS = {115498: 'generated_problems/analysis/output_original_ideal', # Upper 
 
 # Base config used to compute the ratio of the problem selected (output_original_clean -> clean)
 BASE_CONFIG = 'clean'
+
+# Path to the problems in the training set
+TRAINING_SET_PATH = 'data/deepmath/train.txt'
+
+# Path to tokenizer used in the training context
+TOKENIZER_PATH = 'data/deepmath/tokenizer_axioms_train_6000.json'
 
 
 # Make sure the result are not lost due to being truncated
@@ -98,7 +105,12 @@ def get_metrics(problem_paths):
 
 def analyse_partition_metrics(config, df):
 
-    query_columns = [f"{config}_jaccard", f"{config}_coverage", f"{config}_length", f"{config}_ratio", f"{config}_time"]
+    query_columns = [f"{config}_jaccard", f"{config}_coverage", f"{config}_length", f"{config}_ratio"]
+
+    if 'caption' in config:
+        query_columns += ["tokenizer_rare", "tokenizer_predictable"]
+
+    query_columns += [f"{config}_time"]
 
     # Report the statistics
     solved = df.loc[df[f"{config}_solved"]].index
@@ -126,6 +138,72 @@ def run_partition_analysis(configs, df):
         analyse_partition_metrics(conf, df)
         print()
         print()
+
+
+def get_in_training_set_metric(result):
+
+    train_ids = load_ids(TRAINING_SET_PATH)
+    for prob in result:
+        if prob in train_ids:
+            result[prob].update({"in_training": True})
+        else:
+            result[prob].update({"in_training": False})
+
+    return result
+
+
+def compute_rare_proportion(result, tokenizer, proof):
+
+    no_rare = 0
+    # If the clause is known to use, but not in the top words, it is positively rare
+    for formula in proof:
+        i = tokenizer.word_index.get(formula)
+        if i is not None and i >= tokenizer.num_words:
+            no_rare += 1
+
+    return no_rare / len(proof)
+
+
+def compute_predictable_proportion(result, tokenizer, proof):
+
+    no_predictable = 0
+    # If the clause is known to use, but not in the top words, it is positively rare
+    for formula in proof:
+        i = tokenizer.word_index.get(formula)
+        if i is not None and i < tokenizer.num_words:
+            no_predictable += 1
+
+    return no_predictable / len(proof)
+
+
+def get_tokenizer_metrics(result):
+    '''
+    Compute what proportion of the proofs that are covered by the set tokenizer
+    '''
+
+    # Load tokenizer from path
+    tokenizer, _ = load_tokenizer(TOKENIZER_PATH)
+
+    for prob in result:
+
+        # Load proof
+        proof = load_proof_axioms(prob)
+
+        # Process the formulae
+        proof = [text_to_word_sequence(formula, tokenizer.filters, tokenizer.lower, tokenizer.split)[0] for formula in proof]
+
+        # Compute rare proportion
+        rare = compute_rare_proportion(proof, tokenizer, proof)
+
+        # Compute predictable proprtion
+        predictable = compute_predictable_proportion(proof, tokenizer, proof)
+
+        # Update stats
+        result[prob].update({"tokenizer_rare": rare,
+                             "tokenizer_predictable": predictable})
+
+    return result
+
 
 
 def get_performance_coverage_data(CONFIGS, common_substring=''):
@@ -165,6 +243,13 @@ def get_performance_coverage_data(CONFIGS, common_substring=''):
             else:
                 result[name].update({f"{conf}_solved": False})
 
+    # For each problem, load the proof and compute the tokenizer related metrics
+    result = get_tokenizer_metrics(result)
+
+    # For each problem, check whether it was in the training set or not
+    result = get_in_training_set_metric(result)
+
+    # Create the dataframe from the dictionaries
     df = pd.DataFrame.from_dict(result).T
 
     # Compute the ratio of selected formulae vs original formulae (slightly skewed for caption)
@@ -179,16 +264,23 @@ def get_performance_coverage_data(CONFIGS, common_substring=''):
 
 def print_avg_stats(df, base, other):
 
-    print(f"Avg coverage base  : {np.average(df[f'{base}_coverage']):.2f}")
-    print(f"Avg coverage base  : {np.average(df[f'{base}_coverage']):.2f}")
-    print(f"Avg jaccard  base  : {np.average(df[f'{base}_jaccard']):.2f}")
-    print(f"Avg length   base  : {np.average(df[f'{base}_length']):.2f}")
-    print(f"Avg ratio    base  : {np.average(df[f'{base}_ratio']):.2f}")
+    print(f"Avg coverage base : {np.average(df[f'{base}_coverage']):.2f}")
+    print(f"Avg coverage base : {np.average(df[f'{base}_coverage']):.2f}")
+    print(f"Avg jaccard  base : {np.average(df[f'{base}_jaccard']):.2f}")
+    print(f"Avg length   base : {np.average(df[f'{base}_length']):.2f}")
+    print(f"Avg ratio    base : {np.average(df[f'{base}_ratio']):.2f}")
     print()
     print(f"Avg coverage other : {np.average(df[f'{other}_coverage']):.2f}")
     print(f"Avg jaccard  other : {np.average(df[f'{other}_jaccard']):.2f}")
     print(f"Avg length   other : {np.average(df[f'{other}_length']):.2f}")
     print(f"Avg ratio    other : {np.average(df[f'{other}_ratio']):.2f}")
+
+    if 'caption' in base or 'caption' in other:
+        print()
+        print(f"Avg tokenizer rare : {np.average(df['tokenizer_rare']):.2f}")
+        print(f"Avg predictable    : {np.average(df['tokenizer_predictable']):.2f}")
+        print(f"Ratio of training  : {sum(df['in_training']) / len(df):.2f}")
+
 
 
 def print_detailed_overview(df, base, other):
@@ -265,10 +357,13 @@ def compute_problems_lost_by_combination(df, print_df=False):
     diff_problems = (set(df.loc[df['sine_3_0_solved']].index).union(set(df.loc[df['caption_solved']].index))).difference(set(df.loc[df['caption_sine_3_0_solved']].index))
 
     print("Number of problems lost by combining sine and captioning:", len(diff_problems))
+    query_columns = ['caption_sine_3_0_coverage', 'caption_sine_3_0_jaccard', 'sine_3_0_solved', 'sine_3_0_coverage', 'sine_3_0_jaccard', 'caption_solved', 'caption_coverage', 'caption_jaccard']
+
+    # Report general stats of the lost problems (not solved/unsolved?)
+    print(df[[qc for qc in query_columns if '_solved' not in qc]].loc[diff_problems].describe())
+
     if len(diff_problems) > 0 and print_df:
-        print(df[['caption_sine_3_0_coverage', 'caption_sine_3_0_jaccard',
-                  'sine_3_0_solved', 'sine_3_0_coverage', 'sine_3_0_jaccard',
-                  'caption_solved', 'caption_coverage', 'caption_jaccard']].loc[diff_problems])
+        print(df[query_columns].loc[diff_problems])
 
 
 def _get_solved_set(df, configs):
