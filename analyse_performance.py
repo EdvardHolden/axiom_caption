@@ -420,6 +420,7 @@ def check_combined_solved(df):
         print(df[query_columns].describe())
 
         if args.print_df:
+            print()
             print(df[query_columns])
 
 
