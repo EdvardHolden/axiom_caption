@@ -16,6 +16,7 @@ from online.get_scores import get_solved_problem_name_time
 
 # The direcotry to the proof axioms
 PROOF_AXIOMS = 'generated_problems/analysis/output_original_positive_axioms/'
+PROOF_AXIOMS_UNQUOTED = 'generated_problems/analysis/output_original_unquoted_positive_axioms/'
 
 CONFIGS = {115498: 'generated_problems/analysis/output_original_ideal', # Upper bound
            115507: 'generated_problems/analysis/output_original_clean/', # Raw merged problem
@@ -73,11 +74,14 @@ def load_generated_problem(problem_path):
     return prob
 
 
-def load_proof_axioms(problem_name):
+def load_proof_axioms(problem_name, unquoted=False):
 
     # Load proof axioms
-    proof = load_and_process_problem(os.path.join(PROOF_AXIOMS, problem_name), deepmath=False)
-    # Hack: check if quoting / $distinct number axioms is added. if so, remove ut
+    if unquoted:
+        proof = load_and_process_problem(os.path.join(PROOF_AXIOMS_UNQUOTED, problem_name), deepmath=False)
+    else:
+        proof = load_and_process_problem(os.path.join(PROOF_AXIOMS, problem_name), deepmath=False)
+    # Hack: check if quoting / $distinct number axioms is added. if so, remove it
     if "a1, axiom, $distinct" in proof[-1]:
         proof = proof[:-1]
 
@@ -152,7 +156,7 @@ def get_in_training_set_metric(result):
     return result
 
 
-def compute_rare_proportion(result, tokenizer, proof):
+def compute_rare_proportion(tokenizer, proof):
 
     no_rare = 0
     # If the clause is known to use, but not in the top words, it is positively rare
@@ -164,10 +168,10 @@ def compute_rare_proportion(result, tokenizer, proof):
     return no_rare / len(proof)
 
 
-def compute_predictable_proportion(result, tokenizer, proof):
+def compute_predictable_proportion(tokenizer, proof):
 
     no_predictable = 0
-    # If the clause is known to use, but not in the top words, it is positively rare
+    # If the clause is known to use, but not in the top words, it is predictable
     for formula in proof:
         i = tokenizer.word_index.get(formula)
         if i is not None and i < tokenizer.num_words:
@@ -186,17 +190,17 @@ def get_tokenizer_metrics(result):
 
     for prob in result:
 
-        # Load proof
-        proof = load_proof_axioms(prob)
+        # Load proof - need to make sure that these are unquoted like in the tokenizer
+        proof = load_proof_axioms(prob, unquoted=True)
 
         # Process the formulae
         proof = [text_to_word_sequence(formula, tokenizer.filters, tokenizer.lower, tokenizer.split)[0] for formula in proof]
 
         # Compute rare proportion
-        rare = compute_rare_proportion(proof, tokenizer, proof)
+        rare = compute_rare_proportion(tokenizer, proof)
 
         # Compute predictable proprtion
-        predictable = compute_predictable_proportion(proof, tokenizer, proof)
+        predictable = compute_predictable_proportion(tokenizer, proof)
 
         # Update stats
         result[prob].update({"tokenizer_rare": rare,
@@ -285,13 +289,20 @@ def print_avg_stats(df, base, other):
 
 def print_detailed_overview(df, base, other):
 
-    print(df[[f"{base}_coverage", f"{base}_jaccard", f"{base}_length",
-              f"{other}_coverage", f"{other}_jaccard", f"{other}_length"]])
+    query_columns = [f"{base}_coverage", f"{base}_jaccard", f"{base}_length", f"{other}_coverage", f"{other}_jaccard", f"{other}_length"]
+    if "caption" in base or "caption" in other:
+        query_columns += ['tokenizer_rare', 'tokenizer_predictable', 'in_training']
+
+    print(df[query_columns])
 
 
 def print_similar_problems_overview(df, base, other):
 
-    print(df[[f"{base}_coverage", f"{base}_jaccard", f"{base}_length", f"{base}_time"]])
+    query_columns = [f"{base}_coverage", f"{base}_jaccard", f"{base}_length", f"{base}_time"]
+    if "caption" in base or "caption" in other:
+        query_columns += ['tokenizer_rare', 'tokenizer_predictable', 'in_training']
+
+    print(df[query_columns])
 
 
 def compare_versions(df, base, other):
@@ -383,6 +394,37 @@ def compute_uniquely_solved(df, configs):
         print(f"{conf:16} : {len(unique)}")
 
 
+def check_combined_solved(df):
+
+    # Get problem solved by neither caption or sine, but by the combination
+    # This can be important due to the diversity of the problems solved
+    solved_combination = set(df.loc[df['caption_sine_3_0_solved']].index)
+    sine_not_solved = set(df.index).difference(set(df.loc[df['sine_3_0_solved']].index))
+    caption_not_solved = set(df.index).difference(set(df.loc[df['caption_solved']].index))
+
+    index = solved_combination.intersection(sine_not_solved.intersection(caption_not_solved))
+    # Reduce df
+    df = df.loc[sorted(index)]
+
+
+
+    print()
+    print("# Problems solved by caption_sine_3_0 but neither by caption nor sine_3_0")
+    print("# Number of problems ", len(index))
+
+    # What do I want to know??
+    query_columns = ["caption_sine_3_0_coverage", "caption_sine_3_0_jaccard",
+                     "sine_3_0_coverage", "sine_3_0_jaccard",
+                     "caption_coverage", "caption_jaccard"]
+    if len(df) > 0:
+        print(df[query_columns].describe())
+
+        if args.print_df:
+            print(df[query_columns])
+
+
+
+
 def main():
 
     print('#', args)
@@ -406,7 +448,6 @@ def main():
     print("# Uniquely solved excluding ideal")
     compute_uniquely_solved(df, [conf for conf in configs if 'ideal' not in conf])
     print()
-
 
     # Print stats of the solved/unsolved partition of each config
     print()
@@ -442,6 +483,10 @@ def main():
     compare_versions(df, 'caption_sine_3_0', 'sine_3_0')
     print()
     compare_versions(df, 'caption_sine_3_0', 'caption')
+
+
+    print()
+    check_combined_solved(df) # FIXME poor naming
 
 
 if __name__ == "__main__":
