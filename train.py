@@ -50,7 +50,7 @@ def loss_function(real, pred):
 
 
 @tf.function
-def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_rate=0.0, training=True):
+def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_rate, training):
 
     # Initial loss on the batch is zero
     loss = 0
@@ -95,11 +95,19 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
             loss += loss_function(target[:, i], y_hat)
 
             # Check if applying teacher-forcing in training mode
-            if training and tf.random.uniform(()) < teacher_forcing_rate:
+            '''
+            if training and tf.random.uniform(()) <= teacher_forcing_rate:
                 # Teacher forcing - using the correct input target
                 dec_input = tf.expand_dims(target[:, i], 1)
             else:
                 # Using the predicted tokens
+                dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
+            '''
+            # Check with just using teacher forcing? TODO
+            #tf.print("Warning: TODO teacher_forcing_rate might be bugged")
+            if not training or tf.random.uniform(()) <= teacher_forcing_rate:
+                dec_input = tf.expand_dims(target[:, i], 1)
+            else:
                 dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
 
     # Compute the total loss for the sequence
@@ -271,7 +279,7 @@ def train_loop(
                 )
                 break
 
-    # Add a final metric evaluation that ensures no drop out is ised (with training off)
+    # Add a final metric evaluation that ensures no drop out is used (with training off)
     tf.print("Computing metrics on the training set with the final model parameters, without dropout")
     train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=False, epoch=epoch)
     metrics = add_new_metrics(metrics, train_epoch_metrics, prefix="train_")

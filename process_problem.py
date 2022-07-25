@@ -12,7 +12,7 @@ def save_problem(dir_name, prob_name, problem_string):
         print("Could not save generated problem for: ", prob_name)
 
 
-def get_problems_from_path(problem_dir, limit=None):
+def get_problems_from_path(problem_dir, limit=None, verbose=1):
 
     # Get path to all problems
     problem_paths = glob.glob(os.path.join(problem_dir, "") + "*")
@@ -20,7 +20,9 @@ def get_problems_from_path(problem_dir, limit=None):
     if limit is not None:
         return_limit = min(limit, len(problem_paths))
         problem_paths = problem_paths[:return_limit]
-    print(f"Number of problems {len(problem_paths)}")
+
+    if verbose > 0:
+        print(f"Number of problems {len(problem_paths)}")
 
     return problem_paths
 
@@ -95,7 +97,7 @@ def load_and_process_problem(path, deepmath=False):
     formulae = [f.strip() for f in formulae]
 
     # Need to ensure that the first entry is the conjecture
-    if not deepmath and "conjecture" not in formulae[0]:
+    if not deepmath and len(formulae) > 0 and "conjecture" not in formulae[0]:
         # Find the conecture and pusgh it to the front - Assumes only one FOF conjecture
         for n, f in enumerate(formulae):
             # Positive axioms does not necessairly have a conejcture
