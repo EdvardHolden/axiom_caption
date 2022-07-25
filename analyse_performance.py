@@ -21,7 +21,8 @@ PROOF_AXIOMS_UNQUOTED = 'generated_problems/analysis/output_original_unquoted_po
 CONFIGS = {115498: 'generated_problems/analysis/output_original_ideal', # Upper bound
            115507: 'generated_problems/analysis/output_original_clean/', # Raw merged problem
            115555: 'generated_problems/analysis/output_original_sine_1_1/',
-           115556: 'generated_problems/analysis/output_original_sine_3_0/',
+           116861: 'generated_problems/analysis/output_original_sine_3_0/',
+           #115556: 'generated_problems/analysis/output_original_sine_3_0/',
            115591: 'generated_problems/analysis/output_original_caption/',
            #115633: 'generated_problems/analysis/output_original_caption_sine_1_1/', TODO need to recompute these problems
            115634: 'generated_problems/analysis/output_original_caption_sine_3_0/'}
@@ -394,6 +395,15 @@ def compute_uniquely_solved(df, configs):
         print(f"{conf:16} : {len(unique)}")
 
 
+def compute_perfect_coverage(df, configs):
+    for conf in configs:
+
+        perf_cov = sum(df[f"{conf}_coverage"] == 1.0)
+        print(f"{conf:16} : {perf_cov}")
+
+    sys.exit(0)
+
+
 def check_combined_solved(df):
 
     # Get problem solved by neither caption or sine, but by the combination
@@ -413,15 +423,16 @@ def check_combined_solved(df):
     print("# Number of problems ", len(index))
 
     # What do I want to know??
-    query_columns = ["caption_sine_3_0_coverage", "caption_sine_3_0_jaccard",
-                     "sine_3_0_coverage", "sine_3_0_jaccard",
-                     "caption_coverage", "caption_jaccard"]
+    query_columns = ["caption_sine_3_0_coverage", "caption_sine_3_0_jaccard", "caption_sine_3_0_length", "caption_sine_3_0_time",
+                     "sine_3_0_coverage", "sine_3_0_jaccard", "sine_3_0_length",
+                     "caption_coverage", "caption_jaccard", "caption_length"]
     if len(df) > 0:
         print(df[query_columns].describe())
 
         if args.print_df:
             print()
-            print(df[query_columns])
+            #print(df[query_columns])
+            print(df[query_columns].sort_values(by=['caption_sine_3_0_length'])) # TODO
 
 
 
@@ -449,6 +460,8 @@ def main():
     print("# Uniquely solved excluding ideal")
     compute_uniquely_solved(df, [conf for conf in configs if 'ideal' not in conf])
     print()
+    print("# Number of problems with a coverage score of 1")
+    compute_perfect_coverage(df, configs)
 
     # Print stats of the solved/unsolved partition of each config
     print()
