@@ -186,6 +186,9 @@ def get_generate_parser():
         "--result_prefix", default=None, help="File name prefix of the result dir (if result_dir is not set)"
     )
 
+    parser.add_argument('--unquote', default=False, action="store_true",
+                        help="Do not quote the digits in a formula (usualy paired with original output)")
+
     if socket.gethostname() == "kontor":
         default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
     else:

@@ -25,7 +25,8 @@ random.seed(7)
 # Top dir of the result directory
 # BASE_RES_DIR = "generated_problems/merged/"
 # BASE_RES_DIR = "generated_problems/skolem/"
-BASE_RES_DIR = "generated_problems/test/"
+BASE_RES_DIR = "generated_problems/analysis/"
+#BASE_RES_DIR = "generated_problems/fix/merged/"
 
 
 def extract_rare_axioms(tokenizer, axioms):
@@ -40,7 +41,7 @@ def extract_rare_axioms(tokenizer, axioms):
         # Process the clause
         formula = text_to_word_sequence(formula, tokenizer.filters, tokenizer.lower, tokenizer.split)[0]
 
-        # If the clause is known to use, but not in the top words, it is positively rare
+        # If the clause is known to us, but not in the top words, it is positively rare
         i = tokenizer.word_index.get(formula)
         if i is not None and i >= tokenizer.num_words:
             rare.update([formula])
@@ -79,9 +80,6 @@ def compute_caption(
         # No useful output, set to the empty set
         axiom_caption = set()
 
-    # print(axiom_caption)
-    # print(len(axiom_caption), type(axiom_caption))
-
     return axiom_caption
 
 
@@ -97,8 +95,9 @@ def get_result_dir(
     no_samples,
     max_length,
     output_format,
+    unquote,
     prefix=None,
-    postfix=None,
+    postfix=None
 ):
     # Add sampler arguments
 
@@ -110,6 +109,9 @@ def get_result_dir(
 
     # Add output format
     result_dir += f"output_{output_format}"
+
+    if unquote:
+        result_dir += "_unquoted"
 
     # Add the mode
     result_dir += f"_{mode}"
@@ -157,7 +159,7 @@ def validate_input_arguments(args):
 
 
 def standard_process_problem(
-    prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms, deepmath, output_format
+    prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms, deepmath, output_format, unquote
 ):
     # Load problem formulae as a list
     prob = load_and_process_problem(prob_path, deepmath=deepmath)
@@ -184,8 +186,9 @@ def standard_process_problem(
     if len(extra_axioms) > 0:
         prob = set(prob).union(set(extra_axioms))
 
-    # Ensure all numbers are quoted
-    prob = quote_number_in_problem(list(prob))
+    # Ensure all numbers are quoted - if unquote is not set
+    if not unquote:
+        prob = quote_number_in_problem(list(prob))
 
     # Clausify the problem isset
     if output_format is OutputFormat.CLAUSIFIED:
@@ -256,7 +259,8 @@ def main():
             no_samples,
             args.max_length,
             args.output_format,
-            args.result_prefix,
+            args.unquote,
+            prefix=args.result_prefix,
         )
     print("Writing results to: ", result_dir)
 
@@ -310,6 +314,7 @@ def main():
                 extra_axioms,
                 deepmath,
                 args.output_format,
+                args.unquote
             )
             for prob_path in problem_paths
         ]
@@ -365,15 +370,17 @@ def main():
                 # Combine the clausified axioms with the sine output
                 new_problem.update(sine_formulae)
 
-            # Ensure all numbers are quoted
-            new_problem = quote_number_in_problem(new_problem)
+            # Ensure all numbers are quoted - if unquote is not set
+            if not args.unquote:
+                new_problem = quote_number_in_problem(new_problem)
 
             # Only clausify the problem if set
             if args.output_format is OutputFormat.CLAUSIFIED:
                 # Clausify the problem - this is only done once and in the final step, hence no application of SInE
                 prob = clausify(new_problem, skolem_prefix=None, sine_st=None, sine_sd=None)
             elif args.output_format is OutputFormat.ORIGINAL:
-                prob = "\n".join(prob).encode()
+                #prob = "\n".join(prob).encode()
+                prob = "\n".join(new_problem).encode()
 
             # Save to folder
             save_problem(result_dir, Path(prob_path).name, prob)
