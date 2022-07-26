@@ -10,11 +10,10 @@ BATCH_SIZE = 64
 # BATCH_SIZE = 256
 # BUFFER_SIZE = 5000
 BUFFER_SIZE = 1000
-# EPOCHS = 60
+#EPOCHS = 80
 EPOCHS = 2
-# EPOCHS = 1
-# ES_PATIENCE = 15
-ES_PATIENCE = None
+ES_PATIENCE = 5
+#ES_PATIENCE = None
 
 
 train_id_file = "data/deepmath/train.txt"
@@ -27,8 +26,8 @@ base_model = "experiments/base_model"
 
 # TODO rename these variables as it is v confusing
 proof_data = "data/raw/deepmath.pkl"
-# problem_features = "data/embeddings/deepmath/graph_features_deepmath_all.pkl"
-problem_features = "data/embeddings/deepmath/graph_features_deepmath_premise.pkl"
+problem_features = "data/embeddings/deepmath/graph_features_deepmath_all.pkl"
+#problem_features = "data/embeddings/deepmath/graph_features_deepmath_premise.pkl"
 
 TOKEN_PAD = "<pad>"
 TOKEN_START = "<start>"
