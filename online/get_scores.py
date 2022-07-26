@@ -226,6 +226,14 @@ def get_solved_problem_name_time(exp_id, upper_time_bound=None, problem_set=None
     return res
 
 
+def get_solved_problem_name(exp_id, upper_time_bound=None, problem_set=None):
+
+    select = "SELECT ProblemName"
+    res = _base_query_solved_problemrun(select, exp_id, upper_time_bound, problem_set)
+    return res
+
+
+
 def get_avg_time_solved(exp_id, upper_time_bound=None, problem_set=None):
 
     select = "SELECT IFNULL(AVG(PR.RunTime), 0)"
