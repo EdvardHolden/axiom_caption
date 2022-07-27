@@ -10,47 +10,63 @@ from evaluate import jaccard_score_np, coverage_score_np
 from dataset import load_ids, load_tokenizer
 
 import sys
-sys.path.insert(0,'online')
+
+sys.path.insert(0, "online")
 from online.get_scores import get_solved_problem_name_time
 
 
 # The direcotry to the proof axioms
-PROOF_AXIOMS = 'generated_problems/analysis/output_original_positive_axioms/'
-PROOF_AXIOMS_UNQUOTED = 'generated_problems/analysis/output_original_unquoted_positive_axioms/'
+PROOF_AXIOMS = "generated_problems/analysis/output_original_positive_axioms/"
+PROOF_AXIOMS_UNQUOTED = "generated_problems/analysis/output_original_unquoted_positive_axioms/"
 
-CONFIGS = {115498: 'generated_problems/analysis/output_original_ideal', # Upper bound
-           115507: 'generated_problems/analysis/output_original_clean/', # Raw merged problem
-           115555: 'generated_problems/analysis/output_original_sine_1_1/',
-           116861: 'generated_problems/analysis/output_original_sine_3_0/',
-           #115556: 'generated_problems/analysis/output_original_sine_3_0/',
-           115591: 'generated_problems/analysis/output_original_caption/',
-           #115633: 'generated_problems/analysis/output_original_caption_sine_1_1/', TODO need to recompute these problems
-           115634: 'generated_problems/analysis/output_original_caption_sine_3_0/'}
+CONFIGS = {
+    115498: "generated_problems/analysis/output_original_ideal",  # Upper bound
+    115507: "generated_problems/analysis/output_original_clean/",  # Raw merged problem
+    115555: "generated_problems/analysis/output_original_sine_1_1/",
+    116861: "generated_problems/analysis/output_original_sine_3_0/",
+    # 115556: 'generated_problems/analysis/output_original_sine_3_0/',
+    115591: "generated_problems/analysis/output_original_caption/",
+    # 115633: 'generated_problems/analysis/output_original_caption_sine_1_1/', TODO need to recompute these problems
+    115634: "generated_problems/analysis/output_original_caption_sine_3_0/",
+}
 
 # Base config used to compute the ratio of the problem selected (output_original_clean -> clean)
-BASE_CONFIG = 'clean'
+BASE_CONFIG = "clean"
 
 # Path to the problems in the training set
-TRAINING_SET_PATH = 'data/deepmath/train.txt'
+TRAINING_SET_PATH = "data/deepmath/train.txt"
 
 # Path to tokenizer used in the training context
-TOKENIZER_PATH = 'data/deepmath/tokenizer_axioms_train_6000.json'
+TOKENIZER_PATH = "data/deepmath/tokenizer_axioms_train_6000.json"
 
 
 # Make sure the result are not lost due to being truncated
-pd.set_option('display.max_rows', None)
-pd.set_option('display.max_columns', None)
-pd.set_option('display.width', 2000)
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 2000)
 
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("--print_df", default=False, action="store_true",
-                    help="Print detailed stat information for each problem in each analysis case")
-parser.add_argument("--debug", "-d", default=False, action="store_true",
-                    help="Limit number of problems for efficient debugging")
-parser.add_argument("--remove_unsolved", default=False, action="store_true",
-                    help="Only looks at the solved problems in the general analysis")
+parser.add_argument(
+    "--print_df",
+    default=False,
+    action="store_true",
+    help="Print detailed stat information for each problem in each analysis case",
+)
+parser.add_argument(
+    "--debug",
+    "-d",
+    default=False,
+    action="store_true",
+    help="Limit number of problems for efficient debugging",
+)
+parser.add_argument(
+    "--remove_unsolved",
+    default=False,
+    action="store_true",
+    help="Only looks at the solved problems in the general analysis",
+)
 args = parser.parse_args()
 
 # Set debugging mode
@@ -66,10 +82,10 @@ def load_generated_problem(problem_path):
     prob = load_and_process_problem(problem_path, deepmath=False)
     if len(prob) < 1:
         # Report and skip empty problems
-        print(f'Warning: empty problem {problem_path}')
+        print(f"Warning: empty problem {problem_path}")
         return []
     # Skip the conjecture to make a jaccard score of 1 possible
-    if 'conjecture' in prob[0]:
+    if "conjecture" in prob[0]:
         prob = prob[1:]
 
     return prob
@@ -101,9 +117,11 @@ def get_metrics(problem_paths):
 
         prob = load_generated_problem(problem_path)
 
-        results[name] = {"jaccard": jaccard_score_np([proof], [prob]),
-                         "coverage": coverage_score_np([proof], [prob]),
-                         "length": len(prob)}
+        results[name] = {
+            "jaccard": jaccard_score_np([proof], [prob]),
+            "coverage": coverage_score_np([proof], [prob]),
+            "length": len(prob),
+        }
 
     return results
 
@@ -112,17 +130,17 @@ def analyse_partition_metrics(config, df):
 
     query_columns = [f"{config}_jaccard", f"{config}_coverage", f"{config}_length", f"{config}_ratio"]
 
-    if 'caption' in config:
+    if "caption" in config:
         query_columns += ["tokenizer_rare", "tokenizer_predictable"]
 
     query_columns += [f"{config}_time"]
 
     # Report the statistics
     solved = df.loc[df[f"{config}_solved"]].index
-    print('## Solved partition')
+    print("## Solved partition")
     print(df[query_columns].loc[solved].describe())
     print()
-    print('## Unsolved partition')
+    print("## Unsolved partition")
     print(df[query_columns[:-1]].loc[set(df.index) - set(solved)].describe())
 
 
@@ -182,9 +200,9 @@ def compute_predictable_proportion(tokenizer, proof):
 
 
 def get_tokenizer_metrics(result):
-    '''
+    """
     Compute what proportion of the proofs that are covered by the set tokenizer
-    '''
+    """
 
     # Load tokenizer from path
     tokenizer, _ = load_tokenizer(TOKENIZER_PATH)
@@ -195,7 +213,10 @@ def get_tokenizer_metrics(result):
         proof = load_proof_axioms(prob, unquoted=True)
 
         # Process the formulae
-        proof = [text_to_word_sequence(formula, tokenizer.filters, tokenizer.lower, tokenizer.split)[0] for formula in proof]
+        proof = [
+            text_to_word_sequence(formula, tokenizer.filters, tokenizer.lower, tokenizer.split)[0]
+            for formula in proof
+        ]
 
         # Compute rare proportion
         rare = compute_rare_proportion(tokenizer, proof)
@@ -204,14 +225,12 @@ def get_tokenizer_metrics(result):
         predictable = compute_predictable_proportion(tokenizer, proof)
 
         # Update stats
-        result[prob].update({"tokenizer_rare": rare,
-                             "tokenizer_predictable": predictable})
+        result[prob].update({"tokenizer_rare": rare, "tokenizer_predictable": predictable})
 
     return result
 
 
-
-def get_performance_coverage_data(CONFIGS, common_substring=''):
+def get_performance_coverage_data(CONFIGS, common_substring=""):
 
     result = {}
     configs = []
@@ -219,12 +238,12 @@ def get_performance_coverage_data(CONFIGS, common_substring=''):
     # Want config_coverage, config_solved
     for exp_id, problem_dir in CONFIGS.items():
 
-        conf = Path(problem_dir).stem.replace(common_substring, '')
+        conf = Path(problem_dir).stem.replace(common_substring, "")
         configs += [conf]
 
         # Load the problems from path
         problems = get_problems_from_path(problem_dir, limit=LIMIT, verbose=0)
-        print('# Number of problems found:', conf, len(problems))
+        print("# Number of problems found:", conf, len(problems))
 
         # Initialise - if needed
         if len(result) == 0:
@@ -259,7 +278,7 @@ def get_performance_coverage_data(CONFIGS, common_substring=''):
 
     # Compute the ratio of selected formulae vs original formulae (slightly skewed for caption)
     for conf in configs:
-        df[f'{conf}_ratio'] = df[f'{conf}_length'].values / df[f'{BASE_CONFIG}_length'].values
+        df[f"{conf}_ratio"] = df[f"{conf}_length"].values / df[f"{BASE_CONFIG}_length"].values
 
     # Convert to "best" possible types - avoids representing everything as objects, which messes up .describe()
     df = df.convert_dtypes()
@@ -280,19 +299,25 @@ def print_avg_stats(df, base, other):
     print(f"Avg length   other : {np.average(df[f'{other}_length']):.2f}")
     print(f"Avg ratio    other : {np.average(df[f'{other}_ratio']):.2f}")
 
-    if 'caption' in base or 'caption' in other:
+    if "caption" in base or "caption" in other:
         print()
         print(f"Avg tokenizer rare : {np.average(df['tokenizer_rare']):.2f}")
         print(f"Avg predictable    : {np.average(df['tokenizer_predictable']):.2f}")
         print(f"Ratio of training  : {sum(df['in_training']) / len(df):.2f}")
 
 
-
 def print_detailed_overview(df, base, other):
 
-    query_columns = [f"{base}_coverage", f"{base}_jaccard", f"{base}_length", f"{other}_coverage", f"{other}_jaccard", f"{other}_length"]
+    query_columns = [
+        f"{base}_coverage",
+        f"{base}_jaccard",
+        f"{base}_length",
+        f"{other}_coverage",
+        f"{other}_jaccard",
+        f"{other}_length",
+    ]
     if "caption" in base or "caption" in other:
-        query_columns += ['tokenizer_rare', 'tokenizer_predictable', 'in_training']
+        query_columns += ["tokenizer_rare", "tokenizer_predictable", "in_training"]
 
     print(df[query_columns])
 
@@ -301,7 +326,7 @@ def print_similar_problems_overview(df, base, other):
 
     query_columns = [f"{base}_coverage", f"{base}_jaccard", f"{base}_length", f"{base}_time"]
     if "caption" in base or "caption" in other:
-        query_columns += ['tokenizer_rare', 'tokenizer_predictable', 'in_training']
+        query_columns += ["tokenizer_rare", "tokenizer_predictable", "in_training"]
 
     print(df[query_columns])
 
@@ -313,7 +338,9 @@ def compare_versions(df, base, other):
     print(f"{other} solved: {len(df.loc[df[other+'_solved']])}")
 
     # Compute solved by base but not by other
-    diff = sorted(set(df.loc[df[f'{base}_solved']].index).difference(set(df.loc[df[f'{other}_solved']].index)))
+    diff = sorted(
+        set(df.loc[df[f"{base}_solved"]].index).difference(set(df.loc[df[f"{other}_solved"]].index))
+    )
     df_comp = df.loc[diff]
 
     print(f"Solved by {base} and not other: ", len(diff))
@@ -325,7 +352,11 @@ def compare_versions(df, base, other):
         if args.print_df:
             # Print more detailed overview and separate of dissimilar stats
             # Check whether there are any problems with similar stats
-            similar = df.loc[np.isclose(list(df[f"{base}_length"]), list(df[f"{other}_length"])) & np.isclose(list(df[f"{base}_coverage"]), list(df[f"{other}_coverage"])) & np.isclose(list(df[f"{base}_jaccard"]), list(df[f"{other}_jaccard"]))].index
+            similar = df.loc[
+                np.isclose(list(df[f"{base}_length"]), list(df[f"{other}_length"]))
+                & np.isclose(list(df[f"{base}_coverage"]), list(df[f"{other}_coverage"]))
+                & np.isclose(list(df[f"{base}_jaccard"]), list(df[f"{other}_jaccard"]))
+            ].index
 
             # Split based on whether the values are the same
             print("## Detailed Overview:")
@@ -333,8 +364,10 @@ def compare_versions(df, base, other):
                 print_detailed_overview(df_comp, base, other)
             else:
                 print("# Similar Problems: ")
-                #print_detailed_overview(df_comp.loc[sorted(set(diff).intersection(set(similar)))], base, other) FIXME
-                print_similar_problems_overview(df_comp.loc[sorted(set(diff).intersection(set(similar)))], base, other)
+                # print_detailed_overview(df_comp.loc[sorted(set(diff).intersection(set(similar)))], base, other) FIXME
+                print_similar_problems_overview(
+                    df_comp.loc[sorted(set(diff).intersection(set(similar)))], base, other
+                )
                 print()
                 print("# Other Problems: ")
                 print_detailed_overview(df_comp.loc[sorted(set(diff).difference(set(similar)))], base, other)
@@ -363,16 +396,28 @@ def compute_solved_set(configs, df):
     # We return the set of problems excluding ideal
     return solved_method
 
+
 def compute_problems_lost_by_combination(df, print_df=False):
 
     # Compute the set difference
-    diff_problems = (set(df.loc[df['sine_3_0_solved']].index).union(set(df.loc[df['caption_solved']].index))).difference(set(df.loc[df['caption_sine_3_0_solved']].index))
+    diff_problems = (
+        set(df.loc[df["sine_3_0_solved"]].index).union(set(df.loc[df["caption_solved"]].index))
+    ).difference(set(df.loc[df["caption_sine_3_0_solved"]].index))
 
     print("Number of problems lost by combining sine and captioning:", len(diff_problems))
-    query_columns = ['caption_sine_3_0_coverage', 'caption_sine_3_0_jaccard', 'sine_3_0_solved', 'sine_3_0_coverage', 'sine_3_0_jaccard', 'caption_solved', 'caption_coverage', 'caption_jaccard']
+    query_columns = [
+        "caption_sine_3_0_coverage",
+        "caption_sine_3_0_jaccard",
+        "sine_3_0_solved",
+        "sine_3_0_coverage",
+        "sine_3_0_jaccard",
+        "caption_solved",
+        "caption_coverage",
+        "caption_jaccard",
+    ]
 
     # Report general stats of the lost problems (not solved/unsolved?)
-    print(df[[qc for qc in query_columns if '_solved' not in qc]].loc[diff_problems].describe())
+    print(df[[qc for qc in query_columns if "_solved" not in qc]].loc[diff_problems].describe())
 
     if len(diff_problems) > 0 and print_df:
         print(df[query_columns].loc[diff_problems])
@@ -408,42 +453,47 @@ def check_combined_solved(df):
 
     # Get problem solved by neither caption or sine, but by the combination
     # This can be important due to the diversity of the problems solved
-    solved_combination = set(df.loc[df['caption_sine_3_0_solved']].index)
-    sine_not_solved = set(df.index).difference(set(df.loc[df['sine_3_0_solved']].index))
-    caption_not_solved = set(df.index).difference(set(df.loc[df['caption_solved']].index))
+    solved_combination = set(df.loc[df["caption_sine_3_0_solved"]].index)
+    sine_not_solved = set(df.index).difference(set(df.loc[df["sine_3_0_solved"]].index))
+    caption_not_solved = set(df.index).difference(set(df.loc[df["caption_solved"]].index))
 
     index = solved_combination.intersection(sine_not_solved.intersection(caption_not_solved))
     # Reduce df
     df = df.loc[sorted(index)]
-
-
 
     print()
     print("# Problems solved by caption_sine_3_0 but neither by caption nor sine_3_0")
     print("# Number of problems ", len(index))
 
     # What do I want to know??
-    query_columns = ["caption_sine_3_0_coverage", "caption_sine_3_0_jaccard", "caption_sine_3_0_length", "caption_sine_3_0_time",
-                     "sine_3_0_coverage", "sine_3_0_jaccard", "sine_3_0_length",
-                     "caption_coverage", "caption_jaccard", "caption_length"]
+    query_columns = [
+        "caption_sine_3_0_coverage",
+        "caption_sine_3_0_jaccard",
+        "caption_sine_3_0_length",
+        "caption_sine_3_0_time",
+        "sine_3_0_coverage",
+        "sine_3_0_jaccard",
+        "sine_3_0_length",
+        "caption_coverage",
+        "caption_jaccard",
+        "caption_length",
+    ]
     if len(df) > 0:
         print(df[query_columns].describe())
 
         if args.print_df:
             print()
-            #print(df[query_columns])
-            print(df[query_columns].sort_values(by=['caption_sine_3_0_length'])) # TODO
-
-
+            # print(df[query_columns])
+            print(df[query_columns].sort_values(by=["caption_sine_3_0_length"]))  # TODO
 
 
 def main():
 
-    print('#', args)
+    print("#", args)
     print()
 
     # Get the data needed
-    configs, df = get_performance_coverage_data(CONFIGS, common_substring='output_original_')
+    configs, df = get_performance_coverage_data(CONFIGS, common_substring="output_original_")
 
     # Run some basic analysis on solved/unsolved for metrics of each configuration
     print()
@@ -458,7 +508,7 @@ def main():
     compute_uniquely_solved(df, configs)
     print()
     print("# Uniquely solved excluding ideal")
-    compute_uniquely_solved(df, [conf for conf in configs if 'ideal' not in conf])
+    compute_uniquely_solved(df, [conf for conf in configs if "ideal" not in conf])
     print()
     print("# Number of problems with a coverage score of 1")
     compute_perfect_coverage(df, configs)
@@ -470,37 +520,35 @@ def main():
     print()
     # Check if we should limit the analysis to the set f solved problems (excluding ideal)
     if args.remove_unsolved:
-        print("!! Limiting analysis to problems solved by at least one config other than \"ideal\"")
+        print('!! Limiting analysis to problems solved by at least one config other than "ideal"')
         df = df.loc[solved_set]
 
     run_partition_analysis(configs, df)
 
     # Specific analysis
-    print('\n\n')
+    print("\n\n")
     print("# # # # # # # # # # # # #")
     print("# # Specific Analysis # #")
-
 
     # Compute problem loss of combining caption and sine_3_0
     compute_problems_lost_by_combination(df, print_df=args.print_df)
 
     # Compare the experiments
     print()
-    compare_versions(df, 'sine_1_1', 'sine_3_0')
+    compare_versions(df, "sine_1_1", "sine_3_0")
     print()
-    compare_versions(df, 'sine_3_0', 'sine_1_1')
+    compare_versions(df, "sine_3_0", "sine_1_1")
     print()
-    compare_versions(df, 'caption', 'sine_3_0')
+    compare_versions(df, "caption", "sine_3_0")
     print()
-    compare_versions(df, 'sine_3_0', 'caption')
+    compare_versions(df, "sine_3_0", "caption")
     print()
-    compare_versions(df, 'caption_sine_3_0', 'sine_3_0')
+    compare_versions(df, "caption_sine_3_0", "sine_3_0")
     print()
-    compare_versions(df, 'caption_sine_3_0', 'caption')
+    compare_versions(df, "caption_sine_3_0", "caption")
 
-
     print()
-    check_combined_solved(df) # FIXME poor naming
+    check_combined_solved(df)  # FIXME poor naming
 
 
 if __name__ == "__main__":
