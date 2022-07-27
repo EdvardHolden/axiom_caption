@@ -13,6 +13,7 @@ from parser import get_compute_tokenizer_parser
 
 def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
     lines = list(descriptions.values())
+
     if tokenizer_mode is TokenizerMode.AXIOMS:
         tokenizer = Tokenizer(
             lower=False,
@@ -42,6 +43,8 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
         # Same as character but all each symbol is a single token
         # Ensure space around the parenthasis for correct parsing
         lines = [re.sub("(,|\[|\]|\(|\))", r" \1 ", line) for line in lines]
+
+        # Initialise the tokenizer
         tokenizer = Tokenizer(
             filters=".",  # Remove . that might be left at the end
             num_words=vocab_word_limit,
@@ -54,6 +57,7 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
     else:
         raise ValueError(f"Unrecognized tokenizer mode for intialising the tokenizer: {tokenizer_mode}")
 
+    # Fit tokenizer to the text
     tokenizer.fit_on_texts(lines)
     return tokenizer
 

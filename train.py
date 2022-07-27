@@ -95,16 +95,16 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
             loss += loss_function(target[:, i], y_hat)
 
             # Check if applying teacher-forcing in training mode
-            '''
+            """
             if training and tf.random.uniform(()) <= teacher_forcing_rate:
                 # Teacher forcing - using the correct input target
                 dec_input = tf.expand_dims(target[:, i], 1)
             else:
                 # Using the predicted tokens
                 dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
-            '''
+            """
             # Check with just using teacher forcing? TODO
-            #tf.print("Warning: TODO teacher_forcing_rate might be bugged")
+            # tf.print("Warning: TODO teacher_forcing_rate might be bugged")
             if not training or tf.random.uniform(()) <= teacher_forcing_rate:
                 dec_input = tf.expand_dims(target[:, i], 1)
             else:

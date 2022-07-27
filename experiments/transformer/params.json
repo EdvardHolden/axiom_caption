@@ -1,0 +1,20 @@
+{
+    "model_type": "inject",
+    "axiom_order": "length",
+    "attention": "bahdanau",
+    "stateful": true,
+    "normalize": false,
+    "batch_norm": false,
+    "rnn_type": "lstm",
+    "no_rnn_units": 32,
+    "embedding_size": 50,
+    "no_dense_units": 512,
+    "dropout_rate": 0.1,
+    "learning_rate": 0.001,
+    "encoder_input": "sequence",
+    "axiom_vocab_size": 6000,
+    "global_max_pool": false,
+    "conjecture_vocab_size": 4000,
+    "remove_unknown": true,
+    "teacher_forcing_rate": 1.0
+}
