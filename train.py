@@ -340,6 +340,7 @@ def main(
     axiom_frequency = get_axiom_frequency(model_params.axiom_order, train_id_file, proof_data)
 
     # Get the training dataset
+    tf.print("Loading training dataset")
     train_data, max_len = get_dataset(
         train_id_file,
         proof_data,
@@ -352,7 +353,9 @@ def main(
         conjecture_tokenizer=conjecture_tokenizer,
     )
     tf.print("Max caption length: ", max_len)
+    model_params.max_caption_length = max_len  # Set variable in case we are using the transformer
     # Compute validation dataset based on the max length of the training data
+    tf.print("Loading validation dataset")
     val_data, _ = get_dataset(
         val_id_file,
         proof_data,
