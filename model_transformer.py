@@ -1,5 +1,7 @@
 import tensorflow as tf
 import numpy as np
+from keras.layers import Input
+from tensorflow.keras import Model
 
 import config
 
@@ -123,6 +125,12 @@ class MultiHeadAttention(tf.keras.layers.Layer):
 
         return output, attention_weights
 
+    def build_graph(self):
+        v = Input(shape=(60, 512))
+        k = Input(shape=(60, 512))
+        q = Input(shape=(60, 512))
+        return Model(inputs=[v, k, q], outputs=self.call(v, k, q, None))
+
 
 def point_wise_feed_forward_network(model_params):
     # TODO need to change this to tf.layer - fro saving and loading purposes
@@ -135,8 +143,10 @@ def point_wise_feed_forward_network(model_params):
 
 
 class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, model_params, name="transformer_model_layer"):
+    def __init__(self, model_params, name="transformer_encoder_layer"):
         super(EncoderLayer, self).__init__()
+
+        self.d_model = model_params.d_model
 
         self.mha = MultiHeadAttention(model_params)
         self.ffn = point_wise_feed_forward_network(model_params)
@@ -147,7 +157,7 @@ class EncoderLayer(tf.keras.layers.Layer):
         self.dropout1 = tf.keras.layers.Dropout(model_params.dropout_rate)
         self.dropout2 = tf.keras.layers.Dropout(model_params.dropout_rate)
 
-    def call(self, x, training, mask):
+    def call(self, x, mask, training=None):
 
         attn_output, _ = self.mha(x, x, x, mask)  # (batch_size, input_seq_len, d_model)
         attn_output = self.dropout1(attn_output, training=training)
@@ -159,11 +169,16 @@ class EncoderLayer(tf.keras.layers.Layer):
 
         return out2
 
+    def build_graph(self):
+        x = Input(shape=(43, self.d_model))
+        return Model(inputs=x, outputs=self.call(x, None))
+
 
 class DecoderLayer(tf.keras.layers.Layer):
-    def __init__(self, model_params, name="transformer_model_layer"):
+    def __init__(self, model_params, name="transformer_deocder_layer"):
         super(DecoderLayer, self).__init__()
 
+        self.d_model = model_params.d_model
         self.mha1 = MultiHeadAttention(model_params)
         self.mha2 = MultiHeadAttention(model_params)
 
@@ -177,7 +192,7 @@ class DecoderLayer(tf.keras.layers.Layer):
         self.dropout2 = tf.keras.layers.Dropout(model_params.dropout_rate)
         self.dropout3 = tf.keras.layers.Dropout(model_params.dropout_rate)
 
-    def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
+    def call(self, x, enc_output, look_ahead_mask, padding_mask, training=None):
         # enc_output.shape == (batch_size, input_seq_len, d_model)
 
         attn1, attn_weights_block1 = self.mha1(
@@ -198,6 +213,11 @@ class DecoderLayer(tf.keras.layers.Layer):
 
         return out3, attn_weights_block1, attn_weights_block2
 
+    def build_graph(self):
+        x = Input(shape=(50, self.d_model))
+        enc_output = Input(shape=(62, self.d_model))
+        return Model(inputs=[x, enc_output], outputs=self.call(x, enc_output, None, None, None))
+
 
 class Encoder(tf.keras.layers.Layer):
     def __init__(self, model_params, name="tranformer_encoder"):
@@ -214,7 +234,7 @@ class Encoder(tf.keras.layers.Layer):
 
         self.dropout = tf.keras.layers.Dropout(model_params.dropout_rate)
 
-    def call(self, x, training, mask):
+    def call(self, x, mask, training=None):
 
         seq_len = tf.shape(x)[1]
 
@@ -226,14 +246,20 @@ class Encoder(tf.keras.layers.Layer):
         x = self.dropout(x, training=training)
 
         for i in range(self.num_layers):
-            x = self.enc_layers[i](x, training, mask)
+            x = self.enc_layers[i](x, mask, training=training)
 
         return x  # (batch_size, input_seq_len, d_model)
+
+    def build_graph(self):
+        x = Input(shape=(62))
+        return Model(inputs=x, outputs=self.call(x, None))
 
 
 class Decoder(tf.keras.layers.Layer):
     def __init__(self, model_params, name="transformer_decoder"):
         super(Decoder, self).__init__()
+
+        self.max_caption_length = model_params.max_caption_length
 
         self.d_model = model_params.d_model
         self.num_layers = model_params.num_layers
@@ -244,7 +270,7 @@ class Decoder(tf.keras.layers.Layer):
         self.dec_layers = [DecoderLayer(model_params) for _ in range(model_params.num_layers)]
         self.dropout = tf.keras.layers.Dropout(model_params.dropout_rate)
 
-    def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
+    def call(self, x, enc_output, look_ahead_mask, padding_mask, training=None):
 
         seq_len = tf.shape(x)[1]
         attention_weights = {}
@@ -255,7 +281,9 @@ class Decoder(tf.keras.layers.Layer):
         x = self.dropout(x, training=training)
 
         for i in range(self.num_layers):
-            x, block1, block2 = self.dec_layers[i](x, enc_output, training, look_ahead_mask, padding_mask)
+            x, block1, block2 = self.dec_layers[i](
+                x, enc_output, look_ahead_mask, padding_mask, training=training
+            )
 
             attention_weights[f"decoder_layer{i+1}_block1"] = block1
             attention_weights[f"decoder_layer{i+1}_block2"] = block2
@@ -263,24 +291,32 @@ class Decoder(tf.keras.layers.Layer):
         # x.shape == (batch_size, target_seq_len, d_model)
         return x, attention_weights
 
+    def build_graph(self):
+        x = Input(shape=(self.max_caption_length))
+        enc_output = Input(shape=(62, self.d_model))
+        return Model(inputs=[x, enc_output], outputs=self.call(x, enc_output, None, None))
+
 
 class Transformer(tf.keras.Model):
     def __init__(self, model_params, name="transformer_model"):
         super().__init__()
+        self.max_caption_length = model_params.max_caption_length
         self.encoder = Encoder(model_params)
         self.decoder = Decoder(model_params)
         self.final_layer = tf.keras.layers.Dense(model_params.axiom_vocab_size)
 
-    def call(self, inputs, training):
+    def call(self, inputs, training=None):
         # Keras models prefer if you pass all your inputs in the first argument
         inp, tar = inputs
 
         padding_mask, look_ahead_mask = self.create_masks(inp, tar)
 
-        enc_output = self.encoder(inp, training, padding_mask)  # (batch_size, inp_seq_len, d_model)
+        enc_output = self.encoder(inp, padding_mask, training=training)  # (batch_size, inp_seq_len, d_model)
 
         # dec_output.shape == (batch_size, tar_seq_len, d_model)
-        dec_output, attention_weights = self.decoder(tar, enc_output, training, look_ahead_mask, padding_mask)
+        dec_output, attention_weights = self.decoder(
+            tar, enc_output, look_ahead_mask, padding_mask, training=training
+        )
 
         final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
 
@@ -299,11 +335,14 @@ class Transformer(tf.keras.Model):
 
         return padding_mask, look_ahead_mask
 
+    def build_graph(self):
+        inp = Input(shape=(config.CONJECTURE_INPUT_MAX_LENGTH))
+        target = Input(shape=(self.max_caption_length))
+        return Model(inputs=[inp, target], outputs=self.call([inp, target]))
+
 
 def main():
-    class Namespace:
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
+    from utils import Namespace
 
     model_params = Namespace(
         num_layers=2,
@@ -317,40 +356,57 @@ def main():
     )
 
     # Initialise basic components - and test
+    sample_ffn = point_wise_feed_forward_network(model_params)
+    sample_ffn(tf.random.uniform((64, 50, 512))).shape
+
+    print("\n", "# " * 16)
+    print(" # # MultiHeadAttention")
     temp_mha = MultiHeadAttention(model_params)
     y = tf.random.uniform((1, 60, 512))  # (batch_size, encoder_sequence, d_model)
     out, attn = temp_mha(y, k=y, q=y, mask=None)
     out.shape, attn.shape
+    temp_mha.build_graph().summary()
 
-    sample_ffn = point_wise_feed_forward_network(model_params)
-    sample_ffn(tf.random.uniform((64, 50, 512))).shape
-
+    print("\n", "# " * 16)
+    print(" # # EncoderLayer")
     sample_encoder_layer = EncoderLayer(model_params)
     sample_encoder_layer_output = sample_encoder_layer(
-        tf.random.uniform((64, 43, model_params.d_model)), False, None
+        tf.random.uniform((64, 43, model_params.d_model)), None, False
     )
     sample_encoder_layer_output.shape  # (batch_size, input_seq_len, d_model)
+    sample_encoder_layer.build_graph().summary()
 
+    print("\n", "# " * 16)
+    print(" # # DecoderLayer")
     sample_decoder_layer = DecoderLayer(model_params)
     sample_decoder_layer_output, _, _ = sample_decoder_layer(
-        tf.random.uniform((64, 50, model_params.d_model)), sample_encoder_layer_output, False, None, None
+        tf.random.uniform((64, 50, model_params.d_model)), sample_encoder_layer_output, None, None, False
     )
     sample_decoder_layer_output.shape  # (batch_size, target_seq_len, d_model)
+    sample_decoder_layer.build_graph().summary()
 
+    print("\n", "# " * 16)
+    print(" # # Encoder")
     sample_encoder = Encoder(model_params)
     temp_input = tf.random.uniform((64, 62), dtype=tf.int64, minval=0, maxval=200)
-    sample_encoder_output = sample_encoder(temp_input, training=False, mask=None)
+    sample_encoder_output = sample_encoder(temp_input, mask=None, training=None)
     sample_encoder_output.shape
+    sample_encoder.build_graph().summary()
 
+    print("\n", "# " * 16)
+    print(" # # Decoder")
     sample_decoder = Decoder(model_params)
     temp_input = tf.random.uniform(
         (64, model_params.max_caption_length), dtype=tf.int64, minval=0, maxval=200
     )
     output, attn = sample_decoder(
-        temp_input, enc_output=sample_encoder_output, training=False, look_ahead_mask=None, padding_mask=None
+        temp_input, enc_output=sample_encoder_output, look_ahead_mask=None, padding_mask=None, training=None
     )
     output.shape, attn["decoder_layer2_block2"].shape
+    sample_decoder.build_graph().summary()
 
+    print("\n", "# " * 16)
+    print(" # # Transformer")
     sample_transformer = Transformer(model_params)
     temp_input = tf.random.uniform(
         (64, config.CONJECTURE_INPUT_MAX_LENGTH), dtype=tf.int64, minval=0, maxval=200
@@ -360,6 +416,7 @@ def main():
     )
     fn_out, _ = sample_transformer([temp_input, temp_target], training=False)
     fn_out.shape  # (batch_size, tar_seq_len, target_vocab_size)
+    sample_transformer.build_graph().summary()
 
 
 if __name__ == "__main__":
