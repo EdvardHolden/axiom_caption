@@ -24,7 +24,6 @@ class Context(Enum):
 
 class ModelType(Enum):
     INJECT = "inject"
-    INJECT_DECODER = "inject_decoder"
     DENSE = "dense"
     SPLIT = "split"
 
@@ -36,6 +35,11 @@ class EncoderType(Enum):
     TRANSFORMER = "transformer"
     RECURRENT = "recurrent"
     IMAGE = "image"
+
+
+class DecoderType(Enum):
+    INJECT = "inject"
+    TRANSFORMER = "transformer"
 
 
 class EncoderInput(Enum):

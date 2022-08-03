@@ -138,7 +138,6 @@ class MultiHeadAttention(tf.keras.layers.Layer):
 
 def point_wise_feed_forward_network(model_params):
     # TODO need to change this to tf.layer - fro saving and loading purposes
-    # TODO first layer was originally of a greater size
     return tf.keras.Sequential(
         [
             tf.keras.layers.Dense(
@@ -251,8 +250,9 @@ class TransformerEncoder(tf.keras.layers.Layer):
 
     def call(self, x, mask, training=None):
 
-        # TODO compute mask here!
-        # TODO maybe have it set to none and then check?
+        # Compute the input mask padding mask if it is not provided
+        if mask is None:
+            mask = create_padding_mask(x)
 
         seq_len = tf.shape(x)[1]
 

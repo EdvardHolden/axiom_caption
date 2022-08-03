@@ -17,7 +17,7 @@ from model import (
     initialise_model,
     get_hidden_state,
     reset_model_decoder_state,
-    Encoder,
+    RNNEncoder,
     ImageEncoder,
 )
 from evaluate import jaccard_score, coverage_score
@@ -77,7 +77,7 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
             # Call and update variables according to the type of encoder being used
             if isinstance(model[0], ImageEncoder):
                 img_tensor = model[0](img_tensor, training=training)
-            elif isinstance(model[0], Encoder):
+            elif isinstance(model[0], RNNEncoder):
                 img_tensor, hidden, mask = model[0](img_tensor, training=training)
 
         for i in range(1, target.shape[1]):
@@ -109,6 +109,8 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
                 dec_input = tf.expand_dims(target[:, i], 1)
             else:
                 dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
+
+            # TODO for transformer decoder we need to keep the previous inputs
 
     # Compute the total loss for the sequence
     sequence_loss = loss / int(target.shape[1])
@@ -335,6 +337,7 @@ def main(
     caption_tokenizer, vocab_size, conjecture_tokenizer = get_caption_conjecture_tokenizers(
         model_params, proof_data, context, train_id_file, problem_features
     )
+    model_params.vocab_size = vocab_size
 
     # Get the axiom frequencies from this dataset
     axiom_frequency = get_axiom_frequency(model_params.axiom_order, train_id_file, proof_data)
@@ -376,7 +379,7 @@ def main(
     del conjecture_tokenizer
 
     # Initialise the model
-    model = initialise_model(model_params.model_type, vocab_size, model_params, training_data=train_data)
+    model = initialise_model(model_params, training_data=train_data)
     tf.print("Training on: ", model)
 
     # Initialise the optimiser

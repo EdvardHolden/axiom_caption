@@ -19,7 +19,8 @@ from argparse import Namespace
 import json
 import os
 
-from enum_types import AxiomOrder, EncoderInput, AttentionMechanism, ModelType, EncoderType
+from enum_types import AxiomOrder, EncoderInput, AttentionMechanism, ModelType, EncoderType, DecoderType
+from model_transformer import TransformerEncoder, TransformerDecoder
 
 
 def adapt_normalization_layer(model, embedding_vectors):
@@ -105,9 +106,9 @@ def get_hidden_state(model, batch_size):
     return hidden
 
 
-def initialise_model(model_type, vocab_size, model_params, training_data=None):
+def initialise_model(model_params, training_data=None):
 
-    model = get_model(model_type, vocab_size, model_params)
+    model = get_model(model_params)
 
     # If normalisation on the embedding graph is set, we have to adapt the
     # layer before compiling (or re-compile) the model. This is done over
@@ -135,7 +136,7 @@ class ImageEncoder(tf.keras.Model):  # TODO possible issue here?
         else:
             self.normalize = None
 
-        if params.global_max_pool:  # FIXME unclear whether this should go before normalisation
+        if params.global_max_pool:
             self.max_pool = GlobalMaxPooling2D()
         else:
             self.max_pool = None
@@ -174,15 +175,14 @@ class ImageEncoder(tf.keras.Model):  # TODO possible issue here?
         return Model(inputs=x, outputs=self.call(x))
 
 
-# TODO add bidirectional encoder
-class Encoder(tf.keras.layers.Layer):
+class RNNEncoder(tf.keras.layers.Layer):
     """
     Encoder function for processing input sequences
     """
 
-    def __init__(self, params, name="conjecture_encoder", **kwargs):
+    def __init__(self, params, name="recurrent_encoder", **kwargs):
 
-        super(Encoder, self).__init__(name=name, **kwargs)
+        super(RNNEncoder, self).__init__(name=name, **kwargs)
 
         # Set the vocabulary size
         self.vocab_size = params.conjecture_vocab_size
@@ -251,7 +251,6 @@ class WordEncoder(layers.Layer):
 
         self.emb2 = rnn(no_rnn_units, return_sequences=True, dropout=dropout_rate)
 
-        # TODO need to understand the use of this?
         self.emb3 = TimeDistributed(Dense(no_dense_units, activation="relu"))
         self.d2 = Dropout(dropout_rate)
         print("Warning: Deprecated")
@@ -461,10 +460,16 @@ class InjectModel(tf.keras.Model):
         input_entity, input_word, hidden_state = inputs
 
         # Compute image embedding
-        if isinstance(self.encoder, Encoder):
+        if isinstance(self.encoder, RNNEncoder):
             entity_embedding, hidden_state, mask = self.encoder(input_entity, training=training)
         elif isinstance(self.encoder, ImageEncoder):
             entity_embedding = self.encoder(input_entity, training=training)
+        elif isinstance(self.encoder, TransformerEncoder):
+            entity_embedding = self.encoder(
+                input_entity,
+                mask=None,  # We pass mask as None as it will be derived in the function call of the encoder
+                training=training,
+            )
         else:
             raise ValueError(f'ERROR: Calling of encoder "{self.encoder}" not implemented for InjectModel')
 
@@ -556,44 +561,40 @@ class AdditiveFlatAttention(tf.keras.Model):
 def _get_encoder(params):
 
     if params.encoder_type is EncoderType.IMAGE:
-        encoder = ImageEncoder(params)
+        return ImageEncoder(params)
     elif params.encoder_type is EncoderType.RECURRENT:
-        encoder = Encoder(params)
+        return RNNEncoder(params)
     elif params.encoder_type is EncoderType.TRANSFORMER:
-        encoder = TransformerEncoder(params)
-    else:
-        raise ValueError(f'Cannot get model with the supplied "params.encoder_input": {params.encoder_input}')
-    return encoder
+        return TransformerEncoder(params)
+
+    raise ValueError(f'Cannot get encoder with the supplied "params.encoder_type": {params.encoder_type}')
 
 
-def get_model(model_type, vocab_size, params):
+def _get_decoder(params):
 
-    if model_type is ModelType.INJECT:
-        model = InjectModel(vocab_size, params)
-    elif model_type is ModelType.INJECT_DECODER or model_type is ModelType.SPLIT:
+    if params.decoder_type is DecoderType.INJECT:
+        return InjectDecoder(params.vocab_size, params)
+    elif params.decoder_type is DecoderType.TRANSFORMER:
+        return TransformerDecoder(params)
 
-        # TODO need to do something about this.
-        # Maybe change the
-        # What if I add a new type called "separate"
-        # And make some function for get_decoder?
+    raise ValueError(f'Cannot get decoder with the supplied "params.encoder_type": {params.encoder_type}')
 
-        # Model where encoder and decoder is separate for more efficient training
-        encoder = _get_encoder(params)  # TODO add transformer thingy here
 
-        # Initialise the decoder
-        decoder = InjectDecoder(
-            vocab_size, params
-        )  # TODO make into a get_decoder, but mayube keep the old functionality?
+def get_model(params):
+
+    if params.model_type is ModelType.INJECT:
+        return InjectModel(params.vocab_size, params)
+    elif params.model_type is ModelType.SPLIT:
+        # Return separate the encoder and decoder is separate for more efficient training
+        encoder = _get_encoder(params)
+        decoder = _get_decoder(params)
 
         # Wrap the model as a tuple
-        model = (encoder, decoder)
-    elif model_type is ModelType.DENSE:
-        model = DenseModel(vocab_size, params)
-    else:
-        print("Unrecognised model type: ", model_type, file=sys.stderr)
-        sys.exit(1)
+        return (encoder, decoder)
+    elif params.model_type is ModelType.DENSE:
+        return DenseModel(params.vocab_size, params)
 
-    return model
+    raise ValueError(f"Unrecognised model type: {params.model_type}")
 
 
 def load_model(ckpt_dir):
@@ -608,13 +609,11 @@ def load_model(ckpt_dir):
 
 def get_rnn(rnn_type):
     if rnn_type == "lstm":
-        rnn = LSTM
+        return LSTM
     elif rnn_type == "gru":
-        rnn = GRU
-    else:
-        raise ValueError(f'RNN type "{rnn_type}" not supported')
+        return GRU
 
-    return rnn
+    raise ValueError(f'RNN type "{rnn_type}" not supported')
 
 
 def get_attention_mechanism(model_params):
@@ -643,7 +642,6 @@ def get_model_params(model_dir):
     if params.model_type:
         params.model_type = ModelType(params.model_type)
 
-    # Set the axiom order
     if params.axiom_order:
         params.axiom_order = AxiomOrder(params.axiom_order)
 
@@ -661,12 +659,15 @@ def get_model_params(model_dir):
     else:
         ValueError(f"Could not determine encoder_input type from the encoder type {params.encoder_type}")
 
-    # if params.encoder_input:
-    #    params.encoder_input = EncoderInput(params.encoder_input)
+    if params.decoder_type:
+        params.decoder_type = DecoderType(params.decoder_type)
 
     if params.conjecture_vocab_size == "all":
         # We use None for all in the code
         params.conjecture_vocab_size = None
+
+    if params.model_type is ModelType.INJECT and params.decoder_type is DecoderType.TRANSFORMER:
+        raise ValueError("Incompatible parameters with inject model and trasnformer decoder")
 
     return params
 
@@ -676,9 +677,7 @@ def check_inject():
     params = get_model_params("experiments/base_model")
     params.normalize = False  # quick hack
     params.attention = AttentionMechanism.NONE  # quick hack
-    # params.attention = AttentionMechanism.FLAT  # quick hack
-
-    params.stateful = False  # FIXME is this right?
+    params.stateful = False
     print("model params: ", params)
 
     # TODO add  the other components
@@ -756,7 +755,7 @@ def check_encoder():
     params = get_model_params("experiments/base_model")
     # This needs to be supplied from data
     params.sequence_vocab_size = 80
-    enc = Encoder(params)
+    enc = RNNEncoder(params)
     print(enc)
     enc.build_graph().summary()
 
