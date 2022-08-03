@@ -673,16 +673,14 @@ def get_model_params(model_dir):
 
 
 def check_inject():
+
     # Load base model parameters
     params = get_model_params("experiments/base_model")
     params.normalize = False  # quick hack
     params.attention = AttentionMechanism.NONE  # quick hack
     params.stateful = False
+    params.vocab_size = int(params.axiom_vocab_size)
     print("model params: ", params)
-
-    # TODO add  the other components
-    # Get inject
-    vocab_size = 1000
 
     # Attention
     print("\n# # # Attention # # #")
@@ -690,7 +688,7 @@ def check_inject():
     m.build_graph().summary()
 
     print("\n# # # Inject # # #")
-    m = InjectModel(vocab_size, params)
+    m = InjectModel(params.vocab_size, params)
     m.build_graph().summary()
     # print("### No trainable variables: ", m.trainable_variables)
     import numpy as np
@@ -710,7 +708,7 @@ def check_inject():
 
     # InjectDecoder
     print("\n# # # InjectDecoder # # #")
-    m = InjectDecoder(vocab_size, params)
+    m = InjectDecoder(params.vocab_size, params)
     m.build_graph().summary()
 
 
@@ -719,48 +717,37 @@ def check_models():
     # Load base model parameters
     params = get_model_params("experiments/base_model")
     params.normalize = False  # quick hack
+    params.vocab_size = int(params.axiom_vocab_size)
     print("model params: ", params)
-    """
-    # Deprecated model
-    print("# # # MergeInject # # #")
-    m = get_model("merge_inject", 123, 20, params)
-    m.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
-    print(m)
-    print(m.build_graph().summary())
-    print()
-    """
+
+    # TODO need some more work here..
 
     print("# # # Inject # # #")
     params.stateful = False  # Need to turn off the state as do not want to specify batch size
-    m = get_model("inject", 123, params)
+    params.model_type = ModelType.INJECT
+    m = get_model((params))
     print(m)
     print(m.build_graph().summary())
 
     print("# # # Dense # # #")
-    dense = get_model("dense", 123, params)
+    params.model_type = ModelType.DENSE
+    dense = get_model(params)
     print(dense)
-    print(dense.summary())
     print(dense.build_graph().summary())
-
-    """
-    print("# # # Inject # # #")
-    m = get_model("inject", 123, 20, params)
-    m = get_model("attention_inject", 123, 20, params)
-    print(m)
-    print(m.build_graph().summary())
-    """
 
 
 def check_encoder():
     params = get_model_params("experiments/base_model")
     # This needs to be supplied from data
     params.sequence_vocab_size = 80
+    params.conjecture_vocab_size = 200  # HACK
+    params.vocab_size = int(params.axiom_vocab_size)
     enc = RNNEncoder(params)
     print(enc)
     enc.build_graph().summary()
 
 
 if __name__ == "__main__":
-    # check_models()
+    check_models()
     check_inject()
-    # check_encoder()
+    check_encoder()
