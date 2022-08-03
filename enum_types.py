@@ -22,6 +22,22 @@ class Context(Enum):
         return self.value
 
 
+class ModelType(Enum):
+    INJECT = "inject"
+    INJECT_DECODER = "inject_decoder"
+    DENSE = "dense"
+    SPLIT = "split"
+
+    def __str__(self):
+        return self.value
+
+
+class EncoderType(Enum):
+    TRANSFORMER = "transformer"
+    RECURRENT = "recurrent"
+    IMAGE = "image"
+
+
 class EncoderInput(Enum):
     SEQUENCE = "sequence"
     FLAT = "flat"

@@ -19,7 +19,7 @@ from argparse import Namespace
 import json
 import os
 
-from enum_types import AxiomOrder, EncoderInput, AttentionMechanism
+from enum_types import AxiomOrder, EncoderInput, AttentionMechanism, ModelType, EncoderType
 
 
 def adapt_normalization_layer(model, embedding_vectors):
@@ -555,10 +555,12 @@ class AdditiveFlatAttention(tf.keras.Model):
 
 def _get_encoder(params):
 
-    if params.encoder_input is EncoderInput.FLAT:
+    if params.encoder_type is EncoderType.IMAGE:
         encoder = ImageEncoder(params)
-    elif params.encoder_input is EncoderInput.SEQUENCE:
+    elif params.encoder_type is EncoderType.RECURRENT:
         encoder = Encoder(params)
+    elif params.encoder_type is EncoderType.TRANSFORMER:
+        encoder = TransformerEncoder(params)
     else:
         raise ValueError(f'Cannot get model with the supplied "params.encoder_input": {params.encoder_input}')
     return encoder
@@ -566,16 +568,26 @@ def _get_encoder(params):
 
 def get_model(model_type, vocab_size, params):
 
-    if model_type == "inject":
+    if model_type is ModelType.INJECT:
         model = InjectModel(vocab_size, params)
-    elif model_type == "inject_decoder":
+    elif model_type is ModelType.INJECT_DECODER or model_type is ModelType.SPLIT:
+
+        # TODO need to do something about this.
+        # Maybe change the
+        # What if I add a new type called "separate"
+        # And make some function for get_decoder?
+
         # Model where encoder and decoder is separate for more efficient training
-        encoder = _get_encoder(params)
+        encoder = _get_encoder(params)  # TODO add transformer thingy here
+
         # Initialise the decoder
-        decoder = InjectDecoder(vocab_size, params)
+        decoder = InjectDecoder(
+            vocab_size, params
+        )  # TODO make into a get_decoder, but mayube keep the old functionality?
+
         # Wrap the model as a tuple
         model = (encoder, decoder)
-    elif model_type == "dense":
+    elif model_type is ModelType.DENSE:
         model = DenseModel(vocab_size, params)
     else:
         print("Unrecognised model type: ", model_type, file=sys.stderr)
@@ -628,6 +640,9 @@ def get_model_params(model_dir):
         params = json.load(f)
         params = Namespace(**params)
 
+    if params.model_type:
+        params.model_type = ModelType(params.model_type)
+
     # Set the axiom order
     if params.axiom_order:
         params.axiom_order = AxiomOrder(params.axiom_order)
@@ -635,8 +650,19 @@ def get_model_params(model_dir):
     if params.attention:
         params.attention = AttentionMechanism(params.attention)
 
-    if params.encoder_input:
-        params.encoder_input = EncoderInput(params.encoder_input)
+    if params.encoder_type:
+        params.encoder_type = EncoderType(params.encoder_type)
+
+    # Infer input type from the encoder type - sort of need both variables
+    if params.encoder_type is EncoderType.TRANSFORMER or params.encoder_type is EncoderType.RECURRENT:
+        params.encoder_input = EncoderInput.SEQUENCE
+    elif params.encoder_type is EncoderType.IMAGE:
+        params.encoder_input = EncoderInput.FLAT
+    else:
+        ValueError(f"Could not determine encoder_input type from the encoder type {params.encoder_type}")
+
+    # if params.encoder_input:
+    #    params.encoder_input = EncoderInput(params.encoder_input)
 
     if params.conjecture_vocab_size == "all":
         # We use None for all in the code
