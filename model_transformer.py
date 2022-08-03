@@ -248,7 +248,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
 
         self.dropout = tf.keras.layers.Dropout(model_params.dropout_rate)
 
-    def call(self, x, mask, training=None):
+    def call(self, x, mask=None, training=None):
 
         # Compute the input mask padding mask if it is not provided
         if mask is None:

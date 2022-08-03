@@ -19,6 +19,7 @@ from model import (
     reset_model_decoder_state,
     RNNEncoder,
     ImageEncoder,
+    TransformerEncoder,
 )
 from evaluate import jaccard_score, coverage_score
 from enum_types import AxiomOrder
@@ -74,11 +75,14 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
 
         # Check if using separate decoder/encoder for faster training
         if isinstance(model, tuple):
+            # TODO this should be a function
             # Call and update variables according to the type of encoder being used
-            if isinstance(model[0], ImageEncoder):
+            if isinstance(model[0], ImageEncoder) or isinstance(model[0], TransformerEncoder):
                 img_tensor = model[0](img_tensor, training=training)
             elif isinstance(model[0], RNNEncoder):
                 img_tensor, hidden, mask = model[0](img_tensor, training=training)
+            else:
+                raise ValueError(f"Encoder call not implemented for {model[0]}")
 
         for i in range(1, target.shape[1]):
             # Predict the next token - either by using the full model or just the decoder

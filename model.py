@@ -401,13 +401,17 @@ class InjectDecoder(tf.keras.Model):
         self.out_layer = Dense(vocab_size)
 
         self.repeat = RepeatVector(1)
+        self.flatten = Flatten()
 
     def call(self, inputs, training=None, mask=None):
 
         # Extract the input elements
         image_emb, input_word, hidden_state = inputs
 
-        # Compute image embedding
+        # If input is more than 2 dimension, we flatten it to fit the rest of the setup
+        if len(image_emb.shape) > 2:
+            image_emb = self.flatten(image_emb)
+
         # Pass word through embedding layer
         word_emb = self.word_embedder(input_word, training=training)
 
@@ -448,6 +452,7 @@ class InjectModel(tf.keras.Model):
         super(InjectModel, self).__init__(name=name, **kwargs)
 
         self.encoder = _get_encoder(model_params)
+        print(self.encoder)
         self.inject_decoder = InjectDecoder(vocab_size, model_params)
 
         self.vocab_size = vocab_size
@@ -625,7 +630,6 @@ def get_attention_mechanism(model_params):
         return tf.keras.layers.Attention(score_mode="concat", dropout=model_params.dropout_rate)
     elif model_params.attention is AttentionMechanism.LOUNG_DOT:
         return tf.keras.layers.Attention(score_mode="dot", dropout=model_params.dropout_rate)
-
     elif model_params.attention is AttentionMechanism.NONE:
         return None
     else:
@@ -667,7 +671,7 @@ def get_model_params(model_dir):
         params.conjecture_vocab_size = None
 
     if params.model_type is ModelType.INJECT and params.decoder_type is DecoderType.TRANSFORMER:
-        raise ValueError("Incompatible parameters with inject model and trasnformer decoder")
+        raise ValueError("Incompatible parameters with inject model and transformer decoder")
 
     return params
 
