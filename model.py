@@ -185,10 +185,10 @@ class RNNEncoder(tf.keras.layers.Layer):
         super(RNNEncoder, self).__init__(name=name, **kwargs)
 
         # Set the vocabulary size
-        self.vocab_size = params.conjecture_vocab_size
+        self.input_vocab_size = params.input_vocab_size
 
         # The embedding layer converts tokens to vectors
-        self.embedding = tf.keras.layers.Embedding(params.conjecture_vocab_size, params.embedding_size)
+        self.embedding = tf.keras.layers.Embedding(params.input_vocab_size, params.embedding_size)
 
         # Get the RNN type
         rnn = get_rnn(params.rnn_type)
@@ -226,47 +226,7 @@ class RNNEncoder(tf.keras.layers.Layer):
 
     def build_graph(self):
         # Input shape of a single word
-        x = Input(shape=(self.vocab_size,))
-        return Model(inputs=x, outputs=self.call(x))
-
-
-class WordEncoder(layers.Layer):
-    def __init__(
-        self,
-        vocab_size,
-        embedding_size,
-        rnn_type,
-        no_rnn_units,
-        no_dense_units,
-        dropout_rate,
-        name="word_encoder",
-        **kwargs,
-    ):
-        super(WordEncoder, self).__init__(name=name, **kwargs)
-        self.vocab_size = vocab_size
-        self.emb1 = Embedding(vocab_size, embedding_size, mask_zero=True)
-        self.d1 = Dropout(dropout_rate)
-
-        rnn = get_rnn(rnn_type)
-
-        self.emb2 = rnn(no_rnn_units, return_sequences=True, dropout=dropout_rate)
-
-        self.emb3 = TimeDistributed(Dense(no_dense_units, activation="relu"))
-        self.d2 = Dropout(dropout_rate)
-        print("Warning: Deprecated")
-
-    def call(self, inputs, training=None):
-        x = inputs
-        x = self.emb1(x)
-        x = self.d1(x, training=training)
-        x = self.emb2(x, training=training)
-        x = self.emb3(x)
-        x = self.d2(x, training=training)
-        return x
-
-    def build_graph(self):
-        # Input shape of a single word
-        x = Input(shape=(self.vocab_size,))
+        x = Input(shape=(self.input_vocab_size,))
         return Model(inputs=x, outputs=self.call(x))
 
 
@@ -312,7 +272,6 @@ class WordDecoder(layers.Layer):
         x = self.fc(x)
         x = tf.reshape(x, (-1, x.shape[2]))
         x = self.d2(x, training=training)
-        # x = self.out(x)
 
         return x, hidden
 
@@ -331,9 +290,9 @@ class WordDecoder(layers.Layer):
 
 
 class DenseModel(tf.keras.Model):
-    def __init__(self, vocab_size, model_params, name="dense", **kwargs):
+    def __init__(self, model_params, name="dense_model", **kwargs):
         super(DenseModel, self).__init__(name=name, **kwargs)
-        self.vocab_size = vocab_size
+        self.target_vocab_size = model_params.target_vocab_size
         self.no_rnn_units = model_params.no_rnn_units
 
         self.axiom_order = model_params.axiom_order
@@ -341,13 +300,13 @@ class DenseModel(tf.keras.Model):
         self.encoder = ImageEncoder(model_params)
 
         self.word_embedder = tf.keras.layers.Embedding(
-            vocab_size, model_params.embedding_size, name="layer_word_embedding"
+            self.target_vocab_size, model_params.embedding_size, name="layer_word_embedding"
         )
 
         # Define the dense model
         self.fc = Dense(model_params.no_dense_units, activation="relu", name="layer_dense_1")
         self.dropout = Dropout(model_params.dropout_rate, name="layer_dropout")
-        self.out = Dense(vocab_size, name="layer_output")
+        self.out = Dense(self.target_vocab_size, name="layer_output")
 
         self.flatten = Flatten(name="layer_flatten")
 
@@ -374,7 +333,7 @@ class DenseModel(tf.keras.Model):
 
     def get_config(self):
         config = super(DenseModel, self).get_config()
-        config.update({"vocab_size": self.vocab_size, "name": self.name})
+        config.update({"target_vocab_size": self.target_vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -383,22 +342,22 @@ class DenseModel(tf.keras.Model):
 
 
 class InjectDecoder(tf.keras.Model):
-    def __init__(self, vocab_size, model_params, name="inject_decoder", **kwargs):
+    def __init__(self, model_params, name="inject_decoder", **kwargs):
 
         super(InjectDecoder, self).__init__(name=name, **kwargs)
-        self.vocab_size = vocab_size
+        self.target_vocab_size = model_params.target_vocab_size
         self.no_rnn_units = model_params.no_rnn_units
         self.no_dense_units = model_params.no_dense_units
 
         self.axiom_order = model_params.axiom_order
 
-        self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
+        self.word_embedder = tf.keras.layers.Embedding(self.target_vocab_size, model_params.embedding_size)
 
         self.attention = get_attention_mechanism(model_params)
 
         self.word_decoder = WordDecoder(model_params)
 
-        self.out_layer = Dense(vocab_size)
+        self.out_layer = Dense(self.target_vocab_size)
 
         self.repeat = RepeatVector(1)
         self.flatten = Flatten()
@@ -439,7 +398,7 @@ class InjectDecoder(tf.keras.Model):
 
     def get_config(self):
         config = super(InjectDecoder, self).get_config()
-        config.update({"vocab_size": self.vocab_size, "name": self.name})
+        config.update({"target_vocab_size": self.target_vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -448,14 +407,13 @@ class InjectDecoder(tf.keras.Model):
 
 
 class InjectModel(tf.keras.Model):
-    def __init__(self, vocab_size, model_params, name="inject_model", **kwargs):
+    def __init__(self, model_params, name="inject_model", **kwargs):
         super(InjectModel, self).__init__(name=name, **kwargs)
 
         self.encoder = _get_encoder(model_params)
-        print(self.encoder)
-        self.inject_decoder = InjectDecoder(vocab_size, model_params)
+        self.inject_decoder = InjectDecoder(model_params)
 
-        self.vocab_size = vocab_size
+        self.target_vocab_size = model_params.target_vocab_size
         self.no_rnn_units = model_params.no_rnn_units
         self.axiom_order = model_params.axiom_order
 
@@ -486,7 +444,7 @@ class InjectModel(tf.keras.Model):
 
     def get_config(self):
         config = super(InjectModel, self).get_config()
-        config.update({"vocab_size": self.vocab_size, "name": self.name})
+        config.update({"target_vocab_size": self.target_vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -578,7 +536,7 @@ def _get_encoder(params):
 def _get_decoder(params):
 
     if params.decoder_type is DecoderType.INJECT:
-        return InjectDecoder(params.vocab_size, params)
+        return InjectDecoder(params)
     elif params.decoder_type is DecoderType.TRANSFORMER:
         return TransformerDecoder(params)
 
@@ -588,7 +546,7 @@ def _get_decoder(params):
 def get_model(params):
 
     if params.model_type is ModelType.INJECT:
-        return InjectModel(params.vocab_size, params)
+        return InjectModel(params)
     elif params.model_type is ModelType.SPLIT:
         # Return separate the encoder and decoder is separate for more efficient training
         encoder = _get_encoder(params)
@@ -597,7 +555,7 @@ def get_model(params):
         # Wrap the model as a tuple
         return (encoder, decoder)
     elif params.model_type is ModelType.DENSE:
-        return DenseModel(params.vocab_size, params)
+        return DenseModel(params)
 
     raise ValueError(f"Unrecognised model type: {params.model_type}")
 
@@ -666,9 +624,9 @@ def get_model_params(model_dir):
     if params.decoder_type:
         params.decoder_type = DecoderType(params.decoder_type)
 
-    if params.conjecture_vocab_size == "all":
+    if params.input_vocab_size == "all":
         # We use None for all in the code
-        params.conjecture_vocab_size = None
+        params.input_vocab_size = None
 
     if params.model_type is ModelType.INJECT and params.decoder_type is DecoderType.TRANSFORMER:
         raise ValueError("Incompatible parameters with inject model and transformer decoder")
@@ -683,7 +641,7 @@ def check_inject():
     params.normalize = False  # quick hack
     params.attention = AttentionMechanism.NONE  # quick hack
     params.stateful = False
-    params.vocab_size = int(params.axiom_vocab_size)
+    params.target_vocab_size = int(params.target_vocab_size)
     print("model params: ", params)
 
     # Attention
@@ -692,7 +650,7 @@ def check_inject():
     m.build_graph().summary()
 
     print("\n# # # Inject # # #")
-    m = InjectModel(params.vocab_size, params)
+    m = InjectModel(params)
     m.build_graph().summary()
     # print("### No trainable variables: ", m.trainable_variables)
     import numpy as np
@@ -712,7 +670,7 @@ def check_inject():
 
     # InjectDecoder
     print("\n# # # InjectDecoder # # #")
-    m = InjectDecoder(params.vocab_size, params)
+    m = InjectDecoder(params)
     m.build_graph().summary()
 
 
@@ -721,10 +679,8 @@ def check_models():
     # Load base model parameters
     params = get_model_params("experiments/base_model")
     params.normalize = False  # quick hack
-    params.vocab_size = int(params.axiom_vocab_size)
+    params.target_vocab_size = int(params.target_vocab_size)
     print("model params: ", params)
-
-    # TODO need some more work here..
 
     print("# # # Inject # # #")
     params.stateful = False  # Need to turn off the state as do not want to specify batch size
@@ -744,10 +700,9 @@ def check_encoder():
     params = get_model_params("experiments/base_model")
     # This needs to be supplied from data
     params.sequence_vocab_size = 80
-    params.conjecture_vocab_size = 200  # HACK
-    params.vocab_size = int(params.axiom_vocab_size)
+    params.input_vocab_size = 200  # HACK
+    params.target_vocab_size = int(params.target_vocab_size)
     enc = RNNEncoder(params)
-    print(enc)
     enc.build_graph().summary()
 
 

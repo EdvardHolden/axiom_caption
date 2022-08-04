@@ -235,7 +235,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self.transformer_num_layers = model_params.transformer_num_layers
 
         self.embedding = tf.keras.layers.Embedding(
-            model_params.conjecture_vocab_size, model_params.transformer_dense_units
+            model_params.input_vocab_size, model_params.transformer_dense_units
         )
         # TODO make optional
         self.pos_encoding = positional_encoding(
@@ -283,7 +283,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
         self.transformer_num_layers = model_params.transformer_num_layers
 
         self.embedding = tf.keras.layers.Embedding(
-            model_params.axiom_vocab_size, model_params.transformer_dense_units
+            model_params.target_vocab_size, model_params.transformer_dense_units
         )
         self.pos_encoding = positional_encoding(model_params.max_caption_length, self.transformer_dense_units)
 
@@ -291,7 +291,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
             TransformerDecoderLayer(model_params) for _ in range(model_params.transformer_num_layers)
         ]
         self.dropout = tf.keras.layers.Dropout(model_params.dropout_rate)
-        self.output_layer = tf.keras.layers.Dense(model_params.axiom_vocab_size)
+        self.output_layer = tf.keras.layers.Dense(model_params.target_vocab_size)
         self.flatten_ouput = Flatten()
 
     def call(self, x, enc_output, look_ahead_mask, padding_mask, training=None):
@@ -384,8 +384,8 @@ def main():
         transformer_dense_units=512,
         num_attention_heads=8,
         dropout_rate=0.1,
-        conjecture_vocab_size=200,
-        axiom_vocab_size=400,
+        input_vocab_size=200,
+        target_vocab_size=400,
         max_caption_length=22,
     )
 

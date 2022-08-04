@@ -405,10 +405,9 @@ def main(
     model_params = get_model_params(model_dir)
 
     # Load the tokenizers for this training setting
-    caption_tokenizer, vocab_size, conjecture_tokenizer = get_caption_conjecture_tokenizers(
+    caption_tokenizer, _, conjecture_tokenizer = get_caption_conjecture_tokenizers(
         model_params, proof_data, context, train_id_file, problem_features
     )
-    model_params.vocab_size = vocab_size
 
     # Get the axiom frequencies from this dataset
     axiom_frequency = get_axiom_frequency(model_params.axiom_order, train_id_file, proof_data)

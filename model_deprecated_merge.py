@@ -1,3 +1,43 @@
+class WordEncoder(layers.Layer):
+    def __init__(
+        self,
+        vocab_size,
+        embedding_size,
+        rnn_type,
+        no_rnn_units,
+        no_dense_units,
+        dropout_rate,
+        name="word_encoder",
+        **kwargs,
+    ):
+        super(WordEncoder, self).__init__(name=name, **kwargs)
+        self.vocab_size = vocab_size
+        self.emb1 = Embedding(vocab_size, embedding_size, mask_zero=True)
+        self.d1 = Dropout(dropout_rate)
+
+        rnn = get_rnn(rnn_type)
+
+        self.emb2 = rnn(no_rnn_units, return_sequences=True, dropout=dropout_rate)
+
+        self.emb3 = TimeDistributed(Dense(no_dense_units, activation="relu"))
+        self.d2 = Dropout(dropout_rate)
+        print("Warning: Deprecated")
+
+    def call(self, inputs, training=None):
+        x = inputs
+        x = self.emb1(x)
+        x = self.d1(x, training=training)
+        x = self.emb2(x, training=training)
+        x = self.emb3(x)
+        x = self.d2(x, training=training)
+        return x
+
+    def build_graph(self):
+        # Input shape of a single word
+        x = Input(shape=(self.vocab_size,))
+        return Model(inputs=x, outputs=self.call(x))
+
+
 class MergeInjectModel(tf.keras.Model):
     def __init__(self, vocab_size, model_params, global_max_pool=False, name="merge_inject", **kwargs):
         super(MergeInjectModel, self).__init__(name=name, **kwargs)
