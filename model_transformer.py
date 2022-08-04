@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-from keras.layers import Input
+from tensorflow.keras.layers import Input, Flatten
 from tensorflow.keras import Model
 
 import config
@@ -291,8 +291,13 @@ class TransformerDecoder(tf.keras.layers.Layer):
             TransformerDecoderLayer(model_params) for _ in range(model_params.transformer_num_layers)
         ]
         self.dropout = tf.keras.layers.Dropout(model_params.dropout_rate)
+        self.output_layer = tf.keras.layers.Dense(model_params.axiom_vocab_size)
+        self.flatten_ouput = Flatten()
 
     def call(self, x, enc_output, look_ahead_mask, padding_mask, training=None):
+
+        if look_ahead_mask is None:
+            look_ahead_mask = create_padding_mask(x)
 
         seq_len = tf.shape(x)[1]
         attention_weights = {}
@@ -311,6 +316,12 @@ class TransformerDecoder(tf.keras.layers.Layer):
             attention_weights[f"decoder_layer{i+1}_block2"] = block2
 
         # x.shape == (batch_size, target_seq_len, transformer_dense_units)
+
+        # This might be a bit unexpected if a full sequence might be given
+        x = self.flatten_ouput(x)
+
+        x = self.output_layer(x)  # (batch_size, tar_seq_len*target_vocab_size)
+
         return x, attention_weights
 
     def build_graph(self):
@@ -325,10 +336,9 @@ class TransformerModel(tf.keras.Model):
         self.max_caption_length = model_params.max_caption_length
         self.encoder = TransformerEncoder(model_params)
         self.decoder = TransformerDecoder(model_params)
-        self.final_layer = tf.keras.layers.Dense(model_params.axiom_vocab_size)
 
     def call(self, inputs, training=None):
-        # TODO adapt once creation of masks are dissues
+        # TODO adapt once creation of masks are dissused
         # Keras models prefer if you pass all your inputs in the first argument
         inp, tar = inputs
 
@@ -343,9 +353,7 @@ class TransformerModel(tf.keras.Model):
             tar, enc_output, look_ahead_mask, padding_mask, training=training
         )
 
-        final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
-
-        return final_output, attention_weights
+        return dec_output, attention_weights
 
     def create_masks(self, inp, tar):
         # Encoder padding mask (Used in the 2nd attention block in the decoder too.)
@@ -418,7 +426,15 @@ def main():
     print("\n", "# " * 16)
     print(" # # Encoder")
     sample_encoder = TransformerEncoder(model_params)
-    temp_input = tf.random.uniform((64, 62), dtype=tf.int64, minval=0, maxval=200)
+    temp_input = tf.random.uniform(
+        (
+            64,
+            min(63, config.CONJECTURE_INPUT_MAX_LENGTH),
+        ),
+        dtype=tf.int64,
+        minval=0,
+        maxval=200,
+    )
     sample_encoder_output = sample_encoder(temp_input, mask=None, training=None)
     sample_encoder_output.shape
     sample_encoder.build_graph().summary()

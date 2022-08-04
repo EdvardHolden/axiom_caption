@@ -24,6 +24,7 @@ from model import (
 from evaluate import jaccard_score, coverage_score
 from enum_types import AxiomOrder
 from parser import get_train_parser
+from model_transformer import create_padding_mask, TransformerDecoder
 
 # Make script deterministic to see if we can avoid the gpu issue
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
@@ -51,6 +52,54 @@ def loss_function(real, pred):
 
 
 @tf.function
+def get_initial_decoder_input(tokenizer, target, sequence=False):
+    """
+    Returns the decoder input consisting of the start token.
+    Sequence is set to true if using e.g. TransformerDecoder where
+    we need to supply the full sequence predicted.
+    """
+
+    # Make list of start tokens
+    dec_input = [tokenizer.word_index[config.TOKEN_START]] * target.shape[0]
+
+    if sequence:
+        # TODO why does this work in the guide but not for me?
+        input_array = tf.TensorArray(dtype=tf.int32, size=target.shape[1])
+        # input_array = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
+        return input_array.write(0, dec_input)
+    else:
+        # Need to expand the dimensions when feeding single tokens
+        return tf.expand_dims(dec_input, 1)
+
+
+@tf.function
+def get_next_decoder_input_token(
+    dec_input, pred, target, training, teacher_forcing_rate, iteration, sequence=False
+):
+
+    # Check if applying teacher-forcing in training mode
+    """
+    if training and tf.random.uniform(()) <= teacher_forcing_rate:
+        # Teacher forcing - using the correct input target
+        dec_input = tf.expand_dims(target[:, i], 1)
+    else:
+        # Using the predicted tokens
+        dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
+    """
+
+    if not training or tf.random.uniform(()) <= teacher_forcing_rate:
+        next_tokens = target[:, iteration]
+    else:
+        next_tokens = tf.cast(pred, tf.int32)
+
+    # If we are using sequences - add in-place, otherwise return expanded tokens
+    if sequence:
+        return dec_input.write(iteration, next_tokens)
+    else:
+        return tf.expand_dims(next_tokens, 1)
+
+
+@tf.function
 def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_rate, training):
 
     # Initial loss on the batch is zero
@@ -62,59 +111,77 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
     # Initialise the hidden shape of the model - used for attention mainly
     hidden = get_hidden_state(model, target.shape[0])
 
-    # Initialise input vector with the start token
-    dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * target.shape[0], 1)
+    # Determine whether the decoding stage is operating over a sequence (relevant for transformer)
+    sequence = isinstance(model, tuple) and isinstance(model[1], TransformerDecoder)
+
+    # Get the initial decoder input consisting of the start token
+    dec_input = get_initial_decoder_input(
+        tokenizer,
+        target,
+        sequence=sequence,
+    )
 
     # List for holding the predictions
     predictions = []
 
-    # Placeholder for mask if not used
+    # Placeholder for mask - not used in all model types
     mask = None
 
     with tf.GradientTape() as tape:
 
+        # Check if I can make into a function which returns *n arguments
         # Check if using separate decoder/encoder for faster training
         if isinstance(model, tuple):
-            # TODO this should be a function
+            # TODO in this function just pass the encoder, not full model : call_encoder() ....
             # Call and update variables according to the type of encoder being used
-            if isinstance(model[0], ImageEncoder) or isinstance(model[0], TransformerEncoder):
+            if isinstance(model[0], ImageEncoder):
                 img_tensor = model[0](img_tensor, training=training)
+
+            elif isinstance(model[0], TransformerEncoder):
+                padding_mask = create_padding_mask(img_tensor)
+                img_tensor = model[0](img_tensor, mask=padding_mask, training=training)
+
             elif isinstance(model[0], RNNEncoder):
                 img_tensor, hidden, mask = model[0](img_tensor, training=training)
             else:
                 raise ValueError(f"Encoder call not implemented for {model[0]}")
 
         for i in range(1, target.shape[1]):
+
             # Predict the next token - either by using the full model or just the decoder
             # encodes the image each time
-            if isinstance(model, tuple):
+            if isinstance(model, tuple) and isinstance(model[1], TransformerDecoder):
+                # Reshape the sequence fed to the decoder
+                transformer_dec_input = tf.transpose(dec_input.stack())
+
+                # Call transformer decoder
+                look_padding = create_padding_mask(transformer_dec_input)
+                y_hat, _ = model[1](
+                    transformer_dec_input, img_tensor, look_padding, padding_mask, training=training
+                )
+
+            elif isinstance(model, tuple):
+                # Call decoder
                 y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training, mask=mask)
             else:
+                # Call whole model on all the input data
                 y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
 
+            # Append predictions
             pred = tf.math.argmax(y_hat, axis=1)
             predictions.append(pred)
 
             # Compute loss of predictions
             loss += loss_function(target[:, i], y_hat)
 
-            # Check if applying teacher-forcing in training mode
-            """
-            if training and tf.random.uniform(()) <= teacher_forcing_rate:
-                # Teacher forcing - using the correct input target
-                dec_input = tf.expand_dims(target[:, i], 1)
-            else:
-                # Using the predicted tokens
-                dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
-            """
-            # Check with just using teacher forcing? TODO
-            # tf.print("Warning: TODO teacher_forcing_rate might be bugged")
-            if not training or tf.random.uniform(()) <= teacher_forcing_rate:
-                dec_input = tf.expand_dims(target[:, i], 1)
-            else:
-                dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
+            # Get the next decoder input tokens
+            dec_input = get_next_decoder_input_token(
+                dec_input, pred, target, training, teacher_forcing_rate, i, sequence=sequence
+            )
 
-            # TODO for transformer decoder we need to keep the previous inputs
+    # Close dec_input if TensorArray as it does not like being written to without being used (for the last iteration)
+    if isinstance(dec_input, tf.TensorArray):
+        dec_input.close()
 
     # Compute the total loss for the sequence
     sequence_loss = loss / int(target.shape[1])

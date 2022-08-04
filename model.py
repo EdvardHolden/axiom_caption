@@ -94,16 +94,16 @@ def get_hidden_state(model, batch_size):
     Get the initial hidden state of the model - based on the number of rnn parameters
     """
     if isinstance(model, DenseModel):
-        hidden = None  # no hidden state in the dense model
+        return None  # no hidden state in the dense model
     elif isinstance(model, tuple) and isinstance(model[1], InjectDecoder):
-        hidden = model[1].word_decoder.reset_state(batch_size=batch_size)
+        return model[1].word_decoder.reset_state(batch_size=batch_size)
+    elif isinstance(model, tuple) and isinstance(model[1], TransformerDecoder):
+        return None  # No hidden state for this decoder
     elif isinstance(model, InjectModel):
-        hidden = model.inject_decoder.word_decoder.reset_state(batch_size=batch_size)
-    else:
-        # Assume model structure with a word_decoder
-        hidden = model.word_decoder.reset_state(batch_size=batch_size)
+        return model.inject_decoder.word_decoder.reset_state(batch_size=batch_size)
 
-    return hidden
+    # Default - Assume model structure with a word_decoder
+    return model.word_decoder.reset_state(batch_size=batch_size)
 
 
 def initialise_model(model_params, training_data=None):
