@@ -125,7 +125,7 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
     predictions = []
 
     # Placeholder for mask - not used in all model types
-    mask = None
+    input_mask = None
 
     with tf.GradientTape() as tape:
 
@@ -138,11 +138,11 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
                 img_tensor = model[0](img_tensor, training=training)
 
             elif isinstance(model[0], TransformerEncoder):
-                padding_mask = create_padding_mask(img_tensor)
-                img_tensor = model[0](img_tensor, mask=padding_mask, training=training)
+                input_mask = create_padding_mask(img_tensor)
+                img_tensor = model[0](img_tensor, mask=input_mask, training=training)
 
             elif isinstance(model[0], RNNEncoder):
-                img_tensor, hidden, mask = model[0](img_tensor, training=training)
+                img_tensor, hidden, input_mask = model[0](img_tensor, training=training)
             else:
                 raise ValueError(f"Encoder call not implemented for {model[0]}")
 
@@ -155,14 +155,14 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
                 transformer_dec_input = tf.transpose(dec_input.stack())
 
                 # Call transformer decoder
-                look_padding = create_padding_mask(transformer_dec_input)
+                decoder_mask = create_padding_mask(transformer_dec_input)
                 y_hat, _ = model[1](
-                    transformer_dec_input, img_tensor, look_padding, padding_mask, training=training
+                    transformer_dec_input, img_tensor, decoder_mask, input_mask, training=training
                 )
 
             elif isinstance(model, tuple):
                 # Call decoder
-                y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training, mask=mask)
+                y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training, mask=input_mask)
             else:
                 # Call whole model on all the input data
                 y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
