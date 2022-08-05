@@ -1,7 +1,7 @@
 {
-    "model_type": "inject",
+    "model_type": "split",
     "axiom_order": "length",
-    "attention": "bahdanau",
+    "attention": "none",
     "stateful": true,
     "normalize": false,
     "batch_norm": false,
@@ -11,10 +11,15 @@
     "no_dense_units": 512,
     "dropout_rate": 0.1,
     "learning_rate": 0.001,
-    "encoder_input": "sequence",
-    "axiom_vocab_size": 6000,
+    "target_vocab_size": 6000,
     "global_max_pool": false,
-    "conjecture_vocab_size": 4000,
+    "input_vocab_size": 4000,
     "remove_unknown": true,
-    "teacher_forcing_rate": 1.0
+    "teacher_forcing_rate": 1.0,
+    "transformer_num_layers": 2,
+    "transformer_dense_units": 128,
+    "num_attention_heads": 2,
+    "encoder_type": "transformer",
+    "decoder_type": "transformer",
+    "conjecture_input_length": 200
 }

@@ -234,7 +234,7 @@ def _load_cached_features(img_name, cap):
     return img_tensor, cap
 
 
-def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids):
+def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids, conjecture_input_length):
 
     # Load the features from the pickle file
     conjectures = load_clean_conjectures(conjecture_path, ids)
@@ -242,15 +242,10 @@ def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids):
     for prob_id, conj in conjectures.items():
         conjectures[prob_id] = conjecture_tokenizer.texts_to_sequences([conj])[0]
 
-    # Quickly compute maximum conjectur length
-    max_len = max(len(v) for v in conjectures.values())
-    tf.print(f"Maximum conjecture input length: {max_len}")
-    if max_len > config.CONJECTURE_INPUT_MAX_LENGTH:
-        max_len = config.CONJECTURE_INPUT_MAX_LENGTH
-        tf.print(f"Truncated input length to: {max_len}")
-
     for prob_id, conj in conjectures.items():
-        conjectures[prob_id] = pad_sequences([conj], maxlen=max_len, padding="post", truncating="post")[0]
+        conjectures[prob_id] = pad_sequences(
+            [conj], maxlen=conjecture_input_length, padding="post", truncating="post"
+        )[0]
 
     return conjectures
 
@@ -330,6 +325,7 @@ def get_dataset(
     remove_unknown=False,
     encoder_input=EncoderInput.FLAT,
     conjecture_tokenizer=None,
+    conjecture_input_length=None,
 ):
 
     # Load the necessary data for the id set
@@ -340,8 +336,10 @@ def get_dataset(
         # Load image features as a dict and get flag of whether they are cached
         entity_features, caching = load_image_feature_dict(entity_feature_path, ids)
     elif encoder_input is EncoderInput.SEQUENCE:
-        entity_features = load_conjecture_tokens_dict(entity_feature_path, conjecture_tokenizer, ids)
-        # We always set caching to False for sequence inptu for now
+        entity_features = load_conjecture_tokens_dict(
+            entity_feature_path, conjecture_tokenizer, ids, conjecture_input_length
+        )
+        # We always set caching to False for sequence input for now
         caching = False
     else:
         raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
@@ -493,6 +491,7 @@ def main():
         "data/raw/deepmath_conjectures.pkl",
         "data/deepmath/tokenizer_conjecture_None.json",
         load_ids("data/deepmath/train.txt"),
+        200,
     )
 
 

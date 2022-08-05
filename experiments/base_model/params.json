@@ -1,19 +1,24 @@
 {
-    "model_type": "inject_decoder",
+    "model_type": "inject",
     "axiom_order": "original",
-    "attention": true,
+    "attention": "loung_dot",
     "stateful": true,
     "normalize": false,
     "batch_norm": false,
     "rnn_type": "gru",
-    "no_rnn_units": 512,
+    "no_rnn_units": 32,
     "embedding_size": 50,
+    "global_max_pool": false,
     "no_dense_units" : 64,
     "dropout_rate": 0.2,
     "learning_rate": 0.001,
     "remove_unknown": true,
-    "axiom_vocab_size": "6000",
-    "encoder_input": "sequence",
-    "conjecture_vocab_size": "all"
+    "target_vocab_size": "6000",
+    "encoder_input": "flat",
+    "input_vocab_size": "all",
+    "teacher_forcing_rate": 0.0,
+    "encoder_type": "image",
+    "decoder_type": "inject",
+    "conjecture_input_length": 500
 }
 

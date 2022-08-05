@@ -233,14 +233,13 @@ class TransformerEncoder(tf.keras.layers.Layer):
 
         self.transformer_dense_units = model_params.transformer_dense_units
         self.transformer_num_layers = model_params.transformer_num_layers
+        self.conjecture_input_length = model_params.conjecture_input_length
 
         self.embedding = tf.keras.layers.Embedding(
             model_params.input_vocab_size, model_params.transformer_dense_units
         )
         # TODO make optional
-        self.pos_encoding = positional_encoding(
-            config.CONJECTURE_INPUT_MAX_LENGTH, self.transformer_dense_units
-        )
+        self.pos_encoding = positional_encoding(self.conjecture_input_length, self.transformer_dense_units)
 
         self.enc_layers = [
             TransformerEncoderLayer(model_params) for _ in range(model_params.transformer_num_layers)
@@ -336,6 +335,7 @@ class TransformerModel(tf.keras.Model):
         self.max_caption_length = model_params.max_caption_length
         self.encoder = TransformerEncoder(model_params)
         self.decoder = TransformerDecoder(model_params)
+        self.conjecture_input_length = model_params.conjecture_input_length
 
     def call(self, inputs, training=None):
         # TODO adapt once creation of masks are dissused
@@ -371,7 +371,7 @@ class TransformerModel(tf.keras.Model):
         return padding_mask, look_ahead_mask
 
     def build_graph(self):
-        inp = Input(shape=(config.CONJECTURE_INPUT_MAX_LENGTH))
+        inp = Input(shape=(self.conjecture_input_length))
         target = Input(shape=(self.max_caption_length))
         return Model(inputs=[inp, target], outputs=self.call([inp, target]))
 
@@ -387,6 +387,7 @@ def main():
         input_vocab_size=200,
         target_vocab_size=400,
         max_caption_length=22,
+        conjecture_input_length=200,
     )
 
     # Initialise basic components - and test
@@ -429,7 +430,7 @@ def main():
     temp_input = tf.random.uniform(
         (
             64,
-            min(63, config.CONJECTURE_INPUT_MAX_LENGTH),
+            min(63, model_params.conjecture_input_length),
         ),
         dtype=tf.int64,
         minval=0,
@@ -454,7 +455,7 @@ def main():
     print(" # # Transformer")
     sample_transformer = TransformerModel(model_params)
     temp_input = tf.random.uniform(
-        (64, config.CONJECTURE_INPUT_MAX_LENGTH), dtype=tf.int64, minval=0, maxval=200
+        (64, model_params.conjecture_input_length), dtype=tf.int64, minval=0, maxval=200
     )
     temp_target = tf.random.uniform(
         (64, model_params.max_caption_length), dtype=tf.int64, minval=0, maxval=200

@@ -424,6 +424,7 @@ def main(
         remove_unknown=model_params.remove_unknown,
         encoder_input=model_params.encoder_input,
         conjecture_tokenizer=conjecture_tokenizer,
+        conjecture_input_length=model_params.conjecture_input_length,
     )
     tf.print("Max caption length: ", max_len)
     model_params.max_caption_length = max_len  # Set variable in case we are using the transformer
@@ -440,6 +441,7 @@ def main(
         remove_unknown=model_params.remove_unknown,
         encoder_input=model_params.encoder_input,
         conjecture_tokenizer=conjecture_tokenizer,
+        conjecture_input_length=model_params.conjecture_input_length,
     )
 
     # Remove axiom frequencies as it is no longer needed and can be very large
