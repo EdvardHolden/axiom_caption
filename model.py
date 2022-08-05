@@ -22,6 +22,11 @@ from enum_types import AxiomOrder, EncoderInput, AttentionMechanism, ModelType, 
 from model_transformer import TransformerEncoder, TransformerDecoder, create_padding_mask
 
 
+def decoder_sequence_input(model):
+    # Determine whether the decoding stage is operating over a sequence (relevant for transformer)
+    return isinstance(model, tuple) and isinstance(model[1], TransformerDecoder)
+
+
 @tf.function
 def call_encoder(model, img_tensor, training, input_mask, hidden):
     """

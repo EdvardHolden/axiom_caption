@@ -19,11 +19,12 @@ from model import (
     initialise_model,
     get_hidden_state,
     reset_model_decoder_state,
+    decoder_sequence_input,
 )
+from utils import get_initial_decoder_input
 from evaluate import jaccard_score, coverage_score
 from enum_types import AxiomOrder
 from parser import get_train_parser
-from model_transformer import TransformerDecoder
 
 # Make script deterministic to see if we can avoid the gpu issue
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
@@ -48,27 +49,6 @@ def loss_function(real, pred):
     loss_ *= mask
 
     return tf.reduce_mean(loss_)
-
-
-@tf.function
-def get_initial_decoder_input(tokenizer, target, sequence=False):
-    """
-    Returns the decoder input consisting of the start token.
-    Sequence is set to true if using e.g. TransformerDecoder where
-    we need to supply the full sequence predicted.
-    """
-
-    # Make list of start tokens
-    dec_input = [tokenizer.word_index[config.TOKEN_START]] * target.shape[0]
-
-    if sequence:
-        # TODO why does this work in the guide but not for me?
-        input_array = tf.TensorArray(dtype=tf.int32, size=target.shape[1])
-        # input_array = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
-        return input_array.write(0, dec_input)
-    else:
-        # Need to expand the dimensions when feeding single tokens
-        return tf.expand_dims(dec_input, 1)
 
 
 @tf.function
@@ -110,8 +90,8 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
     # Initialise the hidden shape of the model - used for attention mainly
     hidden = get_hidden_state(model, target.shape[0])
 
-    # Determine whether the decoding stage is operating over a sequence (relevant for transformer)
-    sequence = isinstance(model, tuple) and isinstance(model[1], TransformerDecoder)
+    # Check whether decoder input should be a sequence
+    sequence = decoder_sequence_input(model)
 
     # Get the initial decoder input consisting of the start token
     dec_input = get_initial_decoder_input(

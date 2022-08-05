@@ -9,18 +9,24 @@ from pathlib import Path
 from tensorflow.sets import size, intersection, union
 
 from dataset import get_dataset, compute_max_caption_length, get_caption_conjecture_tokenizers
-from model import get_model_params, load_model, reset_model_decoder_state, initialise_model
-from model import get_hidden_state, ImageEncoder, Encoder
+from model import (
+    get_model_params,
+    load_model,
+    reset_model_decoder_state,
+    initialise_model,
+    call_encoder,
+    call_model_decoder,
+    get_hidden_state,
+    decoder_sequence_input,
+)
 from parser import get_evaluate_parser
+from utils import get_initial_decoder_input
 
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 random.seed(42)
 np.random.seed(42)
 tf.random.set_seed(42)
-
-
-# TODO maybe add some BeamSearch in here?
 
 
 def greedy_sampler(pred, no_samples):
@@ -130,32 +136,26 @@ def generate_step(
     # Reset LSTM states between each batch
     reset_model_decoder_state(model)
 
+    # Check whether decoder input should be a sequence
+    sequence = decoder_sequence_input(model)
+
     # Initialise the hidden shape of the model - makes the above lines redundant
     hidden = get_hidden_state(model, caption.shape[0])
 
-    # Get start token
-    dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * caption.shape[0], 1)
+    # Get start token - supply dummy for computing target shapes
+    dec_input = get_initial_decoder_input(tokenizer, tf.random.uniform([1, max_len]), sequence=sequence)
 
     # Placeholder for mask if not used
-    mask = None
+    input_mask = None
 
-    # Check if using separate decoder/encoder for faster training
-    if isinstance(model, tuple):
-        # Call and update variables according to the type of encoder being used
-        if isinstance(model[0], ImageEncoder):
-            img_tensor = model[0](img_tensor, training=False)
-        elif isinstance(model[0], Encoder):
-            img_tensor, hidden, mask = model[0](img_tensor, training=False)
+    # Call the encoder to pre-compute the entity features for use in the decoder call
+    img_tensor, input_mask, hidden = call_encoder(model, img_tensor, False, input_mask, hidden)
 
     # Run the model until we reach the max length or the end token
     for i in range(max_len):
 
-        # Predict probabilities
-        # pred, hidden = model([img_tensor, dec_input, hidden], training=False)
-        if isinstance(model, tuple):
-            pred, hidden = model[1]([img_tensor, dec_input, hidden], training=False, mask=mask)
-        else:
-            pred, hidden = model([img_tensor, dec_input, hidden], training=False)
+        # Call the decoder/model to produce the final predictions
+        pred, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training=False)
 
         # Sample the next token(s)
         if sampler == "greedy":
@@ -171,13 +171,18 @@ def generate_step(
         result.update(predictions)
 
         # Return sequence if we predicted the end token
-        if (
-            tokenizer.index_word[predictions[0]] == tokenizer.word_index[config.TOKEN_END]
-        ):  # TODO add flag here
-            return result  # FIXME Unclear whether this is good or not
+        if tokenizer.index_word[predictions[0]] == tokenizer.word_index[config.TOKEN_END]:
+            return result
 
         # Set the top predicted word as the next model input
-        dec_input = tf.expand_dims([predictions[0]], 0)
+        next_token = predictions[0]
+        if sequence:
+            dec_input = dec_input.write(i + 1, next_token)
+        else:
+            dec_input = tf.expand_dims([next_token], 0)
+
+    if isinstance(dec_input, tf.TensorArray):
+        dec_input.close()
 
     # Reached max length, returning the sequence
     return result
