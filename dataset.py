@@ -44,7 +44,6 @@ def get_tokenizer(id_file, tokenizer_mode, tokenizer_data_path, vocab_word_limit
 
 
 def get_caption_conjecture_tokenizers(model_params, proof_data, context, train_id_file, problem_features):
-    # TODO or should this be split as they do not really belong together?
 
     # Get pre-trained tokenizer for the captions - supply context for switching between axioms and natural language
     caption_tokenizer, vocab_size = get_tokenizer(

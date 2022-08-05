@@ -78,9 +78,7 @@ class MergeInjectModel(tf.keras.Model):
         input_image, input_word, hidden_state = inputs
 
         image_emb = self.image_encoder(input_image, training=training)
-        word_emb = self.word_encoder(
-            input_word, training=training
-        )  # TODO maybe this should return the state as well?
+        word_emb = self.word_encoder(input_word, training=training)
 
         # Perform attention on the image embedding
         if self.attention is not None:
@@ -100,7 +98,6 @@ class MergeInjectModel(tf.keras.Model):
         return config
 
     def build_graph(self):
-        # TODO this does not show the submodels - needs more work
         # https://stackoverflow.com/questions/61427583/how-do-i-plot-a-keras-tensorflow-subclassing-api-model
         x = [
             Input(shape=(400,)),

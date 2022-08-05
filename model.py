@@ -373,7 +373,6 @@ class DenseModel(tf.keras.Model):
         image_emb = self.encoder(input_image, training=training)
 
         # Pass word through embedding layer
-        # word_emb = tf.squeeze( self.word_embedder(input_word, training=training))  # TODO maybe use flatten instead?
         word_emb = self.word_embedder(input_word, training=training)
         # Flatten the embedding as we are not using LSTM
         word_emb = self.flatten(word_emb)

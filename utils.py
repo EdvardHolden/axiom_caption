@@ -9,8 +9,6 @@ from parser import get_train_parser
 
 
 class NameSpace:
-    # TODO a bit dangerous with such similar names to argparse.Namespace
-    # but this is mostly used to testing when implementing.
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 

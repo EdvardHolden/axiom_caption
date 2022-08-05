@@ -3,8 +3,6 @@ import numpy as np
 from tensorflow.keras.layers import Input, Flatten
 from tensorflow.keras import Model
 
-import config
-
 
 def get_angles(pos, i, transformer_dense_units):
     angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(transformer_dense_units))
@@ -137,7 +135,6 @@ class MultiHeadAttention(tf.keras.layers.Layer):
 
 
 def point_wise_feed_forward_network(model_params):
-    # TODO need to change this to tf.layer - fro saving and loading purposes
     return tf.keras.Sequential(
         [
             tf.keras.layers.Dense(
@@ -338,7 +335,7 @@ class TransformerModel(tf.keras.Model):
         self.conjecture_input_length = model_params.conjecture_input_length
 
     def call(self, inputs, training=None):
-        # TODO adapt once creation of masks are dissused
+        # FIXME this is not adapted to be used with the training loop - and provbably should not be
         # Keras models prefer if you pass all your inputs in the first argument
         inp, tar = inputs
 
@@ -363,7 +360,6 @@ class TransformerModel(tf.keras.Model):
         # It is used to pad and mask future tokens in the input received by
         # the decoder.
 
-        # TODO add a flag for this maybe? - would be nice to retain most of the original structure
         look_ahead_mask = create_look_ahead_mask(tf.shape(tar)[1])
         dec_target_padding_mask = create_padding_mask(tar)
         look_ahead_mask = tf.maximum(dec_target_padding_mask, look_ahead_mask)
