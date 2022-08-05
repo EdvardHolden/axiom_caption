@@ -13,18 +13,17 @@ from dataset import (
     get_caption_conjecture_tokenizers,
 )
 from model import (
+    call_encoder,
+    call_model_decoder,
     get_model_params,
     initialise_model,
     get_hidden_state,
     reset_model_decoder_state,
-    RNNEncoder,
-    ImageEncoder,
-    TransformerEncoder,
 )
 from evaluate import jaccard_score, coverage_score
 from enum_types import AxiomOrder
 from parser import get_train_parser
-from model_transformer import create_padding_mask, TransformerDecoder
+from model_transformer import TransformerDecoder
 
 # Make script deterministic to see if we can avoid the gpu issue
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
@@ -97,53 +96,6 @@ def get_next_decoder_input_token(
         return dec_input.write(iteration, next_tokens)
     else:
         return tf.expand_dims(next_tokens, 1)
-
-
-@tf.function
-def call_encoder(model, img_tensor, training, input_mask, hidden):
-    """
-    Function which makes an encoder call upon the input. If the model
-    is not split into encoder-decoder, there is no effect from the call.
-    Raises ValueError if the model is a tuple but call for the encoder
-    class is not implemented.
-    """
-    if isinstance(model, tuple):
-        # Call and update variables according to the type of encoder being used
-        if isinstance(model[0], ImageEncoder):
-            img_tensor = model[0](img_tensor, training=training)
-
-        elif isinstance(model[0], TransformerEncoder):
-            input_mask = create_padding_mask(img_tensor)
-            img_tensor = model[0](img_tensor, mask=input_mask, training=training)
-
-        elif isinstance(model[0], RNNEncoder):
-            img_tensor, hidden, input_mask = model[0](img_tensor, training=training)
-        else:
-            raise ValueError(f"Encoder call not implemented for {model[0]}")
-
-    return img_tensor, input_mask, hidden
-
-
-@tf.function
-def call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training):
-    # Predict the next token - either by using the full model or just the decoder
-    # encodes the image each time
-    if isinstance(model, tuple) and isinstance(model[1], TransformerDecoder):
-        # Reshape the sequence fed to the decoder
-        transformer_dec_input = tf.transpose(dec_input.stack())
-
-        # Call transformer decoder
-        decoder_mask = create_padding_mask(transformer_dec_input)
-        y_hat, _ = model[1](transformer_dec_input, img_tensor, decoder_mask, input_mask, training=training)
-
-    elif isinstance(model, tuple):
-        # Call decoder
-        y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training, mask=input_mask)
-    else:
-        # Call whole model on all the input data
-        y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
-
-    return y_hat, hidden
 
 
 @tf.function

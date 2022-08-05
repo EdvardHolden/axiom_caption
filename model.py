@@ -8,7 +8,6 @@ from keras.layers import Dense
 from keras.layers import LSTM, GRU
 from keras.layers import Dropout
 from keras.layers import RepeatVector
-from keras.layers import TimeDistributed
 from keras.layers import Embedding
 from keras.layers import Flatten
 from keras.layers import Normalization
@@ -20,7 +19,59 @@ import json
 import os
 
 from enum_types import AxiomOrder, EncoderInput, AttentionMechanism, ModelType, EncoderType, DecoderType
-from model_transformer import TransformerEncoder, TransformerDecoder
+from model_transformer import TransformerEncoder, TransformerDecoder, create_padding_mask
+
+
+@tf.function
+def call_encoder(model, img_tensor, training, input_mask, hidden):
+    """
+    Function which makes an encoder call upon the input. If the model
+    is not split into encoder-decoder, there is no effect from the call.
+    Raises ValueError if the model is a tuple but call for the encoder
+    class is not implemented.
+    """
+    if isinstance(model, tuple):
+        # Call and update variables according to the type of encoder being used
+        if isinstance(model[0], ImageEncoder):
+            img_tensor = model[0](img_tensor, training=training)
+
+        elif isinstance(model[0], TransformerEncoder):
+            input_mask = create_padding_mask(img_tensor)
+            img_tensor = model[0](img_tensor, mask=input_mask, training=training)
+
+        elif isinstance(model[0], RNNEncoder):
+            img_tensor, hidden, input_mask = model[0](img_tensor, training=training)
+        else:
+            raise ValueError(f"Encoder call not implemented for {model[0]}")
+
+    return img_tensor, input_mask, hidden
+
+
+@tf.function
+def call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training):
+    """
+    Function which makes a decoder/model call upon the input. Creates a unified
+    interface for calling both complete model and models with separate encoder
+    and decoders.
+    """
+    # Predict the next token - either by using the full model or just the decoder
+    # encodes the image each time
+    if isinstance(model, tuple) and isinstance(model[1], TransformerDecoder):
+        # Reshape the sequence fed to the decoder
+        transformer_dec_input = tf.transpose(dec_input.stack())
+
+        # Call transformer decoder
+        decoder_mask = create_padding_mask(transformer_dec_input)
+        y_hat, _ = model[1](transformer_dec_input, img_tensor, decoder_mask, input_mask, training=training)
+
+    elif isinstance(model, tuple):
+        # Call decoder
+        y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training, mask=input_mask)
+    else:
+        # Call whole model on all the input data
+        y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
+
+    return y_hat, hidden
 
 
 def adapt_normalization_layer(model, embedding_vectors):
