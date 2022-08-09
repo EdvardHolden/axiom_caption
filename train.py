@@ -107,9 +107,6 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
     # List for holding the predictions
     predictions = []
 
-    # Placeholder for mask - not used in all model types
-    input_mask = None
-
     with tf.GradientTape() as tape:
 
         # Call the encoder to pre-compute the entity features for use in the decoder call

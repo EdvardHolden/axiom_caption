@@ -35,6 +35,8 @@ def call_encoder(model, img_tensor, training, hidden):
     Raises ValueError if the model is a tuple but call for the encoder
     class is not implemented.
     """
+    input_mask = None
+
     if isinstance(model, tuple):
         # Call and update variables according to the type of encoder being used
         if isinstance(model[0], ImageEncoder):
@@ -249,6 +251,14 @@ class RNNEncoder(tf.keras.layers.Layer):
         # Get the RNN type
         rnn = get_rnn(params.rnn_type)
 
+        # Set the masking type based on the decoder type that is to follow
+        if params.decoder_type is DecoderType.INJECT:
+            self.mask_function = _get_sequence_mask
+        elif params.decoder_type is DecoderType.TRANSFORMER:
+            self.mask_function = create_padding_mask
+        else:
+            raise ValueError(f"Need to set RNN masking function for decoder type {params.decoder_type}")
+
         self.no_rnn_units = params.no_rnn_units
 
         # Initialise RNN model - always set stateful to False as we are processing the full sequence at once
@@ -275,7 +285,7 @@ class RNNEncoder(tf.keras.layers.Layer):
             x, hidden = self.rnn(x, training=training)
 
         # Compute the mask for the input sequence
-        mask = _get_sequence_mask(sequence_input)
+        mask = self.mask_function(sequence_input)
 
         # 4. Returns the new sequence, its state and a mask for the input sequence
         return x, hidden, mask
