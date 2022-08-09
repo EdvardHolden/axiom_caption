@@ -149,7 +149,7 @@ def generate_step(
     input_mask = None
 
     # Call the encoder to pre-compute the entity features for use in the decoder call
-    img_tensor, input_mask, hidden = call_encoder(model, img_tensor, False, input_mask, hidden)
+    img_tensor, input_mask, hidden = call_encoder(model, img_tensor, False, hidden)
 
     # Run the model until we reach the max length or the end token
     for i in range(max_len):
