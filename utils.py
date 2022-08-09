@@ -13,6 +13,7 @@ class NameSpace:
         self.__dict__.update(kwargs)
 
 
+# Somehow - if this is a tf.function, it returns an array
 @tf.function
 def get_initial_decoder_input(tokenizer, target, sequence=False):
     """
@@ -25,10 +26,18 @@ def get_initial_decoder_input(tokenizer, target, sequence=False):
     dec_input = [tokenizer.word_index[config.TOKEN_START]] * target.shape[0]
 
     if sequence:
-        # TODO why does this work in the guide but not for me?
-        input_array = tf.TensorArray(dtype=tf.int32, size=target.shape[1])
+        # TODO why does this work in the guide but not for me? - e.g. call is as below in the guide
+        input_array = tf.TensorArray(
+            dtype=tf.int32,
+            size=target.shape[1],
+            element_shape=(target.shape[0],),
+            name="decoder_sequence_input",
+        )
+        # input_array = tf.TensorArray( dtype=tf.int32, size=target.shape[1], element_shape=(8,), name="decoder_sequence_input")
         # input_array = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
-        return input_array.write(0, dec_input)
+        # return input_array.write(0, dec_input)
+        input_array = input_array.write(0, dec_input)
+        return input_array.stack()
     else:
         # Need to expand the dimensions when feeding single tokens
         return tf.expand_dims(dec_input, 1)

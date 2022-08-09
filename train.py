@@ -73,7 +73,11 @@ def get_next_decoder_input_token(
 
     # If we are using sequences - add in-place, otherwise return expanded tokens
     if sequence:
-        return dec_input.write(iteration, next_tokens)
+        # Create a new TensorArray - in case we are in graph mode
+        new_dec_input = tf.TensorArray(
+            dtype=tf.int32, size=dec_input.shape[0], name="decoder_sequence_input"
+        ).unstack(dec_input)
+        return new_dec_input.write(iteration, next_tokens).stack()
     else:
         return tf.expand_dims(next_tokens, 1)
 
@@ -109,7 +113,7 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
     with tf.GradientTape() as tape:
 
         # Call the encoder to pre-compute the entity features for use in the decoder call
-        img_tensor, input_mask, hidden = call_encoder(model, img_tensor, training, input_mask, hidden)
+        img_tensor, input_mask, hidden = call_encoder(model, img_tensor, training, hidden)
 
         for i in range(1, target.shape[1]):
 

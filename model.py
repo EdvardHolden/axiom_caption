@@ -27,8 +27,8 @@ def decoder_sequence_input(model):
     return isinstance(model, tuple) and isinstance(model[1], TransformerDecoder)
 
 
-@tf.function
-def call_encoder(model, img_tensor, training, input_mask, hidden):
+# @tf.function
+def call_encoder(model, img_tensor, training, hidden):
     """
     Function which makes an encoder call upon the input. If the model
     is not split into encoder-decoder, there is no effect from the call.
@@ -52,7 +52,7 @@ def call_encoder(model, img_tensor, training, input_mask, hidden):
     return img_tensor, input_mask, hidden
 
 
-@tf.function
+# @tf.function
 def call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training):
     """
     Function which makes a decoder/model call upon the input. Creates a unified
@@ -62,8 +62,8 @@ def call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, trainin
     # Predict the next token - either by using the full model or just the decoder
     # encodes the image each time
     if isinstance(model, tuple) and isinstance(model[1], TransformerDecoder):
-        # Reshape the sequence fed to the decoder
-        transformer_dec_input = tf.transpose(dec_input.stack())
+        # Reshape the sequence to the decoder
+        transformer_dec_input = tf.transpose(dec_input)
 
         # Call transformer decoder
         decoder_mask = create_padding_mask(transformer_dec_input)
