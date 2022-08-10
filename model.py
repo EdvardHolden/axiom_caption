@@ -432,15 +432,14 @@ class InjectDecoder(tf.keras.Model):
         # Extract the input elements
         image_emb, input_word, hidden_state = inputs
 
-        # If input is more than 2 dimension, we flatten it to fit the rest of the setup
-        if len(image_emb.shape) > 2:
-            image_emb = self.flatten(image_emb)
-
         # Pass word through embedding layer
         word_emb = self.word_embedder(input_word, training=training)
 
+        # Attention is not set and input is more than 2 dimension, we flatten it to fit the rest of the setup
+        if self.attention is None and len(image_emb.shape) > 2:
+            image_emb = self.flatten(image_emb)
         # Run Bahdanau attention if set
-        if self.attention is not None and (
+        elif self.attention is not None and (
             isinstance(self.attention, BahdanauAttention) or isinstance(self.attention, AdditiveFlatAttention)
         ):
             image_emb, _ = self.attention(image_emb, hidden_state, mask=mask)
