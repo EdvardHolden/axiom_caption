@@ -77,9 +77,9 @@ def scaled_dot_product_attention(q, k, v, mask):
     return output, attention_weights
 
 
-class MultiHeadAttention(tf.keras.layers.Layer):
+class TransformerMultiHeadAttention(tf.keras.layers.Layer):
     def __init__(self, model_params, name="transformer_attention_head"):
-        super(MultiHeadAttention, self).__init__()
+        super(TransformerMultiHeadAttention, self).__init__()
         self.num_attention_heads = model_params.num_attention_heads
         self.transformer_dense_units = model_params.transformer_dense_units
 
@@ -153,7 +153,7 @@ class TransformerEncoderLayer(tf.keras.layers.Layer):
 
         self.transformer_dense_units = model_params.transformer_dense_units
 
-        self.mha = MultiHeadAttention(model_params)
+        self.mha = TransformerMultiHeadAttention(model_params)
         self.ffn = point_wise_feed_forward_network(model_params)
 
         self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
@@ -184,8 +184,8 @@ class TransformerDecoderLayer(tf.keras.layers.Layer):
         super(TransformerDecoderLayer, self).__init__()
 
         self.transformer_dense_units = model_params.transformer_dense_units
-        self.mha1 = MultiHeadAttention(model_params)
-        self.mha2 = MultiHeadAttention(model_params)
+        self.mha1 = TransformerMultiHeadAttention(model_params)
+        self.mha2 = TransformerMultiHeadAttention(model_params)
 
         self.ffn = point_wise_feed_forward_network(model_params)
 
@@ -224,7 +224,7 @@ class TransformerDecoderLayer(tf.keras.layers.Layer):
         return Model(inputs=[x, enc_output], outputs=self.call(x, enc_output, None, None, None))
 
 
-class TransformerEncoder(tf.keras.layers.Layer):
+class TransformerEncoder(tf.keras.Model):
     def __init__(self, model_params, name="tranformer_encoder"):
         super(TransformerEncoder, self).__init__()
 
@@ -269,7 +269,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         return Model(inputs=x, outputs=self.call(x, None))
 
 
-class TransformerDecoder(tf.keras.layers.Layer):
+class TransformerDecoder(tf.keras.Model):
     def __init__(self, model_params, name="transformer_decoder"):
         super(TransformerDecoder, self).__init__()
 
@@ -391,8 +391,8 @@ def main():
     sample_ffn(tf.random.uniform((64, 50, 512))).shape
 
     print("\n", "# " * 16)
-    print(" # # MultiHeadAttention")
-    temp_mha = MultiHeadAttention(model_params)
+    print(" # # TransformerMultiHeadAttention")
+    temp_mha = TransformerMultiHeadAttention(model_params)
     y = tf.random.uniform((1, 60, 512))  # (batch_size, encoder_sequence, transformer_dense_units)
     out, attn = temp_mha(y, k=y, q=y, mask=None)
     out.shape, attn.shape
