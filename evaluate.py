@@ -19,6 +19,7 @@ from model import (
     get_hidden_state,
     decoder_sequence_input,
 )
+from enum_types import ModelType, EncoderType, DecoderType
 from parser import get_evaluate_parser
 from utils import get_initial_decoder_input
 
@@ -152,7 +153,7 @@ def generate_step(
     img_tensor, input_mask, hidden = call_encoder(model, img_tensor, False, hidden)
 
     # Run the model until we reach the max length or the end token
-    for i in range(max_len):
+    for i in range(1, max_len):
 
         # Call the decoder/model to produce the final predictions
         pred, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training=False)
@@ -177,7 +178,10 @@ def generate_step(
         # Set the top predicted word as the next model input
         next_token = predictions[0]
         if sequence:
-            dec_input = dec_input.write(i + 1, next_token)
+            new_dec_input = tf.TensorArray(
+                dtype=tf.int32, size=dec_input.shape[0], name="decoder_sequence_input"
+            ).unstack(dec_input)
+            dec_input = new_dec_input.write(i, [next_token]).stack()
         else:
             dec_input = tf.expand_dims([next_token], 0)
 
@@ -228,14 +232,15 @@ def evaluate_model(
     return {"coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
 
 
-def get_model(model_dir, vocab_size):
+def get_model(model_dir, max_caption_length=None):
 
     # Load the model parameters
     model_params = get_model_params(model_dir)
+    model_params.max_caption_length = max_caption_length  # Required for transformer decoder
 
     # Load the checkpointed model
     ckpt_dir = os.path.join(model_dir, "ckpt_dir")
-    if model_params.model_type == "inject_decoder":
+    if model_params.model_type is ModelType.SPLIT:
         encoder = load_model(os.path.join(ckpt_dir, "encoder"))
         decoder = load_model(os.path.join(ckpt_dir, "decoder"))
         loaded_model = (encoder, decoder)
@@ -244,32 +249,43 @@ def get_model(model_dir, vocab_size):
 
     # As stateful=True might be set, we need to get a new fresh model with the weights of the loaded
     # model. This is to use a different batch size in the evaluation instead of the training batch size.
-    model = get_new_trained_model(loaded_model, model_params, vocab_size)
+    model = get_new_trained_model(loaded_model, model_params)
     return model
 
 
-def get_new_trained_model(trained_model, model_params, vocab_size):
+def get_new_trained_model(trained_model, model_params):
 
     # Loading the dataset (without tokenizer) as dummy data stopped working
     normalisation_data, _ = get_dataset(
         config.val_id_file, config.proof_data, config.problem_features, batch_size=1
     )
 
-    model = initialise_model(
-        model_params.model_type, vocab_size, model_params, training_data=normalisation_data
-    )  # Loaded weights will override this
+    # Initialise the mdoel - loading of weights will override this
+    model = initialise_model(model_params, training_data=normalisation_data)
 
     # Run the model call once to infer the main input shapes? - fails otherwise
-    inp1 = tf.random.uniform([1, 400])
-    inp2 = tf.ones([1, 1], dtype=tf.dtypes.int32)
+    if model_params.encoder_type is EncoderType.TRANSFORMER:
+        inp1 = tf.random.uniform([1, model_params.conjecture_input_length])
+    else:
+        inp1 = tf.random.uniform([1, 400])
+
+    if model_params.decoder_type is DecoderType.TRANSFORMER:
+        print(
+            "Warning: Max length needs to be same as during training, otherwise, model loading will not work."
+        )
+        inp2 = tf.ones([model_params.max_caption_length, 1], dtype=tf.dtypes.int32)
+    else:
+        inp2 = tf.ones([1, 1], dtype=tf.dtypes.int32)
     hidden = tf.zeros((1, model_params.no_rnn_units))
 
     # Run model to infer input shapes
-    if isinstance(model, tuple):
-        inp1 = model[0](inp1)
-        model[1]([inp1, inp2, hidden])
+    if isinstance(model, tuple):  # Call decoder if split model
+        inp1, input_mask, _ = call_encoder(model, inp1, False, hidden)
     else:
-        model([inp1, inp2, hidden])
+        input_mask = None
+
+    # Initialise shapes of the model/decoder
+    call_model_decoder(model, inp1, inp2, input_mask, hidden, False)
 
     # Set the weights of the new model with the weights of the old model
     if isinstance(model, tuple):
@@ -319,7 +335,7 @@ def main(
         max_len = max_length
     print("Max caption length: ", max_len)
 
-    model = get_model(model_dir, vocab_size)
+    model = get_model(model_dir, max_caption_length=max_len)
     print("Evaluating on model: ", model)
 
     # Get the test dataset with batch 1 as we need to treat each caption separately
@@ -339,10 +355,12 @@ def main(
                 caption_tokenizer=caption_tokenizer,
                 # order=model_params.axiom_order,
                 order=None,  # We do not need an order for this as we treating it as a set for evaluation
+                max_cap_len=max_len,
                 # axiom_frequency=axiom_frequency,
                 remove_unknown=model_params.remove_unknown,
                 encoder_input=model_params.encoder_input,
                 conjecture_tokenizer=conjecture_tokenizer,
+                conjecture_input_length=model_params.conjecture_input_length,
             )
 
             # Run evaluation
