@@ -1,5 +1,3 @@
-import sys
-
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras import layers
@@ -8,7 +6,6 @@ from keras.layers import Dense
 from keras.layers import LSTM, GRU
 from keras.layers import Dropout
 from keras.layers import RepeatVector
-from keras.layers import Embedding
 from keras.layers import Flatten
 from keras.layers import Normalization
 from keras.layers import BatchNormalization
@@ -18,7 +15,15 @@ from argparse import Namespace
 import json
 import os
 
-from enum_types import AxiomOrder, EncoderInput, AttentionMechanism, ModelType, EncoderType, DecoderType
+from enum_types import (
+    AxiomOrder,
+    EncoderInput,
+    AttentionMechanism,
+    ModelType,
+    EncoderType,
+    DecoderType,
+    TransformerInputOrder,
+)
 from model_transformer import TransformerEncoder, TransformerDecoder, create_padding_mask
 
 
@@ -676,6 +681,9 @@ def get_model_params(model_dir):
 
     if params.encoder_type:
         params.encoder_type = EncoderType(params.encoder_type)
+
+    if params.transformer_input_order:
+        params.transformer_input_order = TransformerInputOrder(params.transformer_input_order)
 
     # Infer input type from the encoder type - sort of need both variables
     if params.encoder_type is EncoderType.TRANSFORMER or params.encoder_type is EncoderType.RECURRENT:

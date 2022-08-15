@@ -2,29 +2,96 @@ import tensorflow as tf
 import numpy as np
 from tensorflow.keras.layers import Input, Flatten
 from tensorflow.keras import Model
+from enum_types import TransformerInputOrder
 
 
-def get_angles(pos, i, transformer_dense_units):
+def _get_angles(pos, i, transformer_dense_units):
     angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(transformer_dense_units))
     return pos * angle_rates
 
 
-def positional_encoding(position, transformer_dense_units):
-    angle_rads = get_angles(
-        np.arange(position)[:, np.newaxis],
-        np.arange(transformer_dense_units)[np.newaxis, :],
-        transformer_dense_units,
-    )
+class PosEncodingEmbedding(tf.keras.layers.Layer):
+    """
+    Custom layer to apply the positional embedding to a sequence of embeddings.
+    """
 
-    # apply sin to even indices in the array; 2i
-    angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
+    def __init__(self, transformer_dense_units, **kwargs):
+        super().__init__(**kwargs)
+        self.transformer_dense_units = transformer_dense_units
 
-    # apply cos to odd indices in the array; 2i+1
-    angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
+    def build(self, inputs_shape):
+        angle_rads = _get_angles(
+            np.arange(inputs_shape[1])[:, np.newaxis],
+            np.arange(self.transformer_dense_units)[np.newaxis, :],
+            self.transformer_dense_units,
+        )
 
-    pos_encoding = angle_rads[np.newaxis, ...]
+        # apply sin to even indices in the array; 2i
+        angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
 
-    return tf.cast(pos_encoding, dtype=tf.float32)
+        # apply cos to odd indices in the array; 2i+1
+        angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
+
+        pos_encoding = angle_rads[np.newaxis, ...]
+
+        self.pos_encoding_matrix = tf.cast(pos_encoding, dtype=tf.float32)
+
+    def call(self, x):
+
+        seq_len = tf.shape(x)[1]
+
+        # Apply encoding to input features
+        x += self.pos_encoding_matrix[:, :seq_len, :]
+        return x
+
+
+class PosLinearEmbedding(tf.keras.layers.Layer):
+    """
+    Custom layer to learn positional embeddings to the inputs."""
+
+    def __init__(self, posemb_init=None, **kwargs):
+        super().__init__(**kwargs)
+        if posemb_init is None:
+            self.posemb_init = tf.keras.initializers.RandomNormal(stddev=0.02)
+        else:
+            self.posemb_init = posemb_init
+
+    def build(self, inputs_shape):
+        pos_emb_shape = (1, inputs_shape[1], inputs_shape[2])
+        self.pos_embedding = self.add_weight("pos_embedding", pos_emb_shape, initializer=self.posemb_init)
+
+    def call(self, x):
+        # inputs.shape is (batch_size, seq_len, emb_dim).
+        pos_embedding = tf.cast(self.pos_embedding, x.dtype)
+
+        return x + pos_embedding
+
+
+class IdentityLayer(tf.keras.layers.Layer):
+    """
+    Return the same ouput as input.
+    """
+
+    def __init__(self, posemb_init=None, **kwargs):
+        super().__init__(**kwargs)
+
+    def call(self, x):
+        return x
+
+
+def _get_positional_encoding_function(transformer_input_order, transformer_dense_units):
+    """
+    Function for getting the positional embedding matrix of a specified embedding type.
+    """
+
+    if transformer_input_order is TransformerInputOrder.SEQUENTIAL:
+        return PosEncodingEmbedding(transformer_dense_units)
+    elif transformer_input_order is TransformerInputOrder.ORIGINAL:
+        return IdentityLayer()
+    elif transformer_input_order is TransformerInputOrder.LINEAR:
+        return PosLinearEmbedding()
+
+    raise ValueError(f'Transformer input order "{transformer_input_order}" not implemented.')
 
 
 def create_padding_mask(seq):
@@ -235,8 +302,10 @@ class TransformerEncoder(tf.keras.Model):
         self.embedding = tf.keras.layers.Embedding(
             model_params.input_vocab_size, model_params.transformer_dense_units
         )
-        # TODO make optional
-        self.pos_encoding = positional_encoding(self.conjecture_input_length, self.transformer_dense_units)
+
+        self.pos_encoding = _get_positional_encoding_function(
+            model_params.transformer_input_order, model_params.transformer_dense_units
+        )
 
         self.enc_layers = [
             TransformerEncoderLayer(model_params) for _ in range(model_params.transformer_num_layers)
@@ -250,12 +319,10 @@ class TransformerEncoder(tf.keras.Model):
         if mask is None:
             mask = create_padding_mask(x)
 
-        seq_len = tf.shape(x)[1]
-
         # adding embedding and position encoding.
         x = self.embedding(x)  # (batch_size, input_seq_len, transformer_dense_units)
         x *= tf.math.sqrt(tf.cast(self.transformer_dense_units, tf.float32))
-        x += self.pos_encoding[:, :seq_len, :]
+        x = self.pos_encoding(x)
 
         x = self.dropout(x, training=training)
 
@@ -281,7 +348,10 @@ class TransformerDecoder(tf.keras.Model):
         self.embedding = tf.keras.layers.Embedding(
             model_params.target_vocab_size, model_params.transformer_dense_units
         )
-        self.pos_encoding = positional_encoding(model_params.max_caption_length, self.transformer_dense_units)
+
+        self.pos_encoding = _get_positional_encoding_function(
+            model_params.transformer_input_order, model_params.transformer_dense_units
+        )
 
         self.dec_layers = [
             TransformerDecoderLayer(model_params) for _ in range(model_params.transformer_num_layers)
@@ -295,12 +365,13 @@ class TransformerDecoder(tf.keras.Model):
         if look_ahead_mask is None:
             look_ahead_mask = create_padding_mask(x)
 
-        seq_len = tf.shape(x)[1]
         attention_weights = {}
 
         x = self.embedding(x)  # (batch_size, target_seq_len, transformer_dense_units)
         x *= tf.math.sqrt(tf.cast(self.transformer_dense_units, tf.float32))
-        x += self.pos_encoding[:, :seq_len, :]
+
+        x = self.pos_encoding(x)
+
         x = self.dropout(x, training=training)
 
         for i in range(self.transformer_num_layers):
