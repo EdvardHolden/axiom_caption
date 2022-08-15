@@ -304,7 +304,7 @@ def train_loop(
 
     # Add a final metric evaluation that ensures no drop out is used (with training off)
     tf.print("Computing metrics on the training set with the final model parameters, without dropout")
-    train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=False, epoch=epoch)
+    train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=False, epoch=epoch + 1)
     metrics = add_new_metrics(metrics, train_epoch_metrics, prefix="train_")
 
     # Return training history
