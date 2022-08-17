@@ -174,6 +174,13 @@ def run_partition_analysis(configs, df):
         print()
         print()
 
+def run_basic_analysis(configs, df):
+    for conf in configs:
+        print(f"## ## {conf}")
+        print(f"Avg Coverage: {df[conf + '_coverage'].mean():>4.2f}")
+        print(f"Avg Jaccard : {df[conf + '_jaccard'].mean():>4.2f}")
+        print(f"Avg Length  : {df[conf + '_length'].mean():>4.2f}")
+        print()
 
 def get_in_training_set_metric(result):
 
@@ -524,16 +531,24 @@ def main():
     print("# Number of problems with a coverage score of 1")
     compute_perfect_coverage(df, configs)
 
+    # Check if we should limit the analysis to the set f solved problems (excluding ideal)
+    if args.remove_unsolved:
+        print('!! Limiting analysis to problems solved by at least one config other than "ideal"')
+        df = df.loc[solved_set]
+    # Print stats of the solved/unsolved partition of each config
+    print()
+    print("# # # # # # # # # # # # #")
+    print("# # Basic Analysis  # #")
+    print()
+    run_basic_analysis(configs, df)
+
+
+
     # Print stats of the solved/unsolved partition of each config
     print()
     print("# # # # # # # # # # # # #")
     print("# # Partition Analysis  # #")
     print()
-    # Check if we should limit the analysis to the set f solved problems (excluding ideal)
-    if args.remove_unsolved:
-        print('!! Limiting analysis to problems solved by at least one config other than "ideal"')
-        df = df.loc[solved_set]
-
     run_partition_analysis(configs, df)
 
     # Specific analysis
