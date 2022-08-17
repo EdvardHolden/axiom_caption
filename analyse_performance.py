@@ -19,6 +19,7 @@ from online.get_scores import get_solved_problem_name_time
 PROOF_AXIOMS = "generated_problems/analysis/output_original_positive_axioms/"
 PROOF_AXIOMS_UNQUOTED = "generated_problems/analysis/output_original_unquoted_positive_axioms/"
 
+
 CONFIGS = {
     115498: "generated_problems/analysis/output_original_ideal",  # Upper bound
     115507: "generated_problems/analysis/output_original_clean/",  # Raw merged problem
@@ -30,8 +31,19 @@ CONFIGS = {
     115634: "generated_problems/analysis/output_original_caption_sine_3_0/",
 }
 
+
+# Other papers experiments
+CONFIGS = {
+    #115507: "generated_problems/analysis/output_original_clean/",  # Raw merged problem
+    115591: "generated_problems/analysis/output_original_caption/",
+    117025: 'generated_problems/analysis/output_original_gnn_entailment/'
+}
+
+
+
 # Base config used to compute the ratio of the problem selected (output_original_clean -> clean)
 BASE_CONFIG = "clean"
+BASE_CONFIG_DICT = {115507: "generated_problems/analysis/output_original_clean/"}
 
 # Path to the problems in the training set
 TRAINING_SET_PATH = "data/deepmath/train.txt"
@@ -230,16 +242,17 @@ def get_tokenizer_metrics(result):
     return result
 
 
-def get_performance_coverage_data(CONFIGS, common_substring=""):
+def get_performance_coverage_data(config_experiments, common_substring=""):
 
     result = {}
-    configs = []
+    config_tags = []
 
-    # Want config_coverage, config_solved
-    for exp_id, problem_dir in CONFIGS.items():
+    # Get the base metrics and store them in a dict - quick hack to always include the clean config
+    for exp_id, problem_dir in {**config_experiments, **BASE_CONFIG_DICT}.items():
 
         conf = Path(problem_dir).stem.replace(common_substring, "")
-        configs += [conf]
+        if exp_id in config_experiments: # Hack to not include clean if not in experiment config
+            config_tags += [conf]
 
         # Load the problems from path
         problems = get_problems_from_path(problem_dir, limit=LIMIT, verbose=0)
@@ -277,13 +290,13 @@ def get_performance_coverage_data(CONFIGS, common_substring=""):
     df = pd.DataFrame.from_dict(result).T
 
     # Compute the ratio of selected formulae vs original formulae (slightly skewed for caption)
-    for conf in configs:
+    for conf in config_tags:
         df[f"{conf}_ratio"] = df[f"{conf}_length"].values / df[f"{BASE_CONFIG}_length"].values
 
     # Convert to "best" possible types - avoids representing everything as objects, which messes up .describe()
     df = df.convert_dtypes()
 
-    return configs, df
+    return config_tags, df
 
 
 def print_avg_stats(df, base, other):
@@ -445,8 +458,6 @@ def compute_perfect_coverage(df, configs):
 
         perf_cov = sum(df[f"{conf}_coverage"] == 1.0)
         print(f"{conf:16} : {perf_cov}")
-
-    sys.exit(0)
 
 
 def check_combined_solved(df):
