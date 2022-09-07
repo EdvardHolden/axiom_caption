@@ -7,6 +7,7 @@ from tqdm import tqdm
 import random
 from pathlib import Path
 from tensorflow.sets import size, intersection, union
+from sklearn.neighbors import NearestNeighbors
 
 from dataset import get_dataset, compute_max_caption_length, get_caption_conjecture_tokenizers
 from model import (
@@ -126,9 +127,52 @@ def jaccard_score_np(actual, predicted, avg=True):
         return scores
 
 
+def remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer):
+    """
+    Remap predicted axioms to the axioms conisisting in the original problem.
+
+    In some cases we do not want to introduce 'new' axioms into the problem.
+    Instead, we select the most similar axioms contained within the problem
+    based on their encoding by the axiom decoding layer. This means that we
+    are limited to the axiom that consists on both the problem and vocabulary.
+
+    We use the given axiom to avoid re-reading the problem.
+    """
+
+    # Extract the axiom embedding layer of the decoder part
+    if isinstance(model, tuple):
+        emb_layer = model[1].layers[0]
+    else:
+        raise ValueError("Remapping not yet supported for non-split models")
+
+
+    # Extract values and ensure there are no pad/start/unk tokens - map back to ndarray
+    caption = [c for c in caption.numpy()[0] if not (c == tokenizer.word_index[config.TOKEN_PAD]
+                                                     or c == tokenizer.word_index[config.TOKEN_START]
+                                                     or c == tokenizer.word_index[config.TOKEN_OOV])]
+    caption = np.array(caption)
+
+    # Check if there are any selectable axioms, otherwise, return the original predictions
+    if len(caption) == 0:
+        return predictions
+
+    cap_embedding = emb_layer(caption)
+    pred_embedding = emb_layer(predictions)
+
+    # Create nearest neighbour model and predict
+    nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(cap_embedding)
+    distances, indices = nbrs.kneighbors(pred_embedding)
+
+    # Re-assign predictions to mapped indices
+    for n, i in enumerate(indices):
+        predictions[n] = caption[i]
+
+    return predictions
+
+
 # @tf.function
 def generate_step(
-    tokenizer, model, max_len, img_tensor, caption, sampler, no_samples, sampler_temperature, sampler_top_k
+    tokenizer, model, max_len, img_tensor, caption, sampler, no_samples, sampler_temperature, sampler_top_k, axiom_remapping
 ):
 
     # List for storing predicted sequence
@@ -144,7 +188,7 @@ def generate_step(
     hidden = get_hidden_state(model, caption.shape[0])
 
     # Get start token - supply dummy for computing target shapes
-    dec_input = get_initial_decoder_input(tokenizer, tf.random.uniform([1, max_len]), sequence=sequence)
+    dec_input = get_initial_decoder_input(tokenizer, tf.random.uniform([1, max_len + 1]), sequence=sequence)
 
     # Placeholder for mask if not used
     input_mask = None
@@ -153,7 +197,7 @@ def generate_step(
     img_tensor, input_mask, hidden = call_encoder(model, img_tensor, False, hidden)
 
     # Run the model until we reach the max length or the end token
-    for i in range(1, max_len):
+    for i in range(1, max_len + 1):
 
         # Call the decoder/model to produce the final predictions
         pred, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training=False)
@@ -167,6 +211,10 @@ def generate_step(
             predictions = top_k_sampler(pred, no_samples, k=sampler_top_k)
         else:
             raise ValueError(f"Unrecognised sampler '{sampler}'")
+
+        # Map predicted axioms back to the problem axioms if set
+        if axiom_remapping:
+            predictions = remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer)
 
         # Add predicted IDs to the result
         result.update(predictions)
@@ -193,7 +241,7 @@ def generate_step(
 
 
 def evaluate_model(
-    tokenizer, model, test_data, max_len, sampler, no_samples, sampler_temperature, sampler_top_k, verbose=0
+    tokenizer, model, test_data, max_len, sampler, no_samples, sampler_temperature, sampler_top_k, axiom_remapping, verbose=0
 ):
 
     # Create lambda expression for filtering start, end, and pad tokens
@@ -214,6 +262,7 @@ def evaluate_model(
             no_samples,
             sampler_temperature,
             sampler_top_k,
+            axiom_remapping
         )
 
         # Extract the string value from the tensor, remove start, end and pad tokens,
@@ -310,6 +359,7 @@ def main(
     sampler_top_k,
     context,
     tokenizer_id_file,
+    axiom_remapping,
     verbose,
 ):
 
@@ -362,6 +412,7 @@ def main(
                 conjecture_tokenizer=conjecture_tokenizer,
                 conjecture_input_length=model_params.conjecture_input_length,
             )
+            print(f"Size of dataset: {len(test_data)}")
 
             # Run evaluation
             scores = evaluate_model(
@@ -373,6 +424,7 @@ def main(
                 n,
                 sampler_temperature,
                 sampler_top_k,
+                axiom_remapping,
                 verbose=verbose,
             )
             print("# Scores ")

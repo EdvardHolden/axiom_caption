@@ -50,11 +50,10 @@ def extract_rare_axioms(tokenizer, axioms):
 
 
 def compute_caption(
-    tokenizer, model, problem_feature, sampler, max_length, no_samples, sampler_temperature, sampler_top_k
+    tokenizer, model, problem_feature, sampler, max_length, no_samples, sampler_temperature, sampler_top_k, axiom_remapping
 ):
 
     # Run the model to get the predicted tokens
-    # axiom_caption = generate_step( tokenizer, model, max_len, img_tensor, sampler, no_samples, sampler_temperature, sampler_top_k)
     axiom_caption = generate_step(
         tokenizer,
         model,
@@ -65,6 +64,7 @@ def compute_caption(
         no_samples,
         sampler_temperature,
         sampler_top_k,
+        axiom_remapping
     )
     # Remove non-axiom tokens
     axiom_caption = list(filter(lambda x: x != 0 and x != 1 and x != 2 and x != 3, axiom_caption))
@@ -96,6 +96,7 @@ def get_result_dir(
     max_length,
     output_format,
     unquote,
+    axiom_remapping,
     prefix=None,
     postfix=None
 ):
@@ -137,6 +138,9 @@ def get_result_dir(
     # Add the numbr of extra axioms if set
     if extra_axioms is not None:
         result_dir += f"_extra_axioms_{extra_axioms}"
+
+    if axiom_remapping:
+        result_dir += "_axiom_remapping"
 
     if postfix is not None:
         result_dir += postfix
@@ -260,7 +264,9 @@ def main():
             args.max_length,
             args.output_format,
             args.unquote,
+            args.axiom_remapping,
             prefix=args.result_prefix,
+            postfix=args.result_postfix,
         )
     print("Writing results to: ", result_dir)
 
@@ -274,18 +280,31 @@ def main():
 
     # If captioning, load all the required resources
     if args.mode in [GenerationMode.CAPTION, GenerationMode.CAPTION_SINE]:
+
+        # TODO redo this thingy
         problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
         # TODO need to modify this work with the new laoding of params
 
+        model_params = get_model_params(args.model_dir)
+
+        '''
         tokenizer, vocab_size = get_tokenizer(
             config.train_id_file,
             str(args.context),
             config.proof_data,
             get_model_params(args.model_dir).axiom_vocab_size,
         )
+        '''
+
+        from dataset import get_caption_conjecture_tokenizers
+        # Load the tokenizers for this training setting
+        tokenizer, _, conjecture_tokenizer = get_caption_conjecture_tokenizers(
+            model_params, args.proof_data, str(args.context), config.train_id_file, args.feature_path
+        )
 
         # Load the model
-        model = get_model(args.model_dir, vocab_size)
+        model = get_model(args.model_dir, max_caption_length=args.max_length)
+        #model = get_model(args.model_dir, vocab_size)
 
     # Add extra axioms if set
     if args.extra_axioms is not None:
@@ -357,6 +376,7 @@ def main():
                 no_samples,
                 args.sampler_temperature,
                 args.sampler_top_k,
+                args.axiom_remapping,
             )
             # Add the caption to the problem
             new_problem.update(axiom_caption)
