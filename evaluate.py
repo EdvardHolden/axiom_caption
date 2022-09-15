@@ -149,7 +149,8 @@ def remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer):
     # Extract values and ensure there are no pad/start/unk tokens - map back to ndarray
     caption = [c for c in caption.numpy()[0] if not (c == tokenizer.word_index[config.TOKEN_PAD]
                                                      or c == tokenizer.word_index[config.TOKEN_START]
-                                                     or c == tokenizer.word_index[config.TOKEN_OOV])]
+                                                     or c == tokenizer.word_index[config.TOKEN_OOV]
+                                                     or c == tokenizer.word_index[config.TOKEN_END])]
     caption = np.array(caption)
 
     # Check if there are any selectable axioms, otherwise, return the original predictions
@@ -214,13 +215,23 @@ def generate_step(
 
         # Map predicted axioms back to the problem axioms if set
         if axiom_remapping:
+            # Quick hack to keep the end token if predicted
+            if tokenizer.index_word[predictions[0]] == config.TOKEN_END:
+                pred_prefix = predictions[0]
+            else:
+                pred_prefix = []
+
+            # Perform axiom remapping
             predictions = remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer)
+
+            # Prepend pred_prefix
+            predictions = np.insert(predictions,0, pred_prefix)
 
         # Add predicted IDs to the result
         result.update(predictions)
 
-        # Return sequence if we predicted the end token
-        if tokenizer.index_word[predictions[0]] == tokenizer.word_index[config.TOKEN_END]:
+        # Return sequence if we predicted the end token as the first token
+        if tokenizer.index_word[predictions[0]] == config.TOKEN_END:
             return result
 
         # Set the top predicted word as the next model input
