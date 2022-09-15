@@ -274,7 +274,7 @@ def load_caption_dict(
     captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
 ):
     """
-    Load the captions as a dictionary and tokeenize if tokenizer is provided.
+    Load the captions as a dictionary and tokenize if tokenizer is provided.
     Also compute the length of the longest caption if not provided.
     """
     captions = load_clean_descriptions(captions_path, ids, order=order, axiom_frequency=axiom_frequency)
@@ -312,6 +312,24 @@ def create_tf_dataset(feature_data, caption_data, caching, batch_size):
     return dataset
 
 
+def load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length):
+
+    # Load the encoder input
+    if encoder_input is EncoderInput.FLAT:
+        # Load image features as a dict and get flag of whether they are cached
+        entity_features, caching = load_image_feature_dict(entity_feature_path, ids)
+    elif encoder_input is EncoderInput.SEQUENCE:
+        entity_features = load_conjecture_tokens_dict(
+            entity_feature_path, conjecture_tokenizer, ids, conjecture_input_length
+        )
+        # We always set caching to False for sequence input for now
+        caching = False
+    else:
+        raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
+
+    return entity_features, caching
+
+
 def get_dataset(
     ids_path,
     captions_path,
@@ -330,18 +348,8 @@ def get_dataset(
     # Load the necessary data for the id set
     ids = load_ids(ids_path)
 
-    # Load the encoder input
-    if encoder_input is EncoderInput.FLAT:
-        # Load image features as a dict and get flag of whether they are cached
-        entity_features, caching = load_image_feature_dict(entity_feature_path, ids)
-    elif encoder_input is EncoderInput.SEQUENCE:
-        entity_features = load_conjecture_tokens_dict(
-            entity_feature_path, conjecture_tokenizer, ids, conjecture_input_length
-        )
-        # We always set caching to False for sequence input for now
-        caching = False
-    else:
-        raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
+    # Load the entity features
+    entity_features, caching = load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length)
 
     # Load the captions as a dict
     captions, max_cap_len = load_caption_dict(

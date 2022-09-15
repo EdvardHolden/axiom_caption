@@ -7,15 +7,11 @@ import random
 import numpy as np
 
 from clausifier import clausify, quote_number_in_problem, get_clauses_from_sine
-from dataset import get_tokenizer
-from dataset import load_photo_features
 from enum_types import GenerationMode, OutputFormat
 from model import get_model_params
 from evaluate import generate_step, get_model
 from parser import get_generate_parser
 import config
-
-import tensorflow as tf
 
 from process_problem import save_problem, get_problems_from_path, load_and_process_problem
 
@@ -50,16 +46,17 @@ def extract_rare_axioms(tokenizer, axioms):
 
 
 def compute_caption(
-    tokenizer, model, problem_feature, sampler, max_length, no_samples, sampler_temperature, sampler_top_k, axiom_remapping
+    tokenizer, model, problem_feature, caption, sampler, max_length, no_samples, sampler_temperature, sampler_top_k, axiom_remapping
 ):
 
+    import tensorflow as tf
     # Run the model to get the predicted tokens
     axiom_caption = generate_step(
         tokenizer,
         model,
         max_length,
         [problem_feature],
-        tf.ones([1, 1], dtype=tf.dtypes.int32),  # Dummy the caption to get dimension
+        tf.expand_dims(caption, 0),
         sampler,
         no_samples,
         sampler_temperature,
@@ -277,34 +274,36 @@ def main():
     if args.debug:
         print("Debug mode: Limiting to K random problems")
         problem_paths = random.sample(problem_paths, k=5)
+        #problem_paths = ['/shareddata/home/holden/gnn-entailment-caption/merged_problems/t62_chord', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t24_laplace', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t36_tsep_1', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t6_jordan']
+        print("Debug problems: ", problem_paths)
 
     # If captioning, load all the required resources
     if args.mode in [GenerationMode.CAPTION, GenerationMode.CAPTION_SINE]:
 
-        # TODO redo this thingy
-        problem_features = load_photo_features(args.feature_path, [Path(p).stem for p in problem_paths])
-        # TODO need to modify this work with the new laoding of params
+        # Load functions specific to captioning
+        from dataset import load_entity_features
+        from dataset import get_caption_conjecture_tokenizers
+        from dataset import load_caption_dict
 
         model_params = get_model_params(args.model_dir)
 
-        '''
-        tokenizer, vocab_size = get_tokenizer(
-            config.train_id_file,
-            str(args.context),
-            config.proof_data,
-            get_model_params(args.model_dir).axiom_vocab_size,
-        )
-        '''
-
-        from dataset import get_caption_conjecture_tokenizers
         # Load the tokenizers for this training setting
-        tokenizer, _, conjecture_tokenizer = get_caption_conjecture_tokenizers(
+        caption_tokenizer, _, conjecture_tokenizer = get_caption_conjecture_tokenizers(
             model_params, args.proof_data, str(args.context), config.train_id_file, args.feature_path
         )
 
+        # Extract the ids for use in function calls below
+        ids = [Path(p).stem for p in problem_paths]
+
+        problem_features, caching = load_entity_features(model_params.encoder_input, args.feature_path, ids, conjecture_tokenizer, model_params.conjecture_input_length)
+        if caching:
+            raise ValueError("Caching not yet supported for problem generation.")
+
+        # Get the captions - this is needed for functionality such as axiom remapping
+        caption_dict, _ = load_caption_dict(config.proof_data, ids, model_params.axiom_order, None, caption_tokenizer, None, model_params.remove_unknown)
+
         # Load the model
         model = get_model(args.model_dir, max_caption_length=args.max_length)
-        #model = get_model(args.model_dir, vocab_size)
 
     # Add extra axioms if set
     if args.extra_axioms is not None:
@@ -362,15 +361,16 @@ def main():
                 initial_axioms.update(extra_axioms)
 
             # Extract axioms that are found in proof but cannot be predicted
-            rare_axioms = extract_rare_axioms(tokenizer, initial_axioms)
+            rare_axioms = extract_rare_axioms(caption_tokenizer, initial_axioms)
             # Add the rare axioms to the problem
             new_problem.update(rare_axioms)
 
             # Use the model to generate the axioms required for the proof
             axiom_caption = compute_caption(
-                tokenizer,
+                caption_tokenizer,
                 model,
                 problem_features[Path(prob_path).stem],
+                caption_dict[Path(prob_path).stem],
                 args.sampler,
                 args.max_length,
                 no_samples,
@@ -399,7 +399,6 @@ def main():
                 # Clausify the problem - this is only done once and in the final step, hence no application of SInE
                 prob = clausify(new_problem, skolem_prefix=None, sine_st=None, sine_sd=None)
             elif args.output_format is OutputFormat.ORIGINAL:
-                #prob = "\n".join(prob).encode()
                 prob = "\n".join(new_problem).encode()
 
             # Save to folder
