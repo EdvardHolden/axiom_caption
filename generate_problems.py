@@ -63,8 +63,10 @@ def compute_caption(
         sampler_top_k,
         axiom_remapping
     )
+
     # Remove non-axiom tokens
     axiom_caption = list(filter(lambda x: x != 0 and x != 1 and x != 2 and x != 3, axiom_caption))
+
     # If this is reduced to the empty list, set captions as the empty set
     if len(axiom_caption) > 0:
         # Feed input as a nested list of single tokens as this is cleaner for transforming into a set
@@ -195,7 +197,7 @@ def standard_process_problem(
     if output_format is OutputFormat.CLAUSIFIED:
         prob = clausify(prob, skolem_prefix=None, sine_st=None, sine_sd=None, prob_name=Path(prob_path).stem)
     elif output_format is output_format.ORIGINAL:
-        prob = "\n".join(prob).encode()
+        prob = "\n".join(sorted(prob)).encode()
 
     # Save to folder
     save_problem(result_dir, Path(prob_path).name, prob)
@@ -274,7 +276,7 @@ def main():
     if args.debug:
         print("Debug mode: Limiting to K random problems")
         problem_paths = random.sample(problem_paths, k=5)
-        #problem_paths = ['/shareddata/home/holden/gnn-entailment-caption/merged_problems/t62_chord', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t24_laplace', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t36_tsep_1', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t6_jordan']
+        problem_paths = ['/shareddata/home/holden/gnn-entailment-caption/merged_problems/t62_chord', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t24_laplace', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t36_tsep_1', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t6_jordan']
         print("Debug problems: ", problem_paths)
 
     # If captioning, load all the required resources
@@ -399,7 +401,7 @@ def main():
                 # Clausify the problem - this is only done once and in the final step, hence no application of SInE
                 prob = clausify(new_problem, skolem_prefix=None, sine_st=None, sine_sd=None)
             elif args.output_format is OutputFormat.ORIGINAL:
-                prob = "\n".join(new_problem).encode()
+                prob = "\n".join(sorted(new_problem)).encode()
 
             # Save to folder
             save_problem(result_dir, Path(prob_path).name, prob)
