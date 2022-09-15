@@ -82,6 +82,13 @@ def get_sampler_parser():
         help="The top k predictions to use when recomputing the prediction distributions",
     )
 
+    parser.add_argument(
+        "--axiom_remapping",
+        default=False,
+        action="store_true",
+        help="Map predictions to the most similar axioms in the problem according to their embedding"
+    )
+
     parser.add_argument("--max_length", default=22, type=int, help="The maximum length of the predictions")
 
     return parser
@@ -185,6 +192,9 @@ def get_generate_parser():
     parser.add_argument(
         "--result_prefix", default=None, help="File name prefix of the result dir (if result_dir is not set)"
     )
+    parser.add_argument(
+        "--result_postfix", default=None, help="File name postfix of the result dir (if result_dir is not set)"
+    )
 
     parser.add_argument('--unquote', default=False, action="store_true",
                         help="Do not quote the digits in a formula (usualy paired with original output)")
@@ -205,9 +215,11 @@ def get_generate_parser():
         help="Number of extra axioms to add to each generated problem is set.",
     )
 
+    parser.add_argument("--proof_data", default=config.proof_data,
+                        help="Path to the proof data")
     parser.add_argument(
         "--feature_path",
-        default="data/embeddings/deepmath/graph_features_deepmath_all.pkl",
+        default=config.problem_features,
         help="Path to the problem embeddings",
     )
     parser.add_argument(
