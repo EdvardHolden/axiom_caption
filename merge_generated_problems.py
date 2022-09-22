@@ -29,8 +29,8 @@ def infer_dest_dir(dir1, dir2):
     # Get the directory path of the first dir - need to choose one
     base_dir = str(Path(dir1).parent)
 
-    f1 = Path(dir1).stem.split('_')
-    f2 = Path(dir2).stem.split('_')
+    f1 = Path(dir1).name.split('_')
+    f2 = Path(dir2).name.split('_')
 
     res = []
     f1_i = 0
