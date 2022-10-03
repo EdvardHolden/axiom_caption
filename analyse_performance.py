@@ -34,10 +34,67 @@ CONFIGS = {
 
 # Other papers experiments
 CONFIGS = {
-    #115507: "generated_problems/analysis/output_original_clean/",  # Raw merged problem
     115591: "generated_problems/analysis/output_original_caption/",
-    117025: 'generated_problems/analysis/output_original_gnn_entailment/'
+    117026: 'generated_problems/analysis/output_original_clean_gnn_entailment_merged',
+    #117027: 'generated_problems/analysis/output_original_clean_stateful_rnn/',  Experiment with nearly all UNK tokens in the prediction output..
+    117029: 'generated_problems/analysis/output_original_clean_stateful_rnn/',
+    117028: 'generated_problems/analysis/output_original_clean_stateful_transformer'
 }
+
+# Compare GNN and Caption performance on the Deepmath dataset (non-merged)
+CONFIGS = {
+    117030: "generated_problems/analysis/output_original_caption_deepmath",
+    117025: 'generated_problems/analysis/output_original_gnn_entailment_deepmath/',
+}
+
+# Compare remapped not non-mapped
+CONFIGS = {
+    115591: "generated_problems/analysis/output_original_caption/",
+    116861: "generated_problems/analysis/output_original_sine_3_0/",
+    115634: "generated_problems/analysis/output_original_caption_sine_3_0/",
+    117090: 'generated_problems/analysis/output_original_caption_axiom_remapping/',
+    117091: 'generated_problems/analysis/output_original_caption_sine_3_0_axiom_remapping'
+    #117091: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_3_0'
+    # TODO need to compute configurations for original clauses?
+}
+
+
+# Remapping experiments with different SInE configurations
+'''
+CONFIGS = {
+    117090: 'generated_problems/analysis/output_original_caption_axiom_remapping/',
+    117091: 'generated_problems/analysis/output_original_caption_sine_3_0_axiom_remapping',
+    117133: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1_0',
+    117134: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1_1',
+    117135: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1_2',
+    117136: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1_4',
+    117137: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1.5_0',
+    117138: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1.5_1',
+    117139: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1.5_2',
+    117140: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1.5_4',
+    117141: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1.5_8',
+    117142: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1_8',
+    117143: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2_0',
+    117144: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2_1',
+    117145: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2_2',
+    117146: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2_4',
+    117147: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2.5_0',
+    117148: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2.5_1',
+    117149: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2.5_2',
+    117150: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2.5_4',
+    117151: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2.5_8',
+    117152: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2_8'
+}
+'''
+
+
+CONFIGS = {
+    117090: 'generated_problems/analysis/output_original_caption_axiom_remapping/',
+    117149: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2.5_2/',
+    117163: 'generated_problems/analysis/output_original_sine_2.5_2/'
+}
+
+
 
 
 
@@ -123,7 +180,7 @@ def get_metrics(problem_paths):
 
     for problem_path in problem_paths:
         # Get the problem name
-        name = Path(problem_path).stem
+        name = Path(problem_path).name
 
         proof = load_proof_axioms(name)
 
@@ -257,7 +314,7 @@ def get_performance_coverage_data(config_experiments, common_substring=""):
     # Get the base metrics and store them in a dict - quick hack to always include the clean config
     for exp_id, problem_dir in {**config_experiments, **BASE_CONFIG_DICT}.items():
 
-        conf = Path(problem_dir).stem.replace(common_substring, "")
+        conf = Path(problem_dir).name.replace(common_substring, "")
         if exp_id in config_experiments: # Hack to not include clean if not in experiment config
             config_tags += [conf]
 
@@ -267,14 +324,14 @@ def get_performance_coverage_data(config_experiments, common_substring=""):
 
         # Initialise - if needed
         if len(result) == 0:
-            result = {Path(p).stem: {} for p in problems}
+            result = {Path(p).name: {} for p in problems}
 
         # Get solved status and time
         performance = get_performance_stats(exp_id)
 
         # Get coverage scores and add performance
         for problem_path in problems:
-            name = Path(problem_path).stem
+            name = Path(problem_path).name
             prob = load_generated_problem(problem_path)
             proof = load_proof_axioms(name)
             result[name].update({f"{conf}_coverage": coverage_score_np([proof], [prob])})
@@ -308,7 +365,6 @@ def get_performance_coverage_data(config_experiments, common_substring=""):
 
 def print_avg_stats(df, base, other):
 
-    print(f"Avg coverage base : {np.average(df[f'{base}_coverage']):.2f}")
     print(f"Avg coverage base : {np.average(df[f'{base}_coverage']):.2f}")
     print(f"Avg jaccard  base : {np.average(df[f'{base}_jaccard']):.2f}")
     print(f"Avg length   base : {np.average(df[f'{base}_length']):.2f}")
@@ -557,9 +613,11 @@ def main():
     print("# # Specific Analysis # #")
 
     # Compute problem loss of combining caption and sine_3_0
-    compute_problems_lost_by_combination(df, print_df=args.print_df)
+    # FIXME
+    #compute_problems_lost_by_combination(df, print_df=args.print_df)
 
     # Compare the experiments
+    '''
     print()
     compare_versions(df, "sine_1_1", "sine_3_0")
     print()
@@ -572,9 +630,51 @@ def main():
     compare_versions(df, "caption_sine_3_0", "sine_3_0")
     print()
     compare_versions(df, "caption_sine_3_0", "caption")
+    '''
 
+    '''
     print()
-    check_combined_solved(df)  # FIXME poor naming
+    compare_versions(df, "caption", "clean_gnn_entailment_merged")
+    print()
+    compare_versions(df, "clean_gnn_entailment_merged", "caption")
+    print()
+    compare_versions(df, "caption", "clean_stateful_rnn")
+    print()
+    compare_versions(df, "caption", "clean_stateful_transformer")
+    '''
+    '''
+    print()
+    compare_versions(df, "caption_deepmath", "gnn_entailment_deepmath")
+    print()
+    compare_versions(df, "gnn_entailment_deepmath", "caption_deepmath")
+    '''
+
+    '''
+    print()
+    compare_versions(df, "caption", "caption_axiom_remapping")
+    print()
+    compare_versions(df, "caption_axiom_remapping", "caption")
+    print()
+    compare_versions(df, "caption_sine_3_0", "caption_sine_3_0_axiom_remapping")
+    print()
+    compare_versions(df, "caption_sine_3_0_axiom_remapping", "caption_sine_3_0")
+    print()
+    compare_versions(df, "sine_3_0", "caption_sine_3_0_axiom_remapping")
+    print()
+    compare_versions(df, "caption_sine_3_0_axiom_remapping", "sine_3_0")
+    print()
+    '''
+
+
+    # TODO what to put here??
+    print()
+    compare_versions(df, "caption_axiom_remapping_sine_2.5_2", "caption_axiom_remapping")
+    print()
+    compare_versions(df, "caption_axiom_remapping_sine_2.5_2", "sine_2.5_2")
+
+
+    # Should this be included?
+    #check_combined_solved(df)  # FIXME poor naming
 
 
 if __name__ == "__main__":
