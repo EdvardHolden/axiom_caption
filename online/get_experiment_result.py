@@ -16,6 +16,7 @@ EXPERIMENTS = {
 }
 '''
 
+'''
 # Mix of nndata/deepmath and mizar40 for comparisions
 EXPERIMENTS = {115497: "deepmath_clean",
                115498: "deepmath_ideal",
@@ -39,6 +40,19 @@ EXPERIMENTS = {115507: 'mizar_40_clean',
                115514: "mizar_40_caption",
                115516: "mizar_40_caption_sine_1_1",
                115520: "mizar_40_caption_sine_3_0"}
+'''
+
+EXPERIMENTS = {
+    #115498: "Ideal",  # Upper bound
+    115507: "Clean",
+    #115555: "Sine 1 1",
+    116861: "Sine 3 0",
+    115591: "Caption",
+    115634: "Caption + Sine 3 0",
+    117090: "Caption Remap",
+    117091: "Caption Remap + sine 3 0",
+}
+
 
 
 
