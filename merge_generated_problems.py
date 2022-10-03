@@ -15,15 +15,18 @@ from multiprocessing import Pool
 
 from process_problem import get_problems_from_path, load_and_process_problem, save_problem
 from clausifier import clausify
+from enum_types import OutputFormat
 
 parser = argparse.ArgumentParser()
 parser.add_argument('dir1', help='Dir to merge')
 parser.add_argument('dir2', help='Dir to merge')
 parser.add_argument('--dest_dir', default=None, help='Distination dir. Inferred if not set')
 parser.add_argument('--workers', type=int, default=max(os.cpu_count() - 2, 1))
+parser.add_argument("--output_format", default="clausified", choices=list(OutputFormat), type=OutputFormat, help="Whether to clausify the final output problems")
 
 
-def infer_dest_dir(dir1, dir2):
+
+def infer_dest_dir(dir1, dir2, output_format):
     # This works ok
 
     # Get the directory path of the first dir - need to choose one
@@ -48,8 +51,12 @@ def infer_dest_dir(dir1, dir2):
                 res += [f2[f2_i]]
                 f2_i += 1
 
+    # Join into string
+    res = "_".join(res)
+
     # Replace original with clausified
-    res = "_".join(res).replace("original", "clausified")
+    if output_format is OutputFormat.CLAUSIFIED:
+        res = res.replace("original", "clausified")
 
     dest_dir = os.path.join(base_dir, res)
     if not os.path.exists(dest_dir):
@@ -57,15 +64,14 @@ def infer_dest_dir(dir1, dir2):
 
     return dest_dir
 
-def merge_problems(dir1, dir2, prob_name, dest_dir):
+def merge_problems(dir1, dir2, prob_name, dest_dir, output_format):
 
     # Load problems and merge clauses
     prob1 = load_and_process_problem(os.path.join(dir1, prob_name), deepmath=False)
     prob2 = load_and_process_problem(os.path.join(dir2, prob_name), deepmath=False)
     prob = set(prob1).union(set(prob2))
 
-    # Re-compute distinct TODO make function
-
+    # Re-compute distinct
     # Check for $distinct axioms and merge them - might be in both problems?
     distinct_ax = [ax for ax in prob if "fof(a1, axiom, $distinct(" in ax]
     prob = [ax for ax in prob if "fof(a1, axiom, $distinct(" not in ax] # Remove distincts
@@ -83,9 +89,11 @@ def merge_problems(dir1, dir2, prob_name, dest_dir):
         # Add new axiom to the problem
         prob += [distinct_number_axiom]
 
-
     # Clausify the merged problem
-    prob = clausify(prob, skolem_prefix=None, sine_st=None, sine_sd=None, prob_name=prob_name)
+    if output_format is OutputFormat.CLAUSIFIED:
+        prob = clausify(prob, skolem_prefix=None, sine_st=None, sine_sd=None, prob_name=prob_name)
+    else:
+        prob = '\n'.join(prob).encode()
 
     # Save to folder
     save_problem(dest_dir, prob_name, prob)
@@ -115,14 +123,14 @@ def main():
     # Create destination directory name
     dest_dir = args.dest_dir
     if args.dest_dir is None:
-        dest_dir = infer_dest_dir(args.dir1, args.dir2)
+        dest_dir = infer_dest_dir(args.dir1, args.dir2, args.output_format)
     print("Merged problem dir: ", dest_dir)
 
     # Only need the one filename
     #for prob in probs1
     prob_names = [Path(p).stem for p in probs1]
 
-    star_args = [(args.dir1, args.dir2, prob_name, dest_dir) for prob_name in prob_names]
+    star_args = [(args.dir1, args.dir2, prob_name, dest_dir, args.output_format) for prob_name in prob_names]
     pool = Pool(args.workers)
     pool.starmap(merge_problems, star_args)
     pool.close()
