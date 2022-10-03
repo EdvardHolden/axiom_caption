@@ -560,7 +560,7 @@ def report_solved_diff_best_experiment(df, configs):
         res += [(conf, solved_diff)]
 
     # Report in sorted order
-    res.sort(key=lambda tup: tup[1])
+    res.sort(key=lambda tup: -tup[1])
     for r in res:
         print(*r, sep=' : ')
     print()
