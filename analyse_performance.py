@@ -64,7 +64,7 @@ CONFIGS = {
 
 
 # Remapping experiments with different SInE configurations
-'''
+#'''
 CONFIGS = {
     117090: 'generated_problems/analysis/output_original_caption_axiom_remapping/',
     117091: 'generated_problems/analysis/output_original_caption_sine_3_0_axiom_remapping',
@@ -89,14 +89,16 @@ CONFIGS = {
     117151: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2.5_8',
     117152: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2_8'
 }
+#'''
+
+
 '''
-
-
 CONFIGS = {
     117090: 'generated_problems/analysis/output_original_caption_axiom_remapping/',
     117149: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2.5_2/',
     117163: 'generated_problems/analysis/output_original_sine_2.5_2/'
 }
+'''
 
 
 
@@ -533,7 +535,7 @@ def report_greedy_min_cover(df, configs):
     cover, _ = compute_greedy_min_cover(df[query].astype(int).replace({0: -1}))
 
     print('# # Greedy Min Cover')
-    print("Length of cover: {0}".format(len(cover)))
+    print("Length of cover: {0}".format(len(cover[0])))
     print("Order of contribution:")
     for r in zip(*cover):
         print(*r, sep=' : ')
