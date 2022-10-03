@@ -15,6 +15,10 @@ sys.path.insert(0, "online")
 from online.get_scores import get_solved_problem_name_time
 
 
+sys.path.insert(0, os.path.expanduser("~/scpeduler/scpeduler"))
+import analyser
+from analyser import compute_greedy_min_cover
+
 # The direcotry to the proof axioms
 PROOF_AXIOMS = "generated_problems/analysis/output_original_positive_axioms/"
 PROOF_AXIOMS_UNQUOTED = "generated_problems/analysis/output_original_unquoted_positive_axioms/"
@@ -523,6 +527,45 @@ def compute_perfect_coverage(df, configs):
         print(f"{conf:16} : {perf_cov}")
 
 
+def report_greedy_min_cover(df, configs):
+
+    query = [f"{c}_solved" for c in configs]
+    cover, _ = compute_greedy_min_cover(df[query].astype(int).replace({0: -1}))
+
+    print('# # Greedy Min Cover')
+    print("Length of cover: {0}".format(len(cover)))
+    print("Order of contribution:")
+    for r in zip(*cover):
+        print(*r, sep=' : ')
+    print()
+
+
+def report_solved_diff_best_experiment(df, configs):
+
+    print("# # Solved difference to the best experiment")
+    # Compute best heuristic
+    best_config = None
+    best_solved = []
+    for conf in configs:
+        solved = set(df.loc[df[f"{conf}_solved"]].index)
+        if len(solved) > len(best_solved):
+            best_solved = solved
+            best_config = conf
+    print(f"Best config \"{best_config}\" solved: {len(best_solved)}")
+
+    # Compute difference count
+    res = []
+    for conf in set(configs).difference(set([best_config])):
+        solved_diff = len(set(df.loc[df[f"{conf}_solved"]].index) - best_solved)
+        res += [(conf, solved_diff)]
+
+    # Report in sorted order
+    res.sort(key=lambda tup: tup[1])
+    for r in res:
+        print(*r, sep=' : ')
+    print()
+
+
 def check_combined_solved(df):
 
     # Get problem solved by neither caption or sine, but by the combination
@@ -576,6 +619,12 @@ def main():
     print()
     # Compute the solved set
     solved_set = compute_solved_set(configs, df)
+
+    # Report difference to top config
+    report_solved_diff_best_experiment(df, configs)
+
+    # Compute and report the set cover
+    report_greedy_min_cover(df, configs)
 
     # Compute problems that are inquely solved by a config
     print("# Uniquely solved overall")
