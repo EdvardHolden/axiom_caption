@@ -97,6 +97,7 @@ def get_result_dir(
     unquote,
     axiom_remapping,
     conjecture_position,
+    warmstart,
     prefix=None,
     postfix=None
 ):
@@ -144,6 +145,9 @@ def get_result_dir(
 
     if conjecture_position != "standard":
         result_dir += f"_conjecture_position_{conjecture_position}"
+
+    if warmstart is not None:
+        result_dir += f"_warmstart_{Path(warmstart).name}"
 
     if postfix is not None:
         result_dir += postfix
@@ -287,6 +291,7 @@ def main():
             args.unquote,
             args.axiom_remapping,
             args.conjecture_position,
+            args.warmstart,
             prefix=args.result_prefix,
             postfix=args.result_postfix,
         )
@@ -318,7 +323,7 @@ def main():
         )
 
         # Extract the ids for use in function calls below
-        ids = [Path(p).stem for p in problem_paths]
+        ids = [Path(p).name for p in problem_paths]
 
         problem_features, caching = load_entity_features(model_params.encoder_input, args.feature_path, ids, conjecture_tokenizer, model_params.conjecture_input_length)
         if caching:
@@ -326,6 +331,16 @@ def main():
 
         # Get the captions - this is needed for functionality such as axiom remapping
         caption_dict, _ = load_caption_dict(config.proof_data, ids, model_params.axiom_order, None, caption_tokenizer, None, model_params.remove_unknown)
+
+        # Load the data used to warmstart the prediction model - if set
+        if args.warmstart is not None:
+            print("# Computing warmstart data")
+            from dataset import load_warmstart_data
+            from train import get_axiom_frequency
+            axiom_frequency = get_axiom_frequency(model_params.axiom_order, config.train_id_file, config.proof_data)
+            warmstart_input = load_warmstart_data(ids, args.warmstart, caption_tokenizer, model_params.axiom_order, model_params.remove_unknown, axiom_frequency)
+        else:
+            warmstart_input = None
 
         # Load the model
         model = get_model(args.model_dir, max_caption_length=args.max_length)
@@ -390,6 +405,9 @@ def main():
             rare_axioms = extract_rare_axioms(caption_tokenizer, initial_axioms)
             # Add the rare axioms to the problem
             new_problem.update(rare_axioms)
+
+            # TODO add WarmStat thingy here
+            # Check if in use, then extract the thing and pass it to comput caption?
 
             # Use the model to generate the axioms required for the proof
             axiom_caption = compute_caption(

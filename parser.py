@@ -256,6 +256,10 @@ def get_generate_parser():
                         default="first",
                         help="Where to put the conejcture in the generated problem (or when presented to the claussifier). First is on top of the file. Last in the file. Standard is where it fits in lexicographiil (usually dependant on the name)")
 
+    parser.add_argument("--warmstart",
+                        default=None,
+                        help="Path to folder containing problem axioms which are supposed to warm-start the prediction model.")
+
     return parser
 
 

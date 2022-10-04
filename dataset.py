@@ -4,6 +4,7 @@ import tensorflow as tf
 import random
 import os
 import json
+import glob
 from keras.preprocessing.text import tokenizer_from_json
 
 # from keras.preprocessing.sequence import pad_sequences
@@ -177,6 +178,19 @@ def load_clean_conjectures(filename, ids):
 
     return conjectures
 
+def create_axiom_descriptions(axioms, order, axiom_frequency):
+
+    # Replace delimiter with spaces
+    axioms = [ax.replace(config.TOKEN_DELIMITER, " ") for ax in axioms]
+
+    # Order the axioms if set
+    if order is not None:
+        axioms = order_axioms(order, axioms, axiom_frequency=axiom_frequency)
+
+    # Build the caption string and return
+    return (f"{config.TOKEN_START}{config.TOKEN_DELIMITER}"
+            + f"{config.TOKEN_DELIMITER}".join(axioms)
+            + f"{config.TOKEN_DELIMITER}{config.TOKEN_END}")
 
 def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
     # Load the descriptions of the images in the set and append start/end tokens
@@ -194,18 +208,9 @@ def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
 
             # Extract axioms and manipulate the delimiter
             axioms = data["axioms"]
-            axioms = [ax.replace(config.TOKEN_DELIMITER, " ") for ax in axioms]
 
-            # Order the axioms if set
-            if order is not None:
-                axioms = order_axioms(order, axioms, axiom_frequency=axiom_frequency)
-
-            # Build the caption string and save in dict
-            descriptions[prob_id] = (
-                f"{config.TOKEN_START}{config.TOKEN_DELIMITER}"
-                + f"{config.TOKEN_DELIMITER}".join(axioms)
-                + f"{config.TOKEN_DELIMITER}{config.TOKEN_END}"
-            )
+            # Build a string caption description of the axiom
+            descriptions[prob_id] = create_axiom_descriptions(axioms, order, axiom_frequency)
 
     return descriptions
 
@@ -270,6 +275,18 @@ def load_image_feature_dict(image_feature_path, ids):
     return img_features, caching
 
 
+def tokenize_description_dicts(captions, caption_tokenizer, remove_unknown):
+
+    # Tokenize each caption and store it back in the dictionary
+    if remove_unknown:
+        caption_tokenizer.oov_token = None  # This skips entries that maps to oov
+
+    for i in captions:
+        captions[i] = caption_tokenizer.texts_to_sequences([captions[i]])[0]
+
+    return captions
+
+
 def load_caption_dict(
     captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
 ):
@@ -281,11 +298,7 @@ def load_caption_dict(
 
     # Tokenize the sentences if provided
     if caption_tokenizer is not None:
-        # Tokenize each caption and store it back in the dictionary
-        if remove_unknown:
-            caption_tokenizer.oov_token = None  # This skips entries that maps to oov
-        for i in captions:
-            captions[i] = caption_tokenizer.texts_to_sequences([captions[i]])[0]
+        captions = tokenize_description_dicts(captions, caption_tokenizer, remove_unknown)
 
     # Compute the longest caption if value not provided - do this after tokenization in case remove_unknown is set
     if max_cap_len is None:
@@ -328,6 +341,41 @@ def load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tok
         raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
 
     return entity_features, caching
+
+
+def load_axioms_as_dict_from_dir(dirpath, ids):
+
+    problems = glob.glob(os.path.join(dirpath, "*"))
+    problems = [p for p in problems if Path(p).name in ids] # Somewhat slow id check
+
+    res = {}
+    for prob_path in problems:
+        # Open the file
+        with open(prob_path, "r") as f:
+            data = f.readlines()
+
+            # Remove the conjecture
+            data = [d.strip() for d in data if 'conjecture' not in d]
+
+            # Insert into dict with the correct name
+            res[Path(prob_path).name] = data
+
+    return res
+
+
+def load_warmstart_data(ids, dirpath, caption_tokenizer, order, remove_unknown, axiom_frequency):
+
+    # Load the raw axioms from the directory
+    captions = load_axioms_as_dict_from_dir(dirpath, ids)
+
+    # Transform axioms into descriptions
+    for prob_id in captions:
+        captions[prob_id] = create_axiom_descriptions(captions[prob_id], order, axiom_frequency)[:-1] # Remove end token
+
+    # Tokenize the captions
+    captions = tokenize_description_dicts(captions, caption_tokenizer, remove_unknown)
+
+    return captions
 
 
 def get_dataset(
