@@ -13,7 +13,7 @@ from evaluate import generate_step, get_model
 from parser import get_generate_parser
 import config
 
-from process_problem import save_problem, get_problems_from_path, load_and_process_problem
+from process_problem import save_problem, get_problems_from_path, load_and_process_problem, push_conjecture_to_front
 
 random.seed(7)
 
@@ -96,6 +96,7 @@ def get_result_dir(
     output_format,
     unquote,
     axiom_remapping,
+    conjecture_position,
     prefix=None,
     postfix=None
 ):
@@ -141,6 +142,9 @@ def get_result_dir(
     if axiom_remapping:
         result_dir += "_axiom_remapping"
 
+    if conjecture_position != "standard":
+        result_dir += f"_conjecture_position_{conjecture_position}"
+
     if postfix is not None:
         result_dir += postfix
 
@@ -162,7 +166,7 @@ def validate_input_arguments(args):
 
 
 def standard_process_problem(
-    prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms, deepmath, output_format, unquote
+    prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms, deepmath, output_format, unquote, conjecture_position
 ):
     # Load problem formulae as a list
     prob = load_and_process_problem(prob_path, deepmath=deepmath)
@@ -193,11 +197,12 @@ def standard_process_problem(
     if not unquote:
         prob = quote_number_in_problem(list(prob))
 
-    # Clausify the problem isset
+    prob = order_formulae(prob, conjecture_position)
+
     if output_format is OutputFormat.CLAUSIFIED:
         prob = clausify(prob, skolem_prefix=None, sine_st=None, sine_sd=None, prob_name=Path(prob_path).stem)
     elif output_format is output_format.ORIGINAL:
-        prob = "\n".join(sorted(prob)).encode()
+        prob = "\n".join(prob).encode()
 
     # Save to folder
     save_problem(result_dir, Path(prob_path).name, prob)
@@ -227,6 +232,23 @@ def get_extra_axioms(problem_paths, no_axioms, deepmath):
     assert len(extra_axioms) == no_axioms
     return extra_axioms
 
+
+def order_formulae(prob, conjecture_position):
+
+    # Standard jsut return all lexicographically
+    if conjecture_position == "standard":
+        return sorted(prob)
+
+    # Split on the conjecture
+    conj, *ax = push_conjecture_to_front(prob)
+    ax = sorted(ax) # Ensure that the axioms are sorted
+
+    if conjecture_position == "first":
+        return [conj] + ax
+    elif conjecture_position == "last":
+        return ax + [conj]
+    else:
+        raise ValueError(f"Incorrect value given for conjecture position: \'{conjecture_position}\'")
 
 def main():
 
@@ -264,6 +286,7 @@ def main():
             args.output_format,
             args.unquote,
             args.axiom_remapping,
+            args.conjecture_position,
             prefix=args.result_prefix,
             postfix=args.result_postfix,
         )
@@ -334,7 +357,8 @@ def main():
                 extra_axioms,
                 deepmath,
                 args.output_format,
-                args.unquote
+                args.unquote,
+                args.conjecture_position
             )
             for prob_path in problem_paths
         ]
@@ -396,12 +420,15 @@ def main():
             if not args.unquote:
                 new_problem = quote_number_in_problem(new_problem)
 
+            # Order the formulae in the problem
+            prob = order_formulae(prob, args.conjecture_position)
+
             # Only clausify the problem if set
             if args.output_format is OutputFormat.CLAUSIFIED:
                 # Clausify the problem - this is only done once and in the final step, hence no application of SInE
                 prob = clausify(new_problem, skolem_prefix=None, sine_st=None, sine_sd=None)
             elif args.output_format is OutputFormat.ORIGINAL:
-                prob = "\n".join(sorted(new_problem)).encode()
+                prob = "\n".join(new_problem).encode()
 
             # Save to folder
             save_problem(result_dir, Path(prob_path).name, prob)

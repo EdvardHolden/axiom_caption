@@ -59,6 +59,26 @@ def _include_axiom_files(problem_path, axioms, deepmath):
     return axioms
 
 
+
+
+def push_conjecture_to_front(formulae):
+
+    if isinstance(formulae, tuple):
+        formulae = list(formulae)
+
+    for n, f in enumerate(formulae):
+        # Positive axioms setting does not neccessarily have a connjecture
+        conjecture = None
+
+        if "conjecture" in f:
+            conjecture = formulae.pop(n)
+            break
+    if conjecture is not None:
+        formulae = [conjecture] + formulae
+
+    return formulae
+
+
 def load_and_process_problem(path, deepmath=False):
     """
     Loads a problem from the text file into lists consiting of string of formulae.
@@ -98,16 +118,9 @@ def load_and_process_problem(path, deepmath=False):
 
     # Need to ensure that the first entry is the conjecture
     if not deepmath and len(formulae) > 0 and "conjecture" not in formulae[0]:
-        # Find the conecture and pusgh it to the front - Assumes only one FOF conjecture
-        for n, f in enumerate(formulae):
-            # Positive axioms does not necessairly have a conejcture
-            conjecture = None
 
-            if "conjecture" in f:
-                conjecture = formulae.pop(n)
-                break
-        if conjecture is not None:
-            formulae = [conjecture] + formulae
+        # Find the conjecture and push it to the front - Assumes only one FOF conjecture
+        formulae = push_conjecture_to_front(formulae)
 
     # Return the problem as a list of formulas
     return formulae

@@ -251,6 +251,11 @@ def get_generate_parser():
         help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
     )
 
+    parser.add_argument('--conjecture_position',
+                        choices=["standard", "first", "last"],
+                        default="first",
+                        help="Where to put the conejcture in the generated problem (or when presented to the claussifier). First is on top of the file. Last in the file. Standard is where it fits in lexicographiil (usually dependant on the name)")
+
     return parser
 
 
@@ -290,8 +295,7 @@ def get_embedding_exp_parser():
 
 
 def get_hyperparam_parser():
-    """
-    This function extends the training parser with the parameters
+    """ This function extends the training parser with the parameters
     required for tuning the hyperparameters.
     """
 
