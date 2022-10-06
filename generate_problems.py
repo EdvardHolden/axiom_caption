@@ -444,7 +444,7 @@ def main():
                 new_problem = quote_number_in_problem(new_problem)
 
             # Order the formulae in the problem
-            prob = order_formulae(prob, args.conjecture_position)
+            new_problem = order_formulae(new_problem, args.conjecture_position)
 
             # Only clausify the problem if set
             if args.output_format is OutputFormat.CLAUSIFIED:
