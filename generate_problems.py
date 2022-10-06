@@ -46,7 +46,7 @@ def extract_rare_axioms(tokenizer, axioms):
 
 
 def compute_caption(
-    tokenizer, model, problem_feature, caption, sampler, max_length, no_samples, sampler_temperature, sampler_top_k, axiom_remapping
+    tokenizer, model, problem_feature, caption, sampler, max_length, no_samples, sampler_temperature, sampler_top_k, axiom_remapping, warmstart_input
 ):
 
     import tensorflow as tf
@@ -61,7 +61,8 @@ def compute_caption(
         no_samples,
         sampler_temperature,
         sampler_top_k,
-        axiom_remapping
+        axiom_remapping,
+        warmstart_input=warmstart_input
     )
 
     # Remove non-axiom tokens
@@ -338,9 +339,9 @@ def main():
             from dataset import load_warmstart_data
             from train import get_axiom_frequency
             axiom_frequency = get_axiom_frequency(model_params.axiom_order, config.train_id_file, config.proof_data)
-            warmstart_input = load_warmstart_data(ids, args.warmstart, caption_tokenizer, model_params.axiom_order, model_params.remove_unknown, axiom_frequency)
+            warmstart_input_dict = load_warmstart_data(ids, args.warmstart, caption_tokenizer, model_params.axiom_order, model_params.remove_unknown, axiom_frequency, args.workers)
         else:
-            warmstart_input = None
+            warmstart_input_dict = None
 
         # Load the model
         model = get_model(args.model_dir, max_caption_length=args.max_length)
@@ -406,21 +407,25 @@ def main():
             # Add the rare axioms to the problem
             new_problem.update(rare_axioms)
 
-            # TODO add WarmStat thingy here
-            # Check if in use, then extract the thing and pass it to comput caption?
+            # Extract warmstart input if set
+            if warmstart_input_dict is None:
+                warmstart_input = None
+            else:
+                warmstart_input = warmstart_input_dict[Path(prob_path).name]
 
             # Use the model to generate the axioms required for the proof
             axiom_caption = compute_caption(
                 caption_tokenizer,
                 model,
-                problem_features[Path(prob_path).stem],
-                caption_dict[Path(prob_path).stem],
+                problem_features[Path(prob_path).name],
+                caption_dict[Path(prob_path).name],
                 args.sampler,
                 args.max_length,
                 no_samples,
                 args.sampler_temperature,
                 args.sampler_top_k,
                 args.axiom_remapping,
+                warmstart_input,
             )
             # Add the caption to the problem
             new_problem.update(axiom_caption)

@@ -5,6 +5,7 @@ import random
 import os
 import json
 import glob
+from multiprocessing import Pool
 from keras.preprocessing.text import tokenizer_from_json
 
 # from keras.preprocessing.sequence import pad_sequences
@@ -343,37 +344,39 @@ def load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tok
     return entity_features, caching
 
 
-def load_axioms_as_dict_from_dir(dirpath, ids):
+def load_warmstart_problem_description(problem_path, caption_tokenizer, order, remove_unknown, axiom_frequency):
 
-    problems = glob.glob(os.path.join(dirpath, "*"))
-    problems = [p for p in problems if Path(p).name in ids] # Somewhat slow id check
+    # Open the file
+    with open(problem_path, "r") as f:
+        data = f.readlines()
 
-    res = {}
-    for prob_path in problems:
-        # Open the file
-        with open(prob_path, "r") as f:
-            data = f.readlines()
-
-            # Remove the conjecture
-            data = [d.strip() for d in data if 'conjecture' not in d]
-
-            # Insert into dict with the correct name
-            res[Path(prob_path).name] = data
-
-    return res
-
-
-def load_warmstart_data(ids, dirpath, caption_tokenizer, order, remove_unknown, axiom_frequency):
-
-    # Load the raw axioms from the directory
-    captions = load_axioms_as_dict_from_dir(dirpath, ids)
+        # Remove the conjecture
+        prob_axioms = [d.strip() for d in data if 'conjecture' not in d]
 
     # Transform axioms into descriptions
-    for prob_id in captions:
-        captions[prob_id] = create_axiom_descriptions(captions[prob_id], order, axiom_frequency)[:-1] # Remove end token
+    caption = create_axiom_descriptions(prob_axioms, order, axiom_frequency)[:-1] # Remove end token
 
     # Tokenize the captions
-    captions = tokenize_description_dicts(captions, caption_tokenizer, remove_unknown)
+    if remove_unknown:
+        caption_tokenizer.oov_token = None  # This skips entries that maps to oov
+    caption = caption_tokenizer.texts_to_sequences([caption])[0]
+
+    return Path(problem_path).name, caption
+
+
+def load_warmstart_data(ids, dirpath, caption_tokenizer, order, remove_unknown, axiom_frequency, workers=None):
+
+    # Compute all problem paths
+    problem_paths = [os.path.join(dirpath, i) for i in ids]
+    star_args = [(prob, caption_tokenizer, order, remove_unknown, axiom_frequency) for prob in problem_paths]
+
+    pool = Pool(workers)
+    res = pool.starmap(load_warmstart_problem_description, star_args)
+    pool.close()
+    pool.join()
+
+    # Extract results
+    captions = dict(res)
 
     return captions
 

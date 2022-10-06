@@ -173,7 +173,7 @@ def remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer):
 
 # @tf.function
 def generate_step(
-    tokenizer, model, max_len, img_tensor, caption, sampler, no_samples, sampler_temperature, sampler_top_k, axiom_remapping
+    tokenizer, model, max_len, img_tensor, caption, sampler, no_samples, sampler_temperature, sampler_top_k, axiom_remapping, warmstart_input=None
 ):
 
     # List for storing predicted sequence
@@ -196,6 +196,19 @@ def generate_step(
 
     # Call the encoder to pre-compute the entity features for use in the decoder call
     img_tensor, input_mask, hidden = call_encoder(model, img_tensor, False, hidden)
+
+    # Handle warmstart if set - this initialises the hidden state of the model by processing a given
+    # sequence prior to the prediction phase
+    if warmstart_input is not None:
+        if sequence:
+            raise ValueError("ERROR: Warmstarting of model is not yet implemented for sequence intput (required for e.g. Transformer Decoder)")
+        # Warmstart the decoder according to the provided sequence - do not run on the last input token
+        for inp in warmstart_input[:-1]:
+            #pred, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training=False)
+            _, hidden = call_model_decoder(model, img_tensor, tf.expand_dims([inp], 1), input_mask, hidden, training=False)
+
+        # The last token will act as the first input token for the actual predictions - this works if the sequence only consists of the start token
+        dec_input = tf.expand_dims([warmstart_input[-1]], 1)
 
     # Run the model until we reach the max length or the end token
     for i in range(1, max_len + 1):
