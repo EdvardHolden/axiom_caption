@@ -3,6 +3,24 @@ import os
 import re
 
 
+def order_formulae(prob, conjecture_position):
+
+    # Standard jsut return all lexicographically
+    if conjecture_position == "standard":
+        return sorted(prob)
+
+    # Split on the conjecture
+    conj, *ax = push_conjecture_to_front(prob)
+    ax = sorted(ax) # Ensure that the axioms are sorted
+
+    if conjecture_position == "first":
+        return [conj] + ax
+    elif conjecture_position == "last":
+        return ax + [conj]
+    else:
+        raise ValueError(f"Incorrect value given for conjecture position: \'{conjecture_position}\'")
+
+
 def save_problem(dir_name, prob_name, problem_string):
     try:
         with open(os.path.join(dir_name, prob_name), "wb") as f:

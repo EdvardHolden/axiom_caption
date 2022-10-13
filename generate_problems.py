@@ -13,7 +13,7 @@ from evaluate import generate_step, get_model
 from parser import get_generate_parser
 import config
 
-from process_problem import save_problem, get_problems_from_path, load_and_process_problem, push_conjecture_to_front
+from process_problem import save_problem, get_problems_from_path, load_and_process_problem, push_conjecture_to_front, order_formulae
 
 random.seed(7)
 
@@ -237,23 +237,6 @@ def get_extra_axioms(problem_paths, no_axioms, deepmath):
     assert len(extra_axioms) == no_axioms
     return extra_axioms
 
-
-def order_formulae(prob, conjecture_position):
-
-    # Standard jsut return all lexicographically
-    if conjecture_position == "standard":
-        return sorted(prob)
-
-    # Split on the conjecture
-    conj, *ax = push_conjecture_to_front(prob)
-    ax = sorted(ax) # Ensure that the axioms are sorted
-
-    if conjecture_position == "first":
-        return [conj] + ax
-    elif conjecture_position == "last":
-        return ax + [conj]
-    else:
-        raise ValueError(f"Incorrect value given for conjecture position: \'{conjecture_position}\'")
 
 def main():
 
