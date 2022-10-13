@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from multiprocessing import Pool
 
-from process_problem import get_problems_from_path, load_and_process_problem, save_problem
+from process_problem import get_problems_from_path, load_and_process_problem, save_problem, order_formulae
 from clausifier import clausify
 from enum_types import OutputFormat
 
@@ -23,6 +23,11 @@ parser.add_argument('dir2', help='Dir to merge')
 parser.add_argument('--dest_dir', default=None, help='Distination dir. Inferred if not set')
 parser.add_argument('--workers', type=int, default=max(os.cpu_count() - 2, 1))
 parser.add_argument("--output_format", default="clausified", choices=list(OutputFormat), type=OutputFormat, help="Whether to clausify the final output problems")
+parser.add_argument('--conjecture_position',
+                    choices=["standard", "first", "last"],
+                    default="first",
+                    help="Where to put the conjecture in the generated problem (or when presented to the claussifier). First is on top of the file. Last in the file. Standard is where it fits in lexicographical (dependent on the conjecture name)")
+
 
 
 
@@ -56,7 +61,7 @@ def infer_dest_dir(dir1, dir2, output_format):
 
     # Replace original with clausified
     if output_format is OutputFormat.CLAUSIFIED:
-        res = res.replace("original", "clausified")
+        res = res.replace("original", "clausified", 1)
 
     dest_dir = os.path.join(base_dir, res)
     if not os.path.exists(dest_dir):
@@ -64,7 +69,7 @@ def infer_dest_dir(dir1, dir2, output_format):
 
     return dest_dir
 
-def merge_problems(dir1, dir2, prob_name, dest_dir, output_format):
+def merge_problems(dir1, dir2, prob_name, dest_dir, output_format, conjecture_position):
 
     # Load problems and merge clauses
     prob1 = load_and_process_problem(os.path.join(dir1, prob_name), deepmath=False)
@@ -88,6 +93,9 @@ def merge_problems(dir1, dir2, prob_name, dest_dir, output_format):
 
         # Add new axiom to the problem
         prob += [distinct_number_axiom]
+
+    # Order the formulae in the problem                                                                                                                                                                                        |  nohup_warmstart.out
+    prob = order_formulae(prob, conjecture_position)
 
     # Clausify the merged problem
     if output_format is OutputFormat.CLAUSIFIED:
@@ -130,7 +138,7 @@ def main():
     #for prob in probs1
     prob_names = [Path(p).stem for p in probs1]
 
-    star_args = [(args.dir1, args.dir2, prob_name, dest_dir, args.output_format) for prob_name in prob_names]
+    star_args = [(args.dir1, args.dir2, prob_name, dest_dir, args.output_format, args.conjecture_position) for prob_name in prob_names]
     pool = Pool(args.workers)
     pool.starmap(merge_problems, star_args)
     pool.close()
