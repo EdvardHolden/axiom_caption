@@ -100,6 +100,18 @@ CONFIGS = {
 }
 '''
 
+# # Investigate warmstarting of configurations: Conjecture positions are set to FIRST
+CONFIGS = {
+    117201: 'generated_problems/analysis/output_original_caption_axiom_remapping', # generated_problems/analysis/output_clausified_caption_axiom_remapping_conjecture_position_first/
+    117202: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_1_1/', # generated_problems/analysis/output_clausified_sine_1_1_caption_axiom_remapping
+    117203: 'generated_problems/analysis/output_original_caption_axiom_remapping_sine_2.5_2/', # generated_problems/analysis/output_clausified_sine_2.5_2_caption_axiom_remapping
+    117204: 'generated_problems/analysis/output_original_caption_axiom_remapping_warmstart', # generated_problems/analysis/output_clausified_caption_axiom_remapping_warmstart/
+    117205: 'generated_problems/analysis/output_original_sine_1_1_caption_axiom_remapping_warmstart', # generated_problems/analysis/output_clausified_sine_1_1_caption_axiom_remapping_warmstart
+    117206: 'generated_problems/analysis/output_original_sine_2.5_2_caption_axiom_remapping_warmstart', # generated_problems/analysis/output_clausified_sine_2.5_2_caption_axiom_remapping_warmstart
+}
+
+
+
 
 
 
