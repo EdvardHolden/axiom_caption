@@ -4,6 +4,8 @@ import tensorflow as tf
 import random
 import os
 import json
+import glob
+from multiprocessing import Pool
 from keras.preprocessing.text import tokenizer_from_json
 
 # from keras.preprocessing.sequence import pad_sequences
@@ -177,6 +179,19 @@ def load_clean_conjectures(filename, ids):
 
     return conjectures
 
+def create_axiom_descriptions(axioms, order, axiom_frequency):
+
+    # Replace delimiter with spaces
+    axioms = [ax.replace(config.TOKEN_DELIMITER, " ") for ax in axioms]
+
+    # Order the axioms if set
+    if order is not None:
+        axioms = order_axioms(order, axioms, axiom_frequency=axiom_frequency)
+
+    # Build the caption string and return
+    return (f"{config.TOKEN_START}{config.TOKEN_DELIMITER}"
+            + f"{config.TOKEN_DELIMITER}".join(axioms)
+            + f"{config.TOKEN_DELIMITER}{config.TOKEN_END}")
 
 def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
     # Load the descriptions of the images in the set and append start/end tokens
@@ -194,18 +209,9 @@ def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
 
             # Extract axioms and manipulate the delimiter
             axioms = data["axioms"]
-            axioms = [ax.replace(config.TOKEN_DELIMITER, " ") for ax in axioms]
 
-            # Order the axioms if set
-            if order is not None:
-                axioms = order_axioms(order, axioms, axiom_frequency=axiom_frequency)
-
-            # Build the caption string and save in dict
-            descriptions[prob_id] = (
-                f"{config.TOKEN_START}{config.TOKEN_DELIMITER}"
-                + f"{config.TOKEN_DELIMITER}".join(axioms)
-                + f"{config.TOKEN_DELIMITER}{config.TOKEN_END}"
-            )
+            # Build a string caption description of the axiom
+            descriptions[prob_id] = create_axiom_descriptions(axioms, order, axiom_frequency)
 
     return descriptions
 
@@ -270,22 +276,30 @@ def load_image_feature_dict(image_feature_path, ids):
     return img_features, caching
 
 
+def tokenize_description_dicts(captions, caption_tokenizer, remove_unknown):
+
+    # Tokenize each caption and store it back in the dictionary
+    if remove_unknown:
+        caption_tokenizer.oov_token = None  # This skips entries that maps to oov
+
+    for i in captions:
+        captions[i] = caption_tokenizer.texts_to_sequences([captions[i]])[0]
+
+    return captions
+
+
 def load_caption_dict(
     captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
 ):
     """
-    Load the captions as a dictionary and tokeenize if tokenizer is provided.
+    Load the captions as a dictionary and tokenize if tokenizer is provided.
     Also compute the length of the longest caption if not provided.
     """
     captions = load_clean_descriptions(captions_path, ids, order=order, axiom_frequency=axiom_frequency)
 
     # Tokenize the sentences if provided
     if caption_tokenizer is not None:
-        # Tokenize each caption and store it back in the dictionary
-        if remove_unknown:
-            caption_tokenizer.oov_token = None  # This skips entries that maps to oov
-        for i in captions:
-            captions[i] = caption_tokenizer.texts_to_sequences([captions[i]])[0]
+        captions = tokenize_description_dicts(captions, caption_tokenizer, remove_unknown)
 
     # Compute the longest caption if value not provided - do this after tokenization in case remove_unknown is set
     if max_cap_len is None:
@@ -312,6 +326,61 @@ def create_tf_dataset(feature_data, caption_data, caching, batch_size):
     return dataset
 
 
+def load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length):
+
+    # Load the encoder input
+    if encoder_input is EncoderInput.FLAT:
+        # Load image features as a dict and get flag of whether they are cached
+        entity_features, caching = load_image_feature_dict(entity_feature_path, ids)
+    elif encoder_input is EncoderInput.SEQUENCE:
+        entity_features = load_conjecture_tokens_dict(
+            entity_feature_path, conjecture_tokenizer, ids, conjecture_input_length
+        )
+        # We always set caching to False for sequence input for now
+        caching = False
+    else:
+        raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
+
+    return entity_features, caching
+
+
+def load_warmstart_problem_description(problem_path, caption_tokenizer, order, remove_unknown, axiom_frequency):
+
+    # Open the file
+    with open(problem_path, "r") as f:
+        data = f.readlines()
+
+        # Remove the conjecture
+        prob_axioms = [d.strip() for d in data if 'conjecture' not in d]
+
+    # Transform axioms into descriptions
+    caption = create_axiom_descriptions(prob_axioms, order, axiom_frequency)[:-1] # Remove end token
+
+    # Tokenize the captions
+    if remove_unknown:
+        caption_tokenizer.oov_token = None  # This skips entries that maps to oov
+    caption = caption_tokenizer.texts_to_sequences([caption])[0]
+
+    return Path(problem_path).name, caption
+
+
+def load_warmstart_data(ids, dirpath, caption_tokenizer, order, remove_unknown, axiom_frequency, workers=None):
+
+    # Compute all problem paths
+    problem_paths = [os.path.join(dirpath, i) for i in ids]
+    star_args = [(prob, caption_tokenizer, order, remove_unknown, axiom_frequency) for prob in problem_paths]
+
+    pool = Pool(workers)
+    res = pool.starmap(load_warmstart_problem_description, star_args)
+    pool.close()
+    pool.join()
+
+    # Extract results
+    captions = dict(res)
+
+    return captions
+
+
 def get_dataset(
     ids_path,
     captions_path,
@@ -330,18 +399,8 @@ def get_dataset(
     # Load the necessary data for the id set
     ids = load_ids(ids_path)
 
-    # Load the encoder input
-    if encoder_input is EncoderInput.FLAT:
-        # Load image features as a dict and get flag of whether they are cached
-        entity_features, caching = load_image_feature_dict(entity_feature_path, ids)
-    elif encoder_input is EncoderInput.SEQUENCE:
-        entity_features = load_conjecture_tokens_dict(
-            entity_feature_path, conjecture_tokenizer, ids, conjecture_input_length
-        )
-        # We always set caching to False for sequence input for now
-        caching = False
-    else:
-        raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
+    # Load the entity features
+    entity_features, caching = load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length)
 
     # Load the captions as a dict
     captions, max_cap_len = load_caption_dict(
