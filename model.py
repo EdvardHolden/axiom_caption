@@ -521,6 +521,67 @@ class InjectModel(tf.keras.Model):
         return Model(inputs=x, outputs=self.call(x))
 
 
+class MergeInjectModel(tf.keras.Model):
+    def __init__(self, model_params, name="merge_inject", **kwargs):
+        super(MergeInjectModel, self).__init__(name=name, **kwargs)
+        self.no_rnn_units = model_params.no_rnn_units
+        self.axiom_order = model_params.axiom_order
+
+        # Call get encoder to get the entity encoder
+        self.encoder = _get_encoder(model_params)
+
+        # self.word_encoder = WordEncoder(model_params)
+        # Set up the word input
+        self.word_embedding = Embedding(model_params.target_vocab_size, model_params.embedding_size)
+        self.d1 = Dropout(model_params.dropout_rate)
+
+        # Add attention
+        if model_params.attention:
+            print(
+                "Warning: Attention functionality not implemented for the merge architecture",
+                file=sys.stderr,
+            )
+
+        self.word_decoder = WordDecoder(model_params)
+
+        self.d2 = Dense(model_params.no_dense_units, activation="relu")
+        self.out = Dense(model_params.target_vocab_size)
+
+    def call(self, inputs, training=None):
+        input_image, input_word, hidden_state = inputs
+
+        # Encode the image
+        image_emb = self.encoder(input_image, training=training)
+
+        # Encode the word
+        word_emb = self.word_embedding(input_word)
+        word_emb = self.d1(word_emb, training=training)
+        word_emb, hidden = self.word_decoder(word_emb, training=training)
+
+        # Concatenate both inputs - or should I use add?
+        merged_emb = concatenate([image_emb, word_emb])
+
+        # Run through dense prediction layer
+        merged_emb = self.d2(merged_emb)
+        output = self.out(merged_emb)
+
+        return output, hidden
+
+    def get_config(self):
+        config = super(MergeInjectModel, self).get_config()
+        config.update({"vocab_size": self.vocab_size, "name": self.name})
+        return config
+
+    def build_graph(self):
+        # https://stackoverflow.com/questions/61427583/how-do-i-plot-a-keras-tensorflow-subclassing-api-model
+        x = [
+            Input(shape=(400,)),
+            Input(shape=(1,)),
+            Input(shape=(self.no_rnn_units,)),
+        ]
+        return Model(inputs=x, outputs=self.call(x))
+
+
 class BahdanauAttention(tf.keras.Model):
     def __init__(self, params):
         super(BahdanauAttention, self).__init__()
@@ -625,6 +686,8 @@ def get_model(params):
         return (encoder, decoder)
     elif params.model_type is ModelType.DENSE:
         return DenseModel(params)
+    elif params.model_type is ModelType.MERGE:
+        return DenseModel(params)
 
     raise ValueError(f"Unrecognised model type: {params.model_type}")
 
@@ -706,10 +769,14 @@ def get_model_params(model_dir):
     return params
 
 
+def check_get_params():
+    return get_model_params("experiments/transformer_test/")
+
+
 def check_inject():
 
     # Load base model parameters
-    params = get_model_params("experiments/base_model")
+    params = check_get_params()
     params.normalize = False  # quick hack
     params.attention = AttentionMechanism.NONE  # quick hack
     params.stateful = False
@@ -737,6 +804,7 @@ def check_inject():
 
     # WordDecoder
     print("\n# # # WordDecoder # # #")
+    params.encoder_type = EncoderType.IMAGE
     m = WordDecoder(params)
     m.build_graph().summary()
 
@@ -749,7 +817,8 @@ def check_inject():
 def check_models():
     # Function for testing the script
     # Load base model parameters
-    params = get_model_params("experiments/base_model")
+    # params = get_model_params("experiments/base_model")
+    params = check_get_params()
     params.normalize = False  # quick hack
     params.target_vocab_size = int(params.target_vocab_size)
     print("model params: ", params)
@@ -761,19 +830,29 @@ def check_models():
     print(m)
     print(m.build_graph().summary())
 
+    print("# # # Merge # # #")
+    params.stateful = False  # Need to turn off the state as do not want to specify batch size
+    params.model_type = ModelType.MERGE
+    m = get_model((params))
+    print(m)
+    print(m.build_graph().summary())
+
     print("# # # Dense # # #")
     params.model_type = ModelType.DENSE
     dense = get_model(params)
     print(dense)
     print(dense.build_graph().summary())
+    print()
 
 
 def check_encoder():
-    params = get_model_params("experiments/base_model")
+    params = check_get_params()
+
     # This needs to be supplied from data
     params.sequence_vocab_size = 80
     params.input_vocab_size = 200  # HACK
     params.target_vocab_size = int(params.target_vocab_size)
+    print("# # # RNNEncoder # # #")
     enc = RNNEncoder(params)
     enc.build_graph().summary()
 

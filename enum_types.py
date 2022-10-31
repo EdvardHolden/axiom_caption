@@ -40,6 +40,7 @@ class ModelType(Enum):
     INJECT = "inject"
     DENSE = "dense"
     SPLIT = "split"
+    MERGE = "merge"
 
     def __str__(self):
         return self.value
