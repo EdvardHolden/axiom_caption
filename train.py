@@ -319,12 +319,17 @@ def get_axiom_frequency(axiom_order, train_id_file, proof_data):
     require this is set.
     """
 
-    if axiom_order is AxiomOrder.FREQUENCY:
+    if AxiomOrder.RANDOM_GLOBAL in axiom_order and AxiomOrder.FREQUENCY in axiom_order:
+        raise ValueError("ERROR: No support for both random and frequency ordering on the axioms yet.")
+
+    # Check which axiom frequency order to compute - if any
+    if AxiomOrder.FREQUENCY in axiom_order:
         axiom_frequency = compute_axiom_frequency(proof_data, train_id_file)
-    elif axiom_order is AxiomOrder.RANDOM_GLOBAL:
+    elif AxiomOrder.RANDOM_GLOBAL in axiom_order:
         axiom_frequency = compute_random_global_axiom_frequency(proof_data)
     else:
         axiom_frequency = None
+
     return axiom_frequency
 
 
