@@ -14,12 +14,47 @@ class AxiomOrder(Enum):
         return self.value
 
 
+class TransformerInputOrder(Enum):
+    """
+    The encoding order of the axioms seuqneces fed in the a transformer
+    component. Will more or less override the effect of AxiomOrder.
+    """
+
+    ORIGINAL = "original"  # No encoding effect
+    SEQUENTIAL = "sequential"  # Positional encoding
+    LINEAR = "linear"  # Linear weighted encoding
+
+    def __str__(self):
+        return self.value
+
+
 class Context(Enum):
     AXIOMS = "axioms"
     WORDS = "words"
 
     def __str__(self):
         return self.value
+
+
+class ModelType(Enum):
+    INJECT = "inject"
+    DENSE = "dense"
+    SPLIT = "split"
+    MERGE = "merge"
+
+    def __str__(self):
+        return self.value
+
+
+class EncoderType(Enum):
+    TRANSFORMER = "transformer"
+    RECURRENT = "recurrent"
+    IMAGE = "image"
+
+
+class DecoderType(Enum):
+    INJECT = "inject"
+    TRANSFORMER = "transformer"
 
 
 class EncoderInput(Enum):

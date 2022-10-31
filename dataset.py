@@ -4,6 +4,8 @@ import tensorflow as tf
 import random
 import os
 import json
+import glob
+from multiprocessing import Pool
 from keras.preprocessing.text import tokenizer_from_json
 
 # from keras.preprocessing.sequence import pad_sequences
@@ -44,20 +46,19 @@ def get_tokenizer(id_file, tokenizer_mode, tokenizer_data_path, vocab_word_limit
 
 
 def get_caption_conjecture_tokenizers(model_params, proof_data, context, train_id_file, problem_features):
-    # TODO or should this be split as they do not really belong together?
 
     # Get pre-trained tokenizer for the captions - supply context for switching between axioms and natural language
     caption_tokenizer, vocab_size = get_tokenizer(
-        train_id_file, str(context), proof_data, model_params.axiom_vocab_size
+        train_id_file, str(context), proof_data, model_params.target_vocab_size
     )
 
     if model_params.encoder_input is EncoderInput.SEQUENCE:
         conjecture_tokenizer, conjecture_vocab_size = get_tokenizer(
-            train_id_file, "conj_word", problem_features, model_params.conjecture_vocab_size
+            train_id_file, "conj_word", problem_features, model_params.input_vocab_size
         )
         # Need to set the conjecture vocab size if it was None|all, to determine the input layer
-        if model_params.conjecture_vocab_size is None:
-            model_params.conjecture_vocab_size = conjecture_vocab_size
+        if model_params.input_vocab_size is None:
+            model_params.input_vocab_size = conjecture_vocab_size
     else:
         conjecture_tokenizer = None
 
@@ -178,6 +179,19 @@ def load_clean_conjectures(filename, ids):
 
     return conjectures
 
+def create_axiom_descriptions(axioms, order, axiom_frequency):
+
+    # Replace delimiter with spaces
+    axioms = [ax.replace(config.TOKEN_DELIMITER, " ") for ax in axioms]
+
+    # Order the axioms if set
+    if order is not None:
+        axioms = order_axioms(order, axioms, axiom_frequency=axiom_frequency)
+
+    # Build the caption string and return
+    return (f"{config.TOKEN_START}{config.TOKEN_DELIMITER}"
+            + f"{config.TOKEN_DELIMITER}".join(axioms)
+            + f"{config.TOKEN_DELIMITER}{config.TOKEN_END}")
 
 def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
     # Load the descriptions of the images in the set and append start/end tokens
@@ -195,18 +209,9 @@ def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
 
             # Extract axioms and manipulate the delimiter
             axioms = data["axioms"]
-            axioms = [ax.replace(config.TOKEN_DELIMITER, " ") for ax in axioms]
 
-            # Order the axioms if set
-            if order is not None:
-                axioms = order_axioms(order, axioms, axiom_frequency=axiom_frequency)
-
-            # Build the caption string and save in dict
-            descriptions[prob_id] = (
-                f"{config.TOKEN_START}{config.TOKEN_DELIMITER}"
-                + f"{config.TOKEN_DELIMITER}".join(axioms)
-                + f"{config.TOKEN_DELIMITER}{config.TOKEN_END}"
-            )
+            # Build a string caption description of the axiom
+            descriptions[prob_id] = create_axiom_descriptions(axioms, order, axiom_frequency)
 
     return descriptions
 
@@ -234,7 +239,7 @@ def _load_cached_features(img_name, cap):
     return img_tensor, cap
 
 
-def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids):
+def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids, conjecture_input_length):
 
     # Load the features from the pickle file
     conjectures = load_clean_conjectures(conjecture_path, ids)
@@ -242,15 +247,10 @@ def load_conjecture_tokens_dict(conjecture_path, conjecture_tokenizer, ids):
     for prob_id, conj in conjectures.items():
         conjectures[prob_id] = conjecture_tokenizer.texts_to_sequences([conj])[0]
 
-    # Quickly compute maximum conjectur length
-    max_len = max(len(v) for v in conjectures.values())
-    tf.print(f"Maximum conjecture input length: {max_len}")
-    if max_len > config.CONJECTURE_INPUT_MAX_LENGTH:
-        max_len = config.CONJECTURE_INPUT_MAX_LENGTH
-        tf.print(f"Truncated input length to: {max_len}")
-
     for prob_id, conj in conjectures.items():
-        conjectures[prob_id] = pad_sequences([conj], maxlen=max_len, padding="post", truncating="post")[0]
+        conjectures[prob_id] = pad_sequences(
+            [conj], maxlen=conjecture_input_length, padding="post", truncating="post"
+        )[0]
 
     return conjectures
 
@@ -276,22 +276,30 @@ def load_image_feature_dict(image_feature_path, ids):
     return img_features, caching
 
 
+def tokenize_description_dicts(captions, caption_tokenizer, remove_unknown):
+
+    # Tokenize each caption and store it back in the dictionary
+    if remove_unknown:
+        caption_tokenizer.oov_token = None  # This skips entries that maps to oov
+
+    for i in captions:
+        captions[i] = caption_tokenizer.texts_to_sequences([captions[i]])[0]
+
+    return captions
+
+
 def load_caption_dict(
     captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
 ):
     """
-    Load the captions as a dictionary and tokeenize if tokenizer is provided.
+    Load the captions as a dictionary and tokenize if tokenizer is provided.
     Also compute the length of the longest caption if not provided.
     """
     captions = load_clean_descriptions(captions_path, ids, order=order, axiom_frequency=axiom_frequency)
 
     # Tokenize the sentences if provided
     if caption_tokenizer is not None:
-        # Tokenize each caption and store it back in the dictionary
-        if remove_unknown:
-            caption_tokenizer.oov_token = None  # This skips entries that maps to oov
-        for i in captions:
-            captions[i] = caption_tokenizer.texts_to_sequences([captions[i]])[0]
+        captions = tokenize_description_dicts(captions, caption_tokenizer, remove_unknown)
 
     # Compute the longest caption if value not provided - do this after tokenization in case remove_unknown is set
     if max_cap_len is None:
@@ -318,6 +326,61 @@ def create_tf_dataset(feature_data, caption_data, caching, batch_size):
     return dataset
 
 
+def load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length):
+
+    # Load the encoder input
+    if encoder_input is EncoderInput.FLAT:
+        # Load image features as a dict and get flag of whether they are cached
+        entity_features, caching = load_image_feature_dict(entity_feature_path, ids)
+    elif encoder_input is EncoderInput.SEQUENCE:
+        entity_features = load_conjecture_tokens_dict(
+            entity_feature_path, conjecture_tokenizer, ids, conjecture_input_length
+        )
+        # We always set caching to False for sequence input for now
+        caching = False
+    else:
+        raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
+
+    return entity_features, caching
+
+
+def load_warmstart_problem_description(problem_path, caption_tokenizer, order, remove_unknown, axiom_frequency):
+
+    # Open the file
+    with open(problem_path, "r") as f:
+        data = f.readlines()
+
+        # Remove the conjecture
+        prob_axioms = [d.strip() for d in data if 'conjecture' not in d]
+
+    # Transform axioms into descriptions
+    caption = create_axiom_descriptions(prob_axioms, order, axiom_frequency)[:-1] # Remove end token
+
+    # Tokenize the captions
+    if remove_unknown:
+        caption_tokenizer.oov_token = None  # This skips entries that maps to oov
+    caption = caption_tokenizer.texts_to_sequences([caption])[0]
+
+    return Path(problem_path).name, caption
+
+
+def load_warmstart_data(ids, dirpath, caption_tokenizer, order, remove_unknown, axiom_frequency, workers=None):
+
+    # Compute all problem paths
+    problem_paths = [os.path.join(dirpath, i) for i in ids]
+    star_args = [(prob, caption_tokenizer, order, remove_unknown, axiom_frequency) for prob in problem_paths]
+
+    pool = Pool(workers)
+    res = pool.starmap(load_warmstart_problem_description, star_args)
+    pool.close()
+    pool.join()
+
+    # Extract results
+    captions = dict(res)
+
+    return captions
+
+
 def get_dataset(
     ids_path,
     captions_path,
@@ -330,21 +393,14 @@ def get_dataset(
     remove_unknown=False,
     encoder_input=EncoderInput.FLAT,
     conjecture_tokenizer=None,
+    conjecture_input_length=None,
 ):
 
     # Load the necessary data for the id set
     ids = load_ids(ids_path)
 
-    # Load the encoder input
-    if encoder_input is EncoderInput.FLAT:
-        # Load image features as a dict and get flag of whether they are cached
-        entity_features, caching = load_image_feature_dict(entity_feature_path, ids)
-    elif encoder_input is EncoderInput.SEQUENCE:
-        entity_features = load_conjecture_tokens_dict(entity_feature_path, conjecture_tokenizer, ids)
-        # We always set caching to False for sequence inptu for now
-        caching = False
-    else:
-        raise ValueError(f"Unrecognised EncoderInput type for loading input data: {encoder_input}")
+    # Load the entity features
+    entity_features, caching = load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length)
 
     # Load the captions as a dict
     captions, max_cap_len = load_caption_dict(
@@ -493,6 +549,7 @@ def main():
         "data/raw/deepmath_conjectures.pkl",
         "data/deepmath/tokenizer_conjecture_None.json",
         load_ids("data/deepmath/train.txt"),
+        200,
     )
 
 

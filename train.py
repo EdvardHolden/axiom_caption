@@ -13,13 +13,15 @@ from dataset import (
     get_caption_conjecture_tokenizers,
 )
 from model import (
+    call_encoder,
+    call_model_decoder,
     get_model_params,
     initialise_model,
     get_hidden_state,
     reset_model_decoder_state,
-    Encoder,
-    ImageEncoder,
+    decoder_sequence_input,
 )
+from utils import get_initial_decoder_input
 from evaluate import jaccard_score, coverage_score
 from enum_types import AxiomOrder
 from parser import get_train_parser
@@ -50,6 +52,37 @@ def loss_function(real, pred):
 
 
 @tf.function
+def get_next_decoder_input_token(
+    dec_input, pred, target, training, teacher_forcing_rate, iteration, sequence=False
+):
+
+    # Check if applying teacher-forcing in training mode
+    """
+    if training and tf.random.uniform(()) <= teacher_forcing_rate:
+        # Teacher forcing - using the correct input target
+        dec_input = tf.expand_dims(target[:, i], 1)
+    else:
+        # Using the predicted tokens
+        dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
+    """
+
+    if not training or tf.random.uniform(()) <= teacher_forcing_rate:
+        next_tokens = target[:, iteration]
+    else:
+        next_tokens = tf.cast(pred, tf.int32)
+
+    # If we are using sequences - add in-place, otherwise return expanded tokens
+    if sequence:
+        # Create a new TensorArray - in case we are in graph mode
+        new_dec_input = tf.TensorArray(
+            dtype=tf.int32, size=dec_input.shape[0], name="decoder_sequence_input"
+        ).unstack(dec_input)
+        return new_dec_input.write(iteration, next_tokens).stack()
+    else:
+        return tf.expand_dims(next_tokens, 1)
+
+
+@tf.function
 def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_rate, training):
 
     # Initial loss on the batch is zero
@@ -61,54 +94,44 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
     # Initialise the hidden shape of the model - used for attention mainly
     hidden = get_hidden_state(model, target.shape[0])
 
-    # Initialise input vector with the start token
-    dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * target.shape[0], 1)
+    # Check whether decoder input should be a sequence
+    sequence = decoder_sequence_input(model)
+
+    # Get the initial decoder input consisting of the start token
+    dec_input = get_initial_decoder_input(
+        tokenizer,
+        target,
+        sequence=sequence,
+    )
 
     # List for holding the predictions
     predictions = []
 
-    # Placeholder for mask if not used
-    mask = None
-
     with tf.GradientTape() as tape:
 
-        # Check if using separate decoder/encoder for faster training
-        if isinstance(model, tuple):
-            # Call and update variables according to the type of encoder being used
-            if isinstance(model[0], ImageEncoder):
-                img_tensor = model[0](img_tensor, training=training)
-            elif isinstance(model[0], Encoder):
-                img_tensor, hidden, mask = model[0](img_tensor, training=training)
+        # Call the encoder to pre-compute the entity features for use in the decoder call
+        img_tensor, input_mask, hidden = call_encoder(model, img_tensor, training, hidden)
 
         for i in range(1, target.shape[1]):
-            # Predict the next token - either by using the full model or just the decoder
-            # encodes the image each time
-            if isinstance(model, tuple):
-                y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training, mask=mask)
-            else:
-                y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
 
+            # Call the decoder/model to produce the final predictions
+            y_hat, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training)
+
+            # Append predictions
             pred = tf.math.argmax(y_hat, axis=1)
             predictions.append(pred)
 
             # Compute loss of predictions
             loss += loss_function(target[:, i], y_hat)
 
-            # Check if applying teacher-forcing in training mode
-            """
-            if training and tf.random.uniform(()) <= teacher_forcing_rate:
-                # Teacher forcing - using the correct input target
-                dec_input = tf.expand_dims(target[:, i], 1)
-            else:
-                # Using the predicted tokens
-                dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
-            """
-            # Check with just using teacher forcing? TODO
-            # tf.print("Warning: TODO teacher_forcing_rate might be bugged")
-            if not training or tf.random.uniform(()) <= teacher_forcing_rate:
-                dec_input = tf.expand_dims(target[:, i], 1)
-            else:
-                dec_input = tf.expand_dims(tf.cast(pred, tf.int32), 1)
+            # Get the next decoder input tokens
+            dec_input = get_next_decoder_input_token(
+                dec_input, pred, target, training, teacher_forcing_rate, i, sequence=sequence
+            )
+
+    # Close dec_input if TensorArray as it does not like being written to without being used (for the last iteration)
+    if isinstance(dec_input, tf.TensorArray):
+        dec_input.close()
 
     # Compute the total loss for the sequence
     sequence_loss = loss / int(target.shape[1])
@@ -281,7 +304,7 @@ def train_loop(
 
     # Add a final metric evaluation that ensures no drop out is used (with training off)
     tf.print("Computing metrics on the training set with the final model parameters, without dropout")
-    train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=False, epoch=epoch)
+    train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=False, epoch=epoch + 1)
     metrics = add_new_metrics(metrics, train_epoch_metrics, prefix="train_")
 
     # Return training history
@@ -332,7 +355,7 @@ def main(
     model_params = get_model_params(model_dir)
 
     # Load the tokenizers for this training setting
-    caption_tokenizer, vocab_size, conjecture_tokenizer = get_caption_conjecture_tokenizers(
+    caption_tokenizer, _, conjecture_tokenizer = get_caption_conjecture_tokenizers(
         model_params, proof_data, context, train_id_file, problem_features
     )
 
@@ -340,6 +363,7 @@ def main(
     axiom_frequency = get_axiom_frequency(model_params.axiom_order, train_id_file, proof_data)
 
     # Get the training dataset
+    tf.print("Loading training dataset")
     train_data, max_len = get_dataset(
         train_id_file,
         proof_data,
@@ -350,9 +374,12 @@ def main(
         remove_unknown=model_params.remove_unknown,
         encoder_input=model_params.encoder_input,
         conjecture_tokenizer=conjecture_tokenizer,
+        conjecture_input_length=model_params.conjecture_input_length,
     )
     tf.print("Max caption length: ", max_len)
+    model_params.max_caption_length = max_len  # Set variable in case we are using the transformer
     # Compute validation dataset based on the max length of the training data
+    tf.print("Loading validation dataset")
     val_data, _ = get_dataset(
         val_id_file,
         proof_data,
@@ -364,6 +391,7 @@ def main(
         remove_unknown=model_params.remove_unknown,
         encoder_input=model_params.encoder_input,
         conjecture_tokenizer=conjecture_tokenizer,
+        conjecture_input_length=model_params.conjecture_input_length,
     )
 
     # Remove axiom frequencies as it is no longer needed and can be very large
@@ -373,7 +401,7 @@ def main(
     del conjecture_tokenizer
 
     # Initialise the model
-    model = initialise_model(model_params.model_type, vocab_size, model_params, training_data=train_data)
+    model = initialise_model(model_params, training_data=train_data)
     tf.print("Training on: ", model)
 
     # Initialise the optimiser

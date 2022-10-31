@@ -2,9 +2,45 @@ import os
 import json
 from subprocess import check_call
 from argparse import Namespace
+import tensorflow as tf
 
 import config
 from parser import get_train_parser
+
+
+class NameSpace:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+# Somehow - if this is a tf.function, it returns an array
+@tf.function
+def get_initial_decoder_input(tokenizer, target, sequence=False):
+    """
+    Returns the decoder input consisting of the start token.
+    Sequence is set to true if using e.g. TransformerDecoder where
+    we need to supply the full sequence predicted.
+    """
+
+    # Make list of start tokens
+    dec_input = [tokenizer.word_index[config.TOKEN_START]] * target.shape[0]
+
+    if sequence:
+        # TODO why does this work in the guide but not for me? - e.g. call is as below in the guide
+        input_array = tf.TensorArray(
+            dtype=tf.int32,
+            size=target.shape[1],
+            element_shape=(target.shape[0],),
+            name="decoder_sequence_input",
+        )
+        # input_array = tf.TensorArray( dtype=tf.int32, size=target.shape[1], element_shape=(8,), name="decoder_sequence_input")
+        # input_array = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
+        # return input_array.write(0, dec_input)
+        input_array = input_array.write(0, dec_input)
+        return input_array.stack()
+    else:
+        # Need to expand the dimensions when feeding single tokens
+        return tf.expand_dims(dec_input, 1)
 
 
 def create_job_dir(root_dir, job_name, params=None):

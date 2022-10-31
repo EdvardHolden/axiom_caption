@@ -1,5 +1,3 @@
-import sys
-
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras import layers
@@ -8,8 +6,6 @@ from keras.layers import Dense
 from keras.layers import LSTM, GRU
 from keras.layers import Dropout
 from keras.layers import RepeatVector
-from keras.layers import TimeDistributed
-from keras.layers import Embedding
 from keras.layers import Flatten
 from keras.layers import Normalization
 from keras.layers import BatchNormalization
@@ -19,7 +15,75 @@ from argparse import Namespace
 import json
 import os
 
-from enum_types import AxiomOrder, Context, EncoderInput, AttentionMechanism
+from enum_types import (
+    AxiomOrder,
+    EncoderInput,
+    AttentionMechanism,
+    ModelType,
+    EncoderType,
+    DecoderType,
+    TransformerInputOrder,
+)
+from model_transformer import TransformerEncoder, TransformerDecoder, create_padding_mask
+
+
+def decoder_sequence_input(model):
+    # Determine whether the decoding stage is operating over a sequence (relevant for transformer)
+    return isinstance(model, tuple) and isinstance(model[1], TransformerDecoder)
+
+
+# @tf.function
+def call_encoder(model, img_tensor, training, hidden):
+    """
+    Function which makes an encoder call upon the input. If the model
+    is not split into encoder-decoder, there is no effect from the call.
+    Raises ValueError if the model is a tuple but call for the encoder
+    class is not implemented.
+    """
+    input_mask = None
+
+    if isinstance(model, tuple):
+        # Call and update variables according to the type of encoder being used
+        if isinstance(model[0], ImageEncoder):
+            img_tensor = model[0](img_tensor, training=training)
+
+        elif isinstance(model[0], TransformerEncoder):
+            input_mask = create_padding_mask(img_tensor)
+            img_tensor = model[0](img_tensor, mask=input_mask, training=training)
+
+        elif isinstance(model[0], RNNEncoder):
+            img_tensor, hidden, input_mask = model[0](img_tensor, training=training)
+        else:
+            raise ValueError(f"Encoder call not implemented for {model[0]}")
+
+    return img_tensor, input_mask, hidden
+
+
+# @tf.function
+def call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training):
+    """
+    Function which makes a decoder/model call upon the input. Creates a unified
+    interface for calling both complete model and models with separate encoder
+    and decoders.
+    """
+    # Predict the next token - either by using the full model or just the decoder
+    # encodes the image each time
+    if isinstance(model, tuple) and isinstance(model[1], TransformerDecoder):
+        # Reshape the sequence to the decoder
+        transformer_dec_input = tf.transpose(dec_input)
+
+        # Call transformer decoder
+        decoder_mask = create_padding_mask(transformer_dec_input)
+        y_hat, _ = model[1](transformer_dec_input, img_tensor, decoder_mask, input_mask, training=training)
+
+    elif isinstance(model, tuple):
+        # Call decoder
+        y_hat, hidden = model[1]([img_tensor, dec_input, hidden], training=training, mask=input_mask)
+    else:
+        # Call whole model on all the input data
+        y_hat, hidden = model([img_tensor, dec_input, hidden], training=training)
+
+    return y_hat, hidden
 
 
 def adapt_normalization_layer(model, embedding_vectors):
@@ -93,21 +157,21 @@ def get_hidden_state(model, batch_size):
     Get the initial hidden state of the model - based on the number of rnn parameters
     """
     if isinstance(model, DenseModel):
-        hidden = None  # no hidden state in the dense model
+        return None  # no hidden state in the dense model
     elif isinstance(model, tuple) and isinstance(model[1], InjectDecoder):
-        hidden = model[1].word_decoder.reset_state(batch_size=batch_size)
+        return model[1].word_decoder.reset_state(batch_size=batch_size)
+    elif isinstance(model, tuple) and isinstance(model[1], TransformerDecoder):
+        return None  # No hidden state for this decoder
     elif isinstance(model, InjectModel):
-        hidden = model.inject_decoder.word_decoder.reset_state(batch_size=batch_size)
-    else:
-        # Assume model structure with a word_decoder
-        hidden = model.word_decoder.reset_state(batch_size=batch_size)
+        return model.inject_decoder.word_decoder.reset_state(batch_size=batch_size)
 
-    return hidden
+    # Default - Assume model structure with a word_decoder
+    return model.word_decoder.reset_state(batch_size=batch_size)
 
 
-def initialise_model(model_type, vocab_size, model_params, training_data=None):
+def initialise_model(model_params, training_data=None):
 
-    model = get_model(model_type, vocab_size, model_params)
+    model = get_model(model_params)
 
     # If normalisation on the embedding graph is set, we have to adapt the
     # layer before compiling (or re-compile) the model. This is done over
@@ -135,7 +199,7 @@ class ImageEncoder(tf.keras.Model):  # TODO possible issue here?
         else:
             self.normalize = None
 
-        if params.global_max_pool:  # FIXME unclear whether this should go before normalisation
+        if params.global_max_pool:
             self.max_pool = GlobalMaxPooling2D()
         else:
             self.max_pool = None
@@ -174,24 +238,31 @@ class ImageEncoder(tf.keras.Model):  # TODO possible issue here?
         return Model(inputs=x, outputs=self.call(x))
 
 
-# TODO add bidirectional encoder
-class Encoder(tf.keras.layers.Layer):
+class RNNEncoder(tf.keras.layers.Layer):
     """
     Encoder function for processing input sequences
     """
 
-    def __init__(self, params, name="conjecture_encoder", **kwargs):
+    def __init__(self, params, name="recurrent_encoder", **kwargs):
 
-        super(Encoder, self).__init__(name=name, **kwargs)
+        super(RNNEncoder, self).__init__(name=name, **kwargs)
 
         # Set the vocabulary size
-        self.vocab_size = params.conjecture_vocab_size
+        self.input_vocab_size = params.input_vocab_size
 
         # The embedding layer converts tokens to vectors
-        self.embedding = tf.keras.layers.Embedding(params.conjecture_vocab_size, params.embedding_size)
+        self.embedding = tf.keras.layers.Embedding(params.input_vocab_size, params.embedding_size)
 
         # Get the RNN type
         rnn = get_rnn(params.rnn_type)
+
+        # Set the masking type based on the decoder type that is to follow
+        if params.decoder_type is DecoderType.INJECT:
+            self.mask_function = _get_sequence_mask
+        elif params.decoder_type is DecoderType.TRANSFORMER:
+            self.mask_function = create_padding_mask
+        else:
+            raise ValueError(f"Need to set RNN masking function for decoder type {params.decoder_type}")
 
         self.no_rnn_units = params.no_rnn_units
 
@@ -219,55 +290,14 @@ class Encoder(tf.keras.layers.Layer):
             x, hidden = self.rnn(x, training=training)
 
         # Compute the mask for the input sequence
-        mask = _get_sequence_mask(sequence_input)
+        mask = self.mask_function(sequence_input)
 
         # 4. Returns the new sequence, its state and a mask for the input sequence
         return x, hidden, mask
 
     def build_graph(self):
         # Input shape of a single word
-        x = Input(shape=(self.vocab_size,))
-        return Model(inputs=x, outputs=self.call(x))
-
-
-class WordEncoder(layers.Layer):
-    def __init__(
-        self,
-        vocab_size,
-        embedding_size,
-        rnn_type,
-        no_rnn_units,
-        no_dense_units,
-        dropout_rate,
-        name="word_encoder",
-        **kwargs,
-    ):
-        super(WordEncoder, self).__init__(name=name, **kwargs)
-        self.vocab_size = vocab_size
-        self.emb1 = Embedding(vocab_size, embedding_size, mask_zero=True)
-        self.d1 = Dropout(dropout_rate)
-
-        rnn = get_rnn(rnn_type)
-
-        self.emb2 = rnn(no_rnn_units, return_sequences=True, dropout=dropout_rate)
-
-        # TODO need to understand the use of this?
-        self.emb3 = TimeDistributed(Dense(no_dense_units, activation="relu"))
-        self.d2 = Dropout(dropout_rate)
-        print("Warning: Deprecated")
-
-    def call(self, inputs, training=None):
-        x = inputs
-        x = self.emb1(x)
-        x = self.d1(x, training=training)
-        x = self.emb2(x, training=training)
-        x = self.emb3(x)
-        x = self.d2(x, training=training)
-        return x
-
-    def build_graph(self):
-        # Input shape of a single word
-        x = Input(shape=(self.vocab_size,))
+        x = Input(shape=(self.input_vocab_size,))
         return Model(inputs=x, outputs=self.call(x))
 
 
@@ -313,7 +343,6 @@ class WordDecoder(layers.Layer):
         x = self.fc(x)
         x = tf.reshape(x, (-1, x.shape[2]))
         x = self.d2(x, training=training)
-        # x = self.out(x)
 
         return x, hidden
 
@@ -332,9 +361,9 @@ class WordDecoder(layers.Layer):
 
 
 class DenseModel(tf.keras.Model):
-    def __init__(self, vocab_size, model_params, name="dense", **kwargs):
+    def __init__(self, model_params, name="dense_model", **kwargs):
         super(DenseModel, self).__init__(name=name, **kwargs)
-        self.vocab_size = vocab_size
+        self.target_vocab_size = model_params.target_vocab_size
         self.no_rnn_units = model_params.no_rnn_units
 
         self.axiom_order = model_params.axiom_order
@@ -342,13 +371,13 @@ class DenseModel(tf.keras.Model):
         self.encoder = ImageEncoder(model_params)
 
         self.word_embedder = tf.keras.layers.Embedding(
-            vocab_size, model_params.embedding_size, name="layer_word_embedding"
+            self.target_vocab_size, model_params.embedding_size, name="layer_word_embedding"
         )
 
         # Define the dense model
         self.fc = Dense(model_params.no_dense_units, activation="relu", name="layer_dense_1")
         self.dropout = Dropout(model_params.dropout_rate, name="layer_dropout")
-        self.out = Dense(vocab_size, name="layer_output")
+        self.out = Dense(self.target_vocab_size, name="layer_output")
 
         self.flatten = Flatten(name="layer_flatten")
 
@@ -359,7 +388,6 @@ class DenseModel(tf.keras.Model):
         image_emb = self.encoder(input_image, training=training)
 
         # Pass word through embedding layer
-        # word_emb = tf.squeeze( self.word_embedder(input_word, training=training))  # TODO maybe use flatten instead?
         word_emb = self.word_embedder(input_word, training=training)
         # Flatten the embedding as we are not using LSTM
         word_emb = self.flatten(word_emb)
@@ -375,7 +403,7 @@ class DenseModel(tf.keras.Model):
 
     def get_config(self):
         config = super(DenseModel, self).get_config()
-        config.update({"vocab_size": self.vocab_size, "name": self.name})
+        config.update({"target_vocab_size": self.target_vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -384,36 +412,39 @@ class DenseModel(tf.keras.Model):
 
 
 class InjectDecoder(tf.keras.Model):
-    def __init__(self, vocab_size, model_params, name="inject_decoder", **kwargs):
+    def __init__(self, model_params, name="inject_decoder", **kwargs):
 
         super(InjectDecoder, self).__init__(name=name, **kwargs)
-        self.vocab_size = vocab_size
+        self.target_vocab_size = model_params.target_vocab_size
         self.no_rnn_units = model_params.no_rnn_units
         self.no_dense_units = model_params.no_dense_units
 
         self.axiom_order = model_params.axiom_order
 
-        self.word_embedder = tf.keras.layers.Embedding(vocab_size, model_params.embedding_size)
+        self.word_embedder = tf.keras.layers.Embedding(self.target_vocab_size, model_params.embedding_size)
 
         self.attention = get_attention_mechanism(model_params)
 
         self.word_decoder = WordDecoder(model_params)
 
-        self.out_layer = Dense(vocab_size)
+        self.out_layer = Dense(self.target_vocab_size)
 
         self.repeat = RepeatVector(1)
+        self.flatten = Flatten()
 
     def call(self, inputs, training=None, mask=None):
 
         # Extract the input elements
         image_emb, input_word, hidden_state = inputs
 
-        # Compute image embedding
         # Pass word through embedding layer
         word_emb = self.word_embedder(input_word, training=training)
 
+        # Attention is not set and input is more than 2 dimension, we flatten it to fit the rest of the setup
+        if self.attention is None and len(image_emb.shape) > 2:
+            image_emb = self.flatten(image_emb)
         # Run Bahdanau attention if set
-        if self.attention is not None and (
+        elif self.attention is not None and (
             isinstance(self.attention, BahdanauAttention) or isinstance(self.attention, AdditiveFlatAttention)
         ):
             image_emb, _ = self.attention(image_emb, hidden_state, mask=mask)
@@ -436,7 +467,7 @@ class InjectDecoder(tf.keras.Model):
 
     def get_config(self):
         config = super(InjectDecoder, self).get_config()
-        config.update({"vocab_size": self.vocab_size, "name": self.name})
+        config.update({"target_vocab_size": self.target_vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
@@ -445,13 +476,13 @@ class InjectDecoder(tf.keras.Model):
 
 
 class InjectModel(tf.keras.Model):
-    def __init__(self, vocab_size, model_params, name="inject_model", **kwargs):
+    def __init__(self, model_params, name="inject_model", **kwargs):
         super(InjectModel, self).__init__(name=name, **kwargs)
 
         self.encoder = _get_encoder(model_params)
-        self.inject_decoder = InjectDecoder(vocab_size, model_params)
+        self.inject_decoder = InjectDecoder(model_params)
 
-        self.vocab_size = vocab_size
+        self.target_vocab_size = model_params.target_vocab_size
         self.no_rnn_units = model_params.no_rnn_units
         self.axiom_order = model_params.axiom_order
 
@@ -461,10 +492,16 @@ class InjectModel(tf.keras.Model):
         input_entity, input_word, hidden_state = inputs
 
         # Compute image embedding
-        if isinstance(self.encoder, Encoder):
+        if isinstance(self.encoder, RNNEncoder):
             entity_embedding, hidden_state, mask = self.encoder(input_entity, training=training)
         elif isinstance(self.encoder, ImageEncoder):
             entity_embedding = self.encoder(input_entity, training=training)
+        elif isinstance(self.encoder, TransformerEncoder):
+            entity_embedding = self.encoder(
+                input_entity,
+                mask=None,  # We pass mask as None as it will be derived in the function call of the encoder
+                training=training,
+            )
         else:
             raise ValueError(f'ERROR: Calling of encoder "{self.encoder}" not implemented for InjectModel')
 
@@ -476,11 +513,72 @@ class InjectModel(tf.keras.Model):
 
     def get_config(self):
         config = super(InjectModel, self).get_config()
-        config.update({"vocab_size": self.vocab_size, "name": self.name})
+        config.update({"target_vocab_size": self.target_vocab_size, "name": self.name})
         return config
 
     def build_graph(self):
         x = [Input(shape=(400,)), Input(shape=(1,)), Input(shape=(self.no_rnn_units,))]
+        return Model(inputs=x, outputs=self.call(x))
+
+
+class MergeInjectModel(tf.keras.Model):
+    def __init__(self, model_params, name="merge_inject", **kwargs):
+        super(MergeInjectModel, self).__init__(name=name, **kwargs)
+        self.no_rnn_units = model_params.no_rnn_units
+        self.axiom_order = model_params.axiom_order
+
+        # Call get encoder to get the entity encoder
+        self.encoder = _get_encoder(model_params)
+
+        # self.word_encoder = WordEncoder(model_params)
+        # Set up the word input
+        self.word_embedding = Embedding(model_params.target_vocab_size, model_params.embedding_size)
+        self.d1 = Dropout(model_params.dropout_rate)
+
+        # Add attention
+        if model_params.attention:
+            print(
+                "Warning: Attention functionality not implemented for the merge architecture",
+                file=sys.stderr,
+            )
+
+        self.word_decoder = WordDecoder(model_params)
+
+        self.d2 = Dense(model_params.no_dense_units, activation="relu")
+        self.out = Dense(model_params.target_vocab_size)
+
+    def call(self, inputs, training=None):
+        input_image, input_word, hidden_state = inputs
+
+        # Encode the image
+        image_emb = self.encoder(input_image, training=training)
+
+        # Encode the word
+        word_emb = self.word_embedding(input_word)
+        word_emb = self.d1(word_emb, training=training)
+        word_emb, hidden = self.word_decoder(word_emb, training=training)
+
+        # Concatenate both inputs - or should I use add?
+        merged_emb = concatenate([image_emb, word_emb])
+
+        # Run through dense prediction layer
+        merged_emb = self.d2(merged_emb)
+        output = self.out(merged_emb)
+
+        return output, hidden
+
+    def get_config(self):
+        config = super(MergeInjectModel, self).get_config()
+        config.update({"vocab_size": self.vocab_size, "name": self.name})
+        return config
+
+    def build_graph(self):
+        # https://stackoverflow.com/questions/61427583/how-do-i-plot-a-keras-tensorflow-subclassing-api-model
+        x = [
+            Input(shape=(400,)),
+            Input(shape=(1,)),
+            Input(shape=(self.no_rnn_units,)),
+        ]
         return Model(inputs=x, outputs=self.call(x))
 
 
@@ -553,110 +651,45 @@ class AdditiveFlatAttention(tf.keras.Model):
         return Model(inputs=[x, hidden], outputs=self.call(x, hidden))
 
 
-class MergeInjectModel(tf.keras.Model):
-    def __init__(self, vocab_size, model_params, global_max_pool=False, name="merge_inject", **kwargs):
-        super(MergeInjectModel, self).__init__(name=name, **kwargs)
-        self.vocab_size = vocab_size
-        self.no_rnn_units = model_params.no_rnn_units
-
-        self.axiom_order = model_params.axiom_order
-
-        self.image_encoder = ImageEncoder(model_params)
-
-        self.word_encoder = WordEncoder(
-            vocab_size,
-            model_params.embedding_size,
-            model_params.rnn_type,
-            model_params.no_rnn_units,
-            model_params.no_dense_units,
-            model_params.dropout_rate,
-        )
-
-        # Add attention
-        if model_params.attention:
-            print(
-                "Warning: Attention functionality not fully implemented for the merge architecture",
-                file=sys.stderr,
-            )
-            self.attention = BahdanauAttention(model_params)
-        else:
-            self.attention = None
-
-        self.word_decoder = WordDecoder(model_params)
-
-        # Add repeat vector for avoid calling the image encoder all the time
-        # QUICKFIX - setting length to 1 to expand the dimension of the output for concat
-        self.repeat = RepeatVector(1)
-        print("Warning: Model DEPRECATED (need updates)")
-
-    def call(self, inputs, training=None):
-        input_image, input_word, hidden_state = inputs
-
-        image_emb = self.image_encoder(input_image, training=training)
-        word_emb = self.word_encoder(
-            input_word, training=training
-        )  # TODO maybe this should return the state as well?
-
-        # Perform attention on the image embedding
-        if self.attention is not None:
-            image_emb, _ = self.attention(image_emb, hidden_state)
-        image_emb = self.repeat(image_emb)
-
-        # Concatenate both inputs
-        merged_emb = concatenate([image_emb, word_emb])
-
-        # Decode the embedding
-        output, hidden = self.word_decoder(merged_emb, training=training)
-        return output, hidden_state
-
-    def get_config(self):
-        config = super(MergeInjectModel, self).get_config()
-        config.update({"vocab_size": self.vocab_size, "name": self.name})
-        return config
-
-    def build_graph(self):
-        # TODO this does not show the submodels - needs more work
-        # https://stackoverflow.com/questions/61427583/how-do-i-plot-a-keras-tensorflow-subclassing-api-model
-        x = [
-            Input(shape=(400,)),
-            Input(shape=(1,)),
-            Input(shape=(self.no_rnn_units,)),
-        ]
-        return Model(inputs=x, outputs=self.call(x))
-
-
 def _get_encoder(params):
 
-    if params.encoder_input is EncoderInput.FLAT:
-        encoder = ImageEncoder(params)
-    elif params.encoder_input is EncoderInput.SEQUENCE:
-        encoder = Encoder(params)
-    else:
-        raise ValueError(f'Cannot get model with the supplied "params.encoder_input": {params.encoder_input}')
-    return encoder
+    if params.encoder_type is EncoderType.IMAGE:
+        return ImageEncoder(params)
+    elif params.encoder_type is EncoderType.RECURRENT:
+        return RNNEncoder(params)
+    elif params.encoder_type is EncoderType.TRANSFORMER:
+        return TransformerEncoder(params)
+
+    raise ValueError(f'Cannot get encoder with the supplied "params.encoder_type": {params.encoder_type}')
 
 
-def get_model(model_type, vocab_size, params):
+def _get_decoder(params):
 
-    if model_type == "merge_inject":
-        print("Merge Inject model is deprecated", file=sys.stderr)
-        model = MergeInjectModel(vocab_size, params)
-    elif model_type == "inject":
-        model = InjectModel(vocab_size, params)
-    elif model_type == "inject_decoder":
-        # Model where encoder and decoder is separate for more efficient training
+    if params.decoder_type is DecoderType.INJECT:
+        return InjectDecoder(params)
+    elif params.decoder_type is DecoderType.TRANSFORMER:
+        return TransformerDecoder(params)
+
+    raise ValueError(f'Cannot get decoder with the supplied "params.encoder_type": {params.encoder_type}')
+
+
+def get_model(params):
+
+    if params.model_type is ModelType.INJECT:
+        return InjectModel(params)
+    elif params.model_type is ModelType.SPLIT:
+        # Return separate the encoder and decoder is separate for more efficient training
         encoder = _get_encoder(params)
-        # Initialise the decoder
-        decoder = InjectDecoder(vocab_size, params)
-        # Wrap the model as a tuple
-        model = (encoder, decoder)
-    elif model_type == "dense":
-        model = DenseModel(vocab_size, params)
-    else:
-        print("Unrecognised model type: ", model_type, file=sys.stderr)
-        sys.exit(1)
+        decoder = _get_decoder(params)
 
-    return model
+        # Wrap the model as a tuple
+        return (encoder, decoder)
+    elif params.model_type is ModelType.DENSE:
+        return DenseModel(params)
+    elif params.model_type is ModelType.MERGE:
+        return DenseModel(params)
+
+    raise ValueError(f"Unrecognised model type: {params.model_type}")
 
 
 def load_model(ckpt_dir):
@@ -671,13 +704,11 @@ def load_model(ckpt_dir):
 
 def get_rnn(rnn_type):
     if rnn_type == "lstm":
-        rnn = LSTM
+        return LSTM
     elif rnn_type == "gru":
-        rnn = GRU
-    else:
-        raise ValueError(f'RNN type "{rnn_type}" not supported')
+        return GRU
 
-    return rnn
+    raise ValueError(f'RNN type "{rnn_type}" not supported')
 
 
 def get_attention_mechanism(model_params):
@@ -689,7 +720,6 @@ def get_attention_mechanism(model_params):
         return tf.keras.layers.Attention(score_mode="concat", dropout=model_params.dropout_rate)
     elif model_params.attention is AttentionMechanism.LOUNG_DOT:
         return tf.keras.layers.Attention(score_mode="dot", dropout=model_params.dropout_rate)
-
     elif model_params.attention is AttentionMechanism.NONE:
         return None
     else:
@@ -703,36 +733,55 @@ def get_model_params(model_dir):
         params = json.load(f)
         params = Namespace(**params)
 
-    # Set the axiom order
+    if params.model_type:
+        params.model_type = ModelType(params.model_type)
+
     if params.axiom_order:
         params.axiom_order = AxiomOrder(params.axiom_order)
 
     if params.attention:
         params.attention = AttentionMechanism(params.attention)
 
-    if params.encoder_input:
-        params.encoder_input = EncoderInput(params.encoder_input)
+    if params.encoder_type:
+        params.encoder_type = EncoderType(params.encoder_type)
 
-    if params.conjecture_vocab_size == "all":
+    if params.transformer_input_order:
+        params.transformer_input_order = TransformerInputOrder(params.transformer_input_order)
+
+    # Infer input type from the encoder type - sort of need both variables
+    if params.encoder_type is EncoderType.TRANSFORMER or params.encoder_type is EncoderType.RECURRENT:
+        params.encoder_input = EncoderInput.SEQUENCE
+    elif params.encoder_type is EncoderType.IMAGE:
+        params.encoder_input = EncoderInput.FLAT
+    else:
+        ValueError(f"Could not determine encoder_input type from the encoder type {params.encoder_type}")
+
+    if params.decoder_type:
+        params.decoder_type = DecoderType(params.decoder_type)
+
+    if params.input_vocab_size == "all":
         # We use None for all in the code
-        params.conjecture_vocab_size = None
+        params.input_vocab_size = None
+
+    if params.model_type is ModelType.INJECT and params.decoder_type is DecoderType.TRANSFORMER:
+        raise ValueError("Incompatible parameters with inject model and transformer decoder")
 
     return params
 
 
+def check_get_params():
+    return get_model_params("experiments/transformer_test/")
+
+
 def check_inject():
+
     # Load base model parameters
-    params = get_model_params("experiments/base_model")
+    params = check_get_params()
     params.normalize = False  # quick hack
     params.attention = AttentionMechanism.NONE  # quick hack
-    # params.attention = AttentionMechanism.FLAT  # quick hack
-
-    params.stateful = False  # FIXME is this right?
+    params.stateful = False
+    params.target_vocab_size = int(params.target_vocab_size)
     print("model params: ", params)
-
-    # TODO add  the other components
-    # Get inject
-    vocab_size = 1000
 
     # Attention
     print("\n# # # Attention # # #")
@@ -740,7 +789,7 @@ def check_inject():
     m.build_graph().summary()
 
     print("\n# # # Inject # # #")
-    m = InjectModel(vocab_size, params)
+    m = InjectModel(params)
     m.build_graph().summary()
     # print("### No trainable variables: ", m.trainable_variables)
     import numpy as np
@@ -755,62 +804,60 @@ def check_inject():
 
     # WordDecoder
     print("\n# # # WordDecoder # # #")
+    params.encoder_type = EncoderType.IMAGE
     m = WordDecoder(params)
     m.build_graph().summary()
 
     # InjectDecoder
     print("\n# # # InjectDecoder # # #")
-    m = InjectDecoder(vocab_size, params)
+    m = InjectDecoder(params)
     m.build_graph().summary()
 
 
 def check_models():
     # Function for testing the script
     # Load base model parameters
-    params = get_model_params("experiments/base_model")
+    # params = get_model_params("experiments/base_model")
+    params = check_get_params()
     params.normalize = False  # quick hack
+    params.target_vocab_size = int(params.target_vocab_size)
     print("model params: ", params)
-    """
-    # Deprecated model
-    print("# # # MergeInject # # #")
-    m = get_model("merge_inject", 123, 20, params)
-    m.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
-    print(m)
-    print(m.build_graph().summary())
-    print()
-    """
 
     print("# # # Inject # # #")
     params.stateful = False  # Need to turn off the state as do not want to specify batch size
-    m = get_model("inject", 123, params)
+    params.model_type = ModelType.INJECT
+    m = get_model((params))
+    print(m)
+    print(m.build_graph().summary())
+
+    print("# # # Merge # # #")
+    params.stateful = False  # Need to turn off the state as do not want to specify batch size
+    params.model_type = ModelType.MERGE
+    m = get_model((params))
     print(m)
     print(m.build_graph().summary())
 
     print("# # # Dense # # #")
-    dense = get_model("dense", 123, params)
+    params.model_type = ModelType.DENSE
+    dense = get_model(params)
     print(dense)
-    print(dense.summary())
     print(dense.build_graph().summary())
-
-    """
-    print("# # # Inject # # #")
-    m = get_model("inject", 123, 20, params)
-    m = get_model("attention_inject", 123, 20, params)
-    print(m)
-    print(m.build_graph().summary())
-    """
+    print()
 
 
 def check_encoder():
-    params = get_model_params("experiments/base_model")
+    params = check_get_params()
+
     # This needs to be supplied from data
     params.sequence_vocab_size = 80
-    enc = Encoder(params)
-    print(enc)
+    params.input_vocab_size = 200  # HACK
+    params.target_vocab_size = int(params.target_vocab_size)
+    print("# # # RNNEncoder # # #")
+    enc = RNNEncoder(params)
     enc.build_graph().summary()
 
 
 if __name__ == "__main__":
-    # check_models()
+    check_models()
     check_inject()
-    # check_encoder()
+    check_encoder()

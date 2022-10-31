@@ -7,20 +7,28 @@ from tqdm import tqdm
 import random
 from pathlib import Path
 from tensorflow.sets import size, intersection, union
+from sklearn.neighbors import NearestNeighbors
 
 from dataset import get_dataset, compute_max_caption_length, get_caption_conjecture_tokenizers
-from model import get_model_params, load_model, reset_model_decoder_state, initialise_model
-from model import get_hidden_state, ImageEncoder, Encoder
+from model import (
+    get_model_params,
+    load_model,
+    reset_model_decoder_state,
+    initialise_model,
+    call_encoder,
+    call_model_decoder,
+    get_hidden_state,
+    decoder_sequence_input,
+)
+from enum_types import ModelType, EncoderType, DecoderType
 from parser import get_evaluate_parser
+from utils import get_initial_decoder_input
 
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 random.seed(42)
 np.random.seed(42)
 tf.random.set_seed(42)
-
-
-# TODO maybe add some BeamSearch in here?
 
 
 def greedy_sampler(pred, no_samples):
@@ -119,9 +127,53 @@ def jaccard_score_np(actual, predicted, avg=True):
         return scores
 
 
+def remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer):
+    """
+    Remap predicted axioms to the axioms conisisting in the original problem.
+
+    In some cases we do not want to introduce 'new' axioms into the problem.
+    Instead, we select the most similar axioms contained within the problem
+    based on their encoding by the axiom decoding layer. This means that we
+    are limited to the axiom that consists on both the problem and vocabulary.
+
+    We use the given axiom to avoid re-reading the problem.
+    """
+
+    # Extract the axiom embedding layer of the decoder part
+    if isinstance(model, tuple):
+        emb_layer = model[1].layers[0]
+    else:
+        raise ValueError("Remapping not yet supported for non-split models")
+
+
+    # Extract values and ensure there are no pad/start/unk tokens - map back to ndarray
+    caption = [c for c in caption.numpy()[0] if not (c == tokenizer.word_index[config.TOKEN_PAD]
+                                                     or c == tokenizer.word_index[config.TOKEN_START]
+                                                     or c == tokenizer.word_index[config.TOKEN_OOV]
+                                                     or c == tokenizer.word_index[config.TOKEN_END])]
+    caption = np.array(caption)
+
+    # Check if there are any selectable axioms, otherwise, return the original predictions
+    if len(caption) == 0:
+        return predictions
+
+    cap_embedding = emb_layer(caption)
+    pred_embedding = emb_layer(predictions)
+
+    # Create nearest neighbour model and predict
+    nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(cap_embedding)
+    distances, indices = nbrs.kneighbors(pred_embedding)
+
+    # Re-assign predictions to mapped indices
+    for n, i in enumerate(indices):
+        predictions[n] = caption[i]
+
+    return predictions
+
+
 # @tf.function
 def generate_step(
-    tokenizer, model, max_len, img_tensor, caption, sampler, no_samples, sampler_temperature, sampler_top_k
+    tokenizer, model, max_len, img_tensor, caption, sampler, no_samples, sampler_temperature, sampler_top_k, axiom_remapping, warmstart_input=None
 ):
 
     # List for storing predicted sequence
@@ -130,32 +182,39 @@ def generate_step(
     # Reset LSTM states between each batch
     reset_model_decoder_state(model)
 
+    # Check whether decoder input should be a sequence
+    sequence = decoder_sequence_input(model)
+
     # Initialise the hidden shape of the model - makes the above lines redundant
     hidden = get_hidden_state(model, caption.shape[0])
 
-    # Get start token
-    dec_input = tf.expand_dims([tokenizer.word_index[config.TOKEN_START]] * caption.shape[0], 1)
+    # Get start token - supply dummy for computing target shapes
+    dec_input = get_initial_decoder_input(tokenizer, tf.random.uniform([1, max_len + 1]), sequence=sequence)
 
     # Placeholder for mask if not used
-    mask = None
+    input_mask = None
 
-    # Check if using separate decoder/encoder for faster training
-    if isinstance(model, tuple):
-        # Call and update variables according to the type of encoder being used
-        if isinstance(model[0], ImageEncoder):
-            img_tensor = model[0](img_tensor, training=False)
-        elif isinstance(model[0], Encoder):
-            img_tensor, hidden, mask = model[0](img_tensor, training=False)
+    # Call the encoder to pre-compute the entity features for use in the decoder call
+    img_tensor, input_mask, hidden = call_encoder(model, img_tensor, False, hidden)
+
+    # Handle warmstart if set - this initialises the hidden state of the model by processing a given
+    # sequence prior to the prediction phase
+    if warmstart_input is not None:
+        if sequence:
+            raise ValueError("ERROR: Warmstarting of model is not yet implemented for sequence intput (required for e.g. Transformer Decoder)")
+        # Warmstart the decoder according to the provided sequence - do not run on the last input token
+        for inp in warmstart_input[:-1]:
+            #pred, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training=False)
+            _, hidden = call_model_decoder(model, img_tensor, tf.expand_dims([inp], 1), input_mask, hidden, training=False)
+
+        # The last token will act as the first input token for the actual predictions - this works if the sequence only consists of the start token
+        dec_input = tf.expand_dims([warmstart_input[-1]], 1)
 
     # Run the model until we reach the max length or the end token
-    for i in range(max_len):
+    for i in range(1, max_len + 1):
 
-        # Predict probabilities
-        # pred, hidden = model([img_tensor, dec_input, hidden], training=False)
-        if isinstance(model, tuple):
-            pred, hidden = model[1]([img_tensor, dec_input, hidden], training=False, mask=mask)
-        else:
-            pred, hidden = model([img_tensor, dec_input, hidden], training=False)
+        # Call the decoder/model to produce the final predictions
+        pred, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training=False)
 
         # Sample the next token(s)
         if sampler == "greedy":
@@ -167,24 +226,46 @@ def generate_step(
         else:
             raise ValueError(f"Unrecognised sampler '{sampler}'")
 
+        # Map predicted axioms back to the problem axioms if set
+        if axiom_remapping:
+            # Quick hack to keep the end token if predicted
+            if tokenizer.index_word[predictions[0]] == config.TOKEN_END:
+                pred_prefix = predictions[0]
+            else:
+                pred_prefix = []
+
+            # Perform axiom remapping
+            predictions = remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer)
+
+            # Prepend pred_prefix
+            predictions = np.insert(predictions,0, pred_prefix)
+
         # Add predicted IDs to the result
         result.update(predictions)
 
-        # Return sequence if we predicted the end token
-        if (
-            tokenizer.index_word[predictions[0]] == tokenizer.word_index[config.TOKEN_END]
-        ):  # TODO add flag here
-            return result  # FIXME Unclear whether this is good or not
+        # Return sequence if we predicted the end token as the first token
+        if tokenizer.index_word[predictions[0]] == config.TOKEN_END:
+            return result
 
         # Set the top predicted word as the next model input
-        dec_input = tf.expand_dims([predictions[0]], 0)
+        next_token = predictions[0]
+        if sequence:
+            new_dec_input = tf.TensorArray(
+                dtype=tf.int32, size=dec_input.shape[0], name="decoder_sequence_input"
+            ).unstack(dec_input)
+            dec_input = new_dec_input.write(i, [next_token]).stack()
+        else:
+            dec_input = tf.expand_dims([next_token], 0)
+
+    if isinstance(dec_input, tf.TensorArray):
+        dec_input.close()
 
     # Reached max length, returning the sequence
     return result
 
 
 def evaluate_model(
-    tokenizer, model, test_data, max_len, sampler, no_samples, sampler_temperature, sampler_top_k, verbose=0
+    tokenizer, model, test_data, max_len, sampler, no_samples, sampler_temperature, sampler_top_k, axiom_remapping, verbose=0
 ):
 
     # Create lambda expression for filtering start, end, and pad tokens
@@ -205,6 +286,7 @@ def evaluate_model(
             no_samples,
             sampler_temperature,
             sampler_top_k,
+            axiom_remapping
         )
 
         # Extract the string value from the tensor, remove start, end and pad tokens,
@@ -223,14 +305,15 @@ def evaluate_model(
     return {"coverage": coverage, "jaccard": jaccard, "avg_size": avg_size}
 
 
-def get_model(model_dir, vocab_size):
+def get_model(model_dir, max_caption_length=None):
 
     # Load the model parameters
     model_params = get_model_params(model_dir)
+    model_params.max_caption_length = max_caption_length  # Required for transformer decoder
 
     # Load the checkpointed model
     ckpt_dir = os.path.join(model_dir, "ckpt_dir")
-    if model_params.model_type == "inject_decoder":
+    if model_params.model_type is ModelType.SPLIT:
         encoder = load_model(os.path.join(ckpt_dir, "encoder"))
         decoder = load_model(os.path.join(ckpt_dir, "decoder"))
         loaded_model = (encoder, decoder)
@@ -239,32 +322,43 @@ def get_model(model_dir, vocab_size):
 
     # As stateful=True might be set, we need to get a new fresh model with the weights of the loaded
     # model. This is to use a different batch size in the evaluation instead of the training batch size.
-    model = get_new_trained_model(loaded_model, model_params, vocab_size)
+    model = get_new_trained_model(loaded_model, model_params)
     return model
 
 
-def get_new_trained_model(trained_model, model_params, vocab_size):
+def get_new_trained_model(trained_model, model_params):
 
     # Loading the dataset (without tokenizer) as dummy data stopped working
     normalisation_data, _ = get_dataset(
         config.val_id_file, config.proof_data, config.problem_features, batch_size=1
     )
 
-    model = initialise_model(
-        model_params.model_type, vocab_size, model_params, training_data=normalisation_data
-    )  # Loaded weights will override this
+    # Initialise the mdoel - loading of weights will override this
+    model = initialise_model(model_params, training_data=normalisation_data)
 
     # Run the model call once to infer the main input shapes? - fails otherwise
-    inp1 = tf.random.uniform([1, 400])
-    inp2 = tf.ones([1, 1], dtype=tf.dtypes.int32)
+    if model_params.encoder_type is EncoderType.TRANSFORMER:
+        inp1 = tf.random.uniform([1, model_params.conjecture_input_length])
+    else:
+        inp1 = tf.random.uniform([1, 400])
+
+    if model_params.decoder_type is DecoderType.TRANSFORMER:
+        print(
+            "Warning: Max length needs to be same as during training, otherwise, model loading will not work."
+        )
+        inp2 = tf.ones([model_params.max_caption_length, 1], dtype=tf.dtypes.int32)
+    else:
+        inp2 = tf.ones([1, 1], dtype=tf.dtypes.int32)
     hidden = tf.zeros((1, model_params.no_rnn_units))
 
     # Run model to infer input shapes
-    if isinstance(model, tuple):
-        inp1 = model[0](inp1)
-        model[1]([inp1, inp2, hidden])
+    if isinstance(model, tuple):  # Call decoder if split model
+        inp1, input_mask, _ = call_encoder(model, inp1, False, hidden)
     else:
-        model([inp1, inp2, hidden])
+        input_mask = None
+
+    # Initialise shapes of the model/decoder
+    call_model_decoder(model, inp1, inp2, input_mask, hidden, False)
 
     # Set the weights of the new model with the weights of the old model
     if isinstance(model, tuple):
@@ -289,6 +383,7 @@ def main(
     sampler_top_k,
     context,
     tokenizer_id_file,
+    axiom_remapping,
     verbose,
 ):
 
@@ -314,7 +409,7 @@ def main(
         max_len = max_length
     print("Max caption length: ", max_len)
 
-    model = get_model(model_dir, vocab_size)
+    model = get_model(model_dir, max_caption_length=max_len)
     print("Evaluating on model: ", model)
 
     # Get the test dataset with batch 1 as we need to treat each caption separately
@@ -334,11 +429,14 @@ def main(
                 caption_tokenizer=caption_tokenizer,
                 # order=model_params.axiom_order,
                 order=None,  # We do not need an order for this as we treating it as a set for evaluation
+                max_cap_len=max_len,
                 # axiom_frequency=axiom_frequency,
                 remove_unknown=model_params.remove_unknown,
                 encoder_input=model_params.encoder_input,
                 conjecture_tokenizer=conjecture_tokenizer,
+                conjecture_input_length=model_params.conjecture_input_length,
             )
+            print(f"Size of dataset: {len(test_data)}")
 
             # Run evaluation
             scores = evaluate_model(
@@ -350,6 +448,7 @@ def main(
                 n,
                 sampler_temperature,
                 sampler_top_k,
+                axiom_remapping,
                 verbose=verbose,
             )
             print("# Scores ")
