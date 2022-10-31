@@ -369,12 +369,13 @@ def main(
         proof_data,
         problem_features,
         caption_tokenizer=caption_tokenizer,
-        order=model_params.axiom_order,
+        axiom_order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
         remove_unknown=model_params.remove_unknown,
         encoder_input=model_params.encoder_input,
         conjecture_tokenizer=conjecture_tokenizer,
         conjecture_input_length=model_params.conjecture_input_length,
+        training_dataset=True,  # Allow for data augmentation
     )
     tf.print("Max caption length: ", max_len)
     model_params.max_caption_length = max_len  # Set variable in case we are using the transformer
@@ -386,7 +387,7 @@ def main(
         problem_features,
         caption_tokenizer=caption_tokenizer,
         max_cap_len=max_len,
-        order=model_params.axiom_order,
+        axiom_order=model_params.axiom_order,
         axiom_frequency=axiom_frequency,
         remove_unknown=model_params.remove_unknown,
         encoder_input=model_params.encoder_input,

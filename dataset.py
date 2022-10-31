@@ -4,7 +4,6 @@ import tensorflow as tf
 import random
 import os
 import json
-import glob
 from multiprocessing import Pool
 from keras.preprocessing.text import tokenizer_from_json
 
@@ -179,6 +178,7 @@ def load_clean_conjectures(filename, ids):
 
     return conjectures
 
+
 def create_axiom_descriptions(axioms, order, axiom_frequency):
 
     # Replace delimiter with spaces
@@ -189,9 +189,12 @@ def create_axiom_descriptions(axioms, order, axiom_frequency):
         axioms = order_axioms(order, axioms, axiom_frequency=axiom_frequency)
 
     # Build the caption string and return
-    return (f"{config.TOKEN_START}{config.TOKEN_DELIMITER}"
-            + f"{config.TOKEN_DELIMITER}".join(axioms)
-            + f"{config.TOKEN_DELIMITER}{config.TOKEN_END}")
+    return (
+        f"{config.TOKEN_START}{config.TOKEN_DELIMITER}"
+        + f"{config.TOKEN_DELIMITER}".join(axioms)
+        + f"{config.TOKEN_DELIMITER}{config.TOKEN_END}"
+    )
+
 
 def load_clean_descriptions(filename, ids, order, axiom_frequency=None):
     # Load the descriptions of the images in the set and append start/end tokens
@@ -326,7 +329,9 @@ def create_tf_dataset(feature_data, caption_data, caching, batch_size):
     return dataset
 
 
-def load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length):
+def load_entity_features(
+    encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length
+):
 
     # Load the encoder input
     if encoder_input is EncoderInput.FLAT:
@@ -344,17 +349,19 @@ def load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tok
     return entity_features, caching
 
 
-def load_warmstart_problem_description(problem_path, caption_tokenizer, order, remove_unknown, axiom_frequency):
+def load_warmstart_problem_description(
+    problem_path, caption_tokenizer, order, remove_unknown, axiom_frequency
+):
 
     # Open the file
     with open(problem_path, "r") as f:
         data = f.readlines()
 
         # Remove the conjecture
-        prob_axioms = [d.strip() for d in data if 'conjecture' not in d]
+        prob_axioms = [d.strip() for d in data if "conjecture" not in d]
 
     # Transform axioms into descriptions
-    caption = create_axiom_descriptions(prob_axioms, order, axiom_frequency)[:-1] # Remove end token
+    caption = create_axiom_descriptions(prob_axioms, order, axiom_frequency)[:-1]  # Remove end token
 
     # Tokenize the captions
     if remove_unknown:
@@ -364,7 +371,9 @@ def load_warmstart_problem_description(problem_path, caption_tokenizer, order, r
     return Path(problem_path).name, caption
 
 
-def load_warmstart_data(ids, dirpath, caption_tokenizer, order, remove_unknown, axiom_frequency, workers=None):
+def load_warmstart_data(
+    ids, dirpath, caption_tokenizer, order, remove_unknown, axiom_frequency, workers=None
+):
 
     # Compute all problem paths
     problem_paths = [os.path.join(dirpath, i) for i in ids]
@@ -388,33 +397,46 @@ def get_dataset(
     caption_tokenizer=None,
     max_cap_len=None,
     batch_size=config.BATCH_SIZE,
-    order=None,
+    axiom_order=None,
     axiom_frequency=None,
     remove_unknown=False,
     encoder_input=EncoderInput.FLAT,
     conjecture_tokenizer=None,
     conjecture_input_length=None,
+    training_dataset=False,
 ):
 
     # Load the necessary data for the id set
     ids = load_ids(ids_path)
 
     # Load the entity features
-    entity_features, caching = load_entity_features(encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length)
-
-    # Load the captions as a dict
-    captions, max_cap_len = load_caption_dict(
-        captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
+    entity_features, caching = load_entity_features(
+        encoder_input, entity_feature_path, ids, conjecture_tokenizer, conjecture_input_length
     )
+
+    # We only load the captions once with one order for non-training, even if more orders are supplied
+    if not training_dataset:
+        axiom_order = axiom_order[:1]
+
+    # Compute the caption sets and allow for data augmentation for the orders
+    caption_set = []
+    for order in axiom_order:
+        # The max caption length should remain the same no matter the order
+        captions, max_cap_len = load_caption_dict(
+            captions_path, ids, order, axiom_frequency, caption_tokenizer, max_cap_len, remove_unknown
+        )
+        caption_set += [captions]
 
     # Build data lists for creating a tf.dataset
     caption_data = []
     feature_data = []
-    for i in ids:
-        # Remove captions that have reduced to start+end tokens due to unknown removal
-        if not remove_unknown or (remove_unknown and len(captions[i]) > 2):
-            caption_data.append(captions[i])
-            feature_data.append(entity_features[i])
+    for captions in caption_set:
+        for i in ids:
+            # Remove captions that have reduced to start+end tokens due to unknown removal
+            if not remove_unknown or (remove_unknown and len(captions[i]) > 2):
+                caption_data.append(captions[i])
+                feature_data.append(entity_features[i])
+
     # Delete dict variables to save memory
     del captions
     del entity_features
@@ -501,7 +523,7 @@ def main():
         config.proof_data,
         config.problem_features,
         tokenizer=tokenizer,
-        order=order,
+        axiom_order=order,
         axiom_frequency=axiom_frequency,
     )
 
@@ -511,7 +533,7 @@ def main():
         config.problem_features,
         tokenizer=tokenizer,
         max_cap_len=max_len_train,
-        order=order,
+        axiom_order=order,
         axiom_frequency=axiom_frequency,
         remove_unknown=True,
     )
@@ -527,7 +549,7 @@ def main():
         "data/embeddings/deepmath/deepmath_embedding_unsupervised_conjecture.pkl",
         tokenizer=tokenizer,
         max_cap_len=max_len_train,
-        order=order,
+        axiom_order=order,
         axiom_frequency=axiom_frequency,
         remove_unknown=True,
     )
@@ -539,7 +561,7 @@ def main():
         "~/caption_attention/data/image_features_6000_1",
         tokenizer=tokenizer,
         max_cap_len=50,
-        order=AxiomOrder.ORIGINAL,
+        axiom_order=AxiomOrder.ORIGINAL,
         axiom_frequency=None,
         remove_unknown=False,
     )
@@ -547,7 +569,8 @@ def main():
 
     load_conjecture_tokens_dict(
         "data/raw/deepmath_conjectures.pkl",
-        "data/deepmath/tokenizer_conjecture_None.json",
+        # "data/deepmath/tokenizer_conjecture_None.json",
+        tokenizer,
         load_ids("data/deepmath/train.txt"),
         200,
     )
