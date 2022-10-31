@@ -737,7 +737,8 @@ def get_model_params(model_dir):
         params.model_type = ModelType(params.model_type)
 
     if params.axiom_order:
-        params.axiom_order = AxiomOrder(params.axiom_order)
+        # This should now be a List
+        params.axiom_order = [AxiomOrder(order) for order in params.axiom_order.split()]
 
     if params.attention:
         params.attention = AttentionMechanism(params.attention)

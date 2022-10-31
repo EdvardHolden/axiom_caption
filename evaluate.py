@@ -145,12 +145,17 @@ def remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer):
     else:
         raise ValueError("Remapping not yet supported for non-split models")
 
-
     # Extract values and ensure there are no pad/start/unk tokens - map back to ndarray
-    caption = [c for c in caption.numpy()[0] if not (c == tokenizer.word_index[config.TOKEN_PAD]
-                                                     or c == tokenizer.word_index[config.TOKEN_START]
-                                                     or c == tokenizer.word_index[config.TOKEN_OOV]
-                                                     or c == tokenizer.word_index[config.TOKEN_END])]
+    caption = [
+        c
+        for c in caption.numpy()[0]
+        if not (
+            c == tokenizer.word_index[config.TOKEN_PAD]
+            or c == tokenizer.word_index[config.TOKEN_START]
+            or c == tokenizer.word_index[config.TOKEN_OOV]
+            or c == tokenizer.word_index[config.TOKEN_END]
+        )
+    ]
     caption = np.array(caption)
 
     # Check if there are any selectable axioms, otherwise, return the original predictions
@@ -161,7 +166,7 @@ def remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer):
     pred_embedding = emb_layer(predictions)
 
     # Create nearest neighbour model and predict
-    nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(cap_embedding)
+    nbrs = NearestNeighbors(n_neighbors=1, algorithm="ball_tree").fit(cap_embedding)
     distances, indices = nbrs.kneighbors(pred_embedding)
 
     # Re-assign predictions to mapped indices
@@ -173,7 +178,17 @@ def remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer):
 
 # @tf.function
 def generate_step(
-    tokenizer, model, max_len, img_tensor, caption, sampler, no_samples, sampler_temperature, sampler_top_k, axiom_remapping, warmstart_input=None
+    tokenizer,
+    model,
+    max_len,
+    img_tensor,
+    caption,
+    sampler,
+    no_samples,
+    sampler_temperature,
+    sampler_top_k,
+    axiom_remapping,
+    warmstart_input=None,
 ):
 
     # List for storing predicted sequence
@@ -201,11 +216,15 @@ def generate_step(
     # sequence prior to the prediction phase
     if warmstart_input is not None:
         if sequence:
-            raise ValueError("ERROR: Warmstarting of model is not yet implemented for sequence intput (required for e.g. Transformer Decoder)")
+            raise ValueError(
+                "ERROR: Warmstarting of model is not yet implemented for sequence intput (required for e.g. Transformer Decoder)"
+            )
         # Warmstart the decoder according to the provided sequence - do not run on the last input token
         for inp in warmstart_input[:-1]:
-            #pred, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training=False)
-            _, hidden = call_model_decoder(model, img_tensor, tf.expand_dims([inp], 1), input_mask, hidden, training=False)
+            # pred, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training=False)
+            _, hidden = call_model_decoder(
+                model, img_tensor, tf.expand_dims([inp], 1), input_mask, hidden, training=False
+            )
 
         # The last token will act as the first input token for the actual predictions - this works if the sequence only consists of the start token
         dec_input = tf.expand_dims([warmstart_input[-1]], 1)
@@ -238,7 +257,7 @@ def generate_step(
             predictions = remap_predictions_to_problem_axioms(model, predictions, caption, tokenizer)
 
             # Prepend pred_prefix
-            predictions = np.insert(predictions,0, pred_prefix)
+            predictions = np.insert(predictions, 0, pred_prefix)
 
         # Add predicted IDs to the result
         result.update(predictions)
@@ -265,7 +284,16 @@ def generate_step(
 
 
 def evaluate_model(
-    tokenizer, model, test_data, max_len, sampler, no_samples, sampler_temperature, sampler_top_k, axiom_remapping, verbose=0
+    tokenizer,
+    model,
+    test_data,
+    max_len,
+    sampler,
+    no_samples,
+    sampler_temperature,
+    sampler_top_k,
+    axiom_remapping,
+    verbose=0,
 ):
 
     # Create lambda expression for filtering start, end, and pad tokens
@@ -286,7 +314,7 @@ def evaluate_model(
             no_samples,
             sampler_temperature,
             sampler_top_k,
-            axiom_remapping
+            axiom_remapping,
         )
 
         # Extract the string value from the tensor, remove start, end and pad tokens,
@@ -428,7 +456,7 @@ def main(
                 batch_size=1,
                 caption_tokenizer=caption_tokenizer,
                 # order=model_params.axiom_order,
-                order=None,  # We do not need an order for this as we treating it as a set for evaluation
+                axiom_order=None,  # We do not need an order for this as we treating it as a set for evaluation
                 max_cap_len=max_len,
                 # axiom_frequency=axiom_frequency,
                 remove_unknown=model_params.remove_unknown,
