@@ -3,17 +3,17 @@ import sys
 PYTHON = sys.executable
 
 # #############
-# DEVELOPING = True
+#DEVELOPING = True
 DEVELOPING = False
 
 BATCH_SIZE = 64
 # BATCH_SIZE = 256
 # BUFFER_SIZE = 5000
 BUFFER_SIZE = 1000
-#EPOCHS = 80
-EPOCHS = 2
+EPOCHS = 80
+#EPOCHS = 2
 ES_PATIENCE = 5
-#ES_PATIENCE = None
+#ES_PATIENCE = 15
 
 
 train_id_file = "data/deepmath/train.txt"
@@ -35,4 +35,3 @@ TOKEN_END = "<end>"
 TOKEN_OOV = "<unk>"
 TOKEN_DELIMITER = "\n"
 
-CONJECTURE_INPUT_MAX_LENGTH = 500

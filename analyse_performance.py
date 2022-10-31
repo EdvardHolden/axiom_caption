@@ -110,6 +110,11 @@ CONFIGS = {
     117206: 'generated_problems/analysis/output_original_sine_2.5_2_caption_axiom_remapping_warmstart', # generated_problems/analysis/output_clausified_sine_2.5_2_caption_axiom_remapping_warmstart
 }
 
+CONFIGS = {
+    115507: 'generated_problems/analysis/output_original_clean/',
+    #115498: 'generated_problems/analysis/output_original_ideal/'
+    115508: 'generated_problems/analysis/output_original_clean_conjecture_position_first_deepmath' # TODO not the correct experiment but shouldnt matter
+}
 
 
 
