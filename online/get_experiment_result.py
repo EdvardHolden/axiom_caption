@@ -53,6 +53,22 @@ EXPERIMENTS = {
     117091: "Caption Remap + sine 3 0",
 }
 
+# Initial results on the ideal and merged+clean version of the dataset for different time-limits
+EXPERIMENTS = {
+    # IDEAL
+    117207: "1s",
+    117208: "2s:",
+    117209: "10s",
+    117210: "50s",
+    117211: "100s",
+    # CLEAN
+    #117212: "clean_1s",
+    #117213: "clean_2s",
+    #117214: "clean_10s",
+    #117221: "clean_50s",
+    #117222: "clean_100s",
+}
+
 
 
 

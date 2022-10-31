@@ -177,6 +177,21 @@ EXPERIMENTS = {
 }
 
 
+# Initial results on the ideal and merged+clean version of the dataset for different time-limits
+EXPERIMENTS = {
+    117207: "ideal_1s",
+    117208: "ideal_2s:",
+    117209: "ideal_10s",
+    117210: "ideal_50s",
+    117211: "ideal_100s",
+    117212: "clean_1s",
+    117213: "clean_2s",
+    117214: "clean_10s",
+    117221: "clean_50s",
+    117222: "clean_100s",
+}
+
+
 DATA_SETS = {"total": None, "train": "train.txt", "test": "test.txt"}
 
 
