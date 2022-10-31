@@ -9,11 +9,13 @@ from keras.layers import RepeatVector
 from keras.layers import Flatten
 from keras.layers import Normalization
 from keras.layers import BatchNormalization
+from keras.layers import Embedding
 from keras.layers.pooling import GlobalMaxPooling2D
 from keras.layers import concatenate
 from argparse import Namespace
 import json
 import os
+import sys
 
 from enum_types import (
     AxiomOrder,
@@ -687,7 +689,7 @@ def get_model(params):
     elif params.model_type is ModelType.DENSE:
         return DenseModel(params)
     elif params.model_type is ModelType.MERGE:
-        return DenseModel(params)
+        return MergeInjectModel(params)
 
     raise ValueError(f"Unrecognised model type: {params.model_type}")
 
