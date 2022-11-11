@@ -28,7 +28,11 @@ def main():
 
         # Make config description - limit to only variable parameters
         job_name = "_".join(
-            [p + "_" + str(v) for p, v in sorted(param_config.items()) if len(hp_space[p]) > 1]
+            [
+                p + "_" + str(v).replace(" ", "_")  # Cater for multiple axiom orders
+                for p, v in sorted(param_config.items())
+                if len(hp_space[p]) > 1
+            ]
         )
 
         print(f"\n### Processing job: {job_name}")
