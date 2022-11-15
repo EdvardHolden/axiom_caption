@@ -567,13 +567,19 @@ def main():
     )
     """
 
-    load_conjecture_tokens_dict(
+    conj_tokenizer, n = load_tokenizer('data/deepmath/tokenizer_conj_word_train_4000.json')
+    d = load_conjecture_tokens_dict(
         "data/raw/deepmath_conjectures.pkl",
         # "data/deepmath/tokenizer_conjecture_None.json",
-        tokenizer,
-        load_ids("data/deepmath/train.txt"),
+        conj_tokenizer,
+        load_ids("data/deepmath/val.txt"),
+        #load_ids("data/deepmath/train.txt"),
         200,
     )
+    print(len(d))
+    print(d)
+    print(d['t2_jordan20'])
+    print(conj_tokenizer.sequences_to_texts([d['t2_jordan20']]))
 
 
 if __name__ == "__main__":
