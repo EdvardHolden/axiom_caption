@@ -4,6 +4,7 @@ import tensorflow as tf
 import random
 import os
 import json
+import re
 from multiprocessing import Pool
 from keras.preprocessing.text import tokenizer_from_json
 
@@ -33,8 +34,11 @@ def get_tokenizer(id_file, tokenizer_mode, tokenizer_data_path, vocab_word_limit
         print("Computing new tokenizer given the parameters ...")
 
         # Make cmd string for computing the tokenizer and run the script
-        cmd = f"{config.PYTHON} compute_tokenizer.py --id_file {id_file} "
-        cmd += f" --tokenizer_data_path {tokenizer_data_path} --tokenizer_mode {tokenizer_mode} "
+        cmd = (
+            f"{config.PYTHON} compute_tokenizer.py --id_file {id_file} "
+            f" --tokenizer_data_path {tokenizer_data_path} --tokenizer_mode {tokenizer_mode} "
+        )
+
         if vocab_word_limit is not None:
             cmd += f" --vocab_word_limit {vocab_word_limit} "
 
@@ -175,6 +179,14 @@ def load_clean_conjectures(filename, ids):
         # Skip problems not in the ID set
         if prob_id in ids:
             conjectures[prob_id] = data
+
+    # Clean the conjectures # TODO this sub function now exists in two places ...
+    for k, v in conjectures.items():
+        conjectures[k] = re.sub(r"(,|\[|\]|\(|\)|=)", r" \1 ", v)
+
+    # Add start and end tokens
+    for k, v in conjectures.items():
+        conjectures[k] = f"{config.TOKEN_START} {v} {config.TOKEN_END}"
 
     return conjectures
 
@@ -567,19 +579,20 @@ def main():
     )
     """
 
-    conj_tokenizer, n = load_tokenizer('data/deepmath/tokenizer_conj_word_train_4000.json')
+    conj_tokenizer, n = load_tokenizer("data/deepmath/tokenizer_conj_word_debug_4000.json")
     d = load_conjecture_tokens_dict(
         "data/raw/deepmath_conjectures.pkl",
         # "data/deepmath/tokenizer_conjecture_None.json",
         conj_tokenizer,
         load_ids("data/deepmath/val.txt"),
-        #load_ids("data/deepmath/train.txt"),
+        # load_ids("data/deepmath/train.txt"),
         200,
     )
-    print(len(d))
-    print(d)
-    print(d['t2_jordan20'])
-    print(conj_tokenizer.sequences_to_texts([d['t2_jordan20']]))
+    """
+    for k, v in d.items():
+        print(v)
+        print(conj_tokenizer.sequences_to_texts([v]))
+    """
 
 
 if __name__ == "__main__":

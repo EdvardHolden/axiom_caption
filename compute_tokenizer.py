@@ -42,7 +42,7 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
     elif tokenizer_mode is TokenizerMode.CONJ_WORD:
         # Same as character but all each symbol is a single token
         # Ensure space around the parenthesis for correct parsing
-        lines = [re.sub("(,|\[|\]|\(|\)|=)", r" \1 ", line) for line in lines]
+        # lines = [re.sub("(,|\[|\]|\(|\)|=)", r" \1 ", line) for line in lines] TODO this is now in clean conjectures
 
         # Initialise the tokenizer
         tokenizer = Tokenizer(
