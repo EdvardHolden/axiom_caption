@@ -41,7 +41,7 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
         )
     elif tokenizer_mode is TokenizerMode.CONJ_WORD:
         # Same as character but all each symbol is a single token
-        # Ensure space around the parenthasis for correct parsing
+        # Ensure space around the parenthesis for correct parsing
         lines = [re.sub("(,|\[|\]|\(|\)|=)", r" \1 ", line) for line in lines]
 
         # Initialise the tokenizer
@@ -55,7 +55,7 @@ def create_tokenizer(descriptions, vocab_word_limit, tokenizer_mode):
         )
 
     else:
-        raise ValueError(f"Unrecognized tokenizer mode for intialising the tokenizer: {tokenizer_mode}")
+        raise ValueError(f"Unrecognized tokenizer mode for initialising the tokenizer: {tokenizer_mode}")
 
     # Fit tokenizer to the text
     tokenizer.fit_on_texts(lines)
@@ -81,7 +81,7 @@ def main(tokenizer_data_path, id_file, tokenizer_mode, vocab_word_limit):
             tokenizer_data_path, load_ids(id_file), order=None
         )  # The order is irrelevant for this purpose
     elif tokenizer_mode is TokenizerMode.CONJ_WORD or tokenizer_mode is TokenizerMode.CONJ_CHAR:
-        # Load clean conejctures
+        # Load clean conjectures
         tokenizer_data = load_clean_conjectures(tokenizer_data_path, load_ids(id_file))
     else:
         raise ValueError(f"Unrecognized tokenizer mode for loading text: {tokenizer_mode}")
