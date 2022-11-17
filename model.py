@@ -355,6 +355,7 @@ class WordDecoder(layers.Layer):
         return tf.zeros((batch_size, self.no_rnn_units))
 
     def build_graph(self):
+        # FIXME this (or InjectDecoder) does not work if the RNN is stateful
         # Input shape of a single word
         x = Input(
             shape=(
