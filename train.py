@@ -33,7 +33,9 @@ np.random.seed(42)
 tf.random.set_seed(42)
 
 
-loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
+loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
+    from_logits=True, reduction="none"
+)
 
 # Make path for tensorboard
 LOG_DIR = os.path.join("logdir", time.strftime("%Y%m%d-%H%M%S"))
@@ -83,7 +85,9 @@ def get_next_decoder_input_token(
 
 
 @tf.function
-def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_rate, training):
+def train_step(
+    tokenizer, model, optimizer, img_tensor, target, teacher_forcing_rate, training
+):
 
     # Initial loss on the batch is zero
     loss = 0
@@ -110,12 +114,16 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
     with tf.GradientTape() as tape:
 
         # Call the encoder to pre-compute the entity features for use in the decoder call
-        img_tensor, input_mask, hidden = call_encoder(model, img_tensor, training, hidden)
+        img_tensor, input_mask, hidden = call_encoder(
+            model, img_tensor, training, hidden
+        )
 
         for i in range(1, target.shape[1]):
 
             # Call the decoder/model to produce the final predictions
-            y_hat, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training)
+            y_hat, hidden = call_model_decoder(
+                model, img_tensor, dec_input, input_mask, hidden, training
+            )
 
             # Append predictions
             pred = tf.math.argmax(y_hat, axis=1)
@@ -126,7 +134,13 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
 
             # Get the next decoder input tokens
             dec_input = get_next_decoder_input_token(
-                dec_input, pred, target, training, teacher_forcing_rate, i, sequence=sequence
+                dec_input,
+                pred,
+                target,
+                training,
+                teacher_forcing_rate,
+                i,
+                sequence=sequence,
             )
 
     # Close dec_input if TensorArray as it does not like being written to without being used (for the last iteration)
@@ -139,7 +153,9 @@ def train_step(tokenizer, model, optimizer, img_tensor, target, teacher_forcing_
     # Backprop if in training mode
     if training:
         if isinstance(model, tuple):
-            trainable_variables = model[0].trainable_variables + model[1].trainable_variables
+            trainable_variables = (
+                model[0].trainable_variables + model[1].trainable_variables
+            )
         else:
             trainable_variables = model.trainable_variables
         gradients = tape.gradient(loss, trainable_variables)
@@ -180,7 +196,15 @@ epoch_loss = tf.keras.metrics.Mean()
 num_steps = tf.Variable(0)
 
 
-def epoch_step(model, tokenizer, optimizer, data, teacher_forcing_rate=0.0, training=False, epoch=None):
+def epoch_step(
+    model,
+    tokenizer,
+    optimizer,
+    data,
+    teacher_forcing_rate=0.0,
+    training=False,
+    epoch=None,
+):
     """
     Runs one epoch of data over the model. Used to train/validate the model.
 
@@ -214,7 +238,9 @@ def epoch_step(model, tokenizer, optimizer, data, teacher_forcing_rate=0.0, trai
         # if epoch is not None and batch % 10 == 0:
         if epoch is not None and num_steps % 10 == 0:
             average_batch_loss = batch_loss.numpy() / int(captions.shape[1])
-            tf.print(f"Epoch {epoch + 1} Batch {num_steps.numpy()} Train Loss {average_batch_loss:.4f}")
+            tf.print(
+                f"Epoch {epoch + 1} Batch {num_steps.numpy()} Train Loss {average_batch_loss:.4f}"
+            )
 
         # Compute statistics
         cov_batch, jac_batch = compute_pred_stats(captions, predictions)
@@ -245,7 +271,14 @@ def add_new_metrics(history, new_stats, prefix=""):
 
 
 def train_loop(
-    tokenizer, model, ckpt_managers, optimizer, train_data, val_data, teacher_forcing_rate, es_patience=None
+    tokenizer,
+    model,
+    ckpt_managers,
+    optimizer,
+    train_data,
+    val_data,
+    teacher_forcing_rate,
+    es_patience=None,
 ):
 
     # Dictionary to store all the metrics
@@ -261,7 +294,9 @@ def train_loop(
     # This only works in developing mode as we need to call training=True on the train_step
     # first in order to build the graph correctly.
     if config.DEVELOPING:
-        initial_stats = epoch_step(model, tokenizer, optimizer, train_data, training=False)
+        initial_stats = epoch_step(
+            model, tokenizer, optimizer, train_data, training=False
+        )
         tf.print(f"Initial model training loss: {initial_stats['loss']:.2f}")
 
     # Loop through each epoch
@@ -270,12 +305,20 @@ def train_loop(
 
         # Train the model for one epoch
         train_epoch_metrics = epoch_step(
-            model, tokenizer, optimizer, train_data, teacher_forcing_rate, training=True, epoch=epoch
+            model,
+            tokenizer,
+            optimizer,
+            train_data,
+            teacher_forcing_rate,
+            training=True,
+            epoch=epoch,
         )
         metrics = add_new_metrics(metrics, train_epoch_metrics, prefix="train_")
 
         # Run model over the validation data
-        val_epoch_metrics = epoch_step(model, tokenizer, optimizer, val_data, training=False)
+        val_epoch_metrics = epoch_step(
+            model, tokenizer, optimizer, val_data, training=False
+        )
         metrics = add_new_metrics(metrics, val_epoch_metrics, prefix="val_")
 
         # Save the model after every epoch
@@ -296,15 +339,17 @@ def train_loop(
                 es_wait = 0
             elif es_wait >= es_patience:
                 tf.print(
-                    "Terminated training with early stopping after {0} epochs of no improvement".format(
-                        es_wait
-                    )
+                    f"Terminated training with early stopping after {es_wait} epochs of no improvement"
                 )
                 break
 
     # Add a final metric evaluation that ensures no drop out is used (with training off)
-    tf.print("Computing metrics on the training set with the final model parameters, without dropout")
-    train_epoch_metrics = epoch_step(model, tokenizer, optimizer, train_data, training=False, epoch=epoch + 1)
+    tf.print(
+        "Computing metrics on the training set with the final model parameters, without dropout"
+    )
+    train_epoch_metrics = epoch_step(
+        model, tokenizer, optimizer, train_data, training=False, epoch=epoch + 1
+    )
     metrics = add_new_metrics(metrics, train_epoch_metrics, prefix="train_")
 
     # Return training history
@@ -314,13 +359,15 @@ def train_loop(
 # Compute the axiom frequencies if required
 def get_axiom_frequency(axiom_order, train_id_file, proof_data):
     """
-    Gets the axiom frequencies. Either comptued from data, or randomly imposed
+    Gets the axiom frequencies. Either computed from data, or randomly imposed
     on the global set of axioms. Returns None if an order which does not
     require this is set.
     """
 
     if AxiomOrder.RANDOM_GLOBAL in axiom_order and AxiomOrder.FREQUENCY in axiom_order:
-        raise ValueError("ERROR: No support for both random and frequency ordering on the axioms yet.")
+        raise ValueError(
+            "ERROR: No support for both random and frequency ordering on the axioms yet."
+        )
 
     # Check which axiom frequency order to compute - if any
     if AxiomOrder.FREQUENCY in axiom_order:
@@ -365,7 +412,9 @@ def main(
     )
 
     # Get the axiom frequencies from this dataset
-    axiom_frequency = get_axiom_frequency(model_params.axiom_order, train_id_file, proof_data)
+    axiom_frequency = get_axiom_frequency(
+        model_params.axiom_order, train_id_file, proof_data
+    )
 
     # Get the training dataset
     tf.print("Loading training dataset")
@@ -383,7 +432,9 @@ def main(
         training_dataset=True,  # Allow for data augmentation
     )
     tf.print("Max caption length: ", max_len)
-    model_params.max_caption_length = max_len  # Set variable in case we are using the transformer
+    model_params.max_caption_length = (
+        max_len  # Set variable in case we are using the transformer
+    )
     # Compute validation dataset based on the max length of the training data
     tf.print("Loading validation dataset")
     val_data, _ = get_dataset(
@@ -424,12 +475,18 @@ def main(
         decoder_checkpoint_path = os.path.join(checkpoint_path, "decoder")
 
         ckpt_managers = [
-            tf.train.CheckpointManager(encoder_ckpt, encoder_checkpoint_path, max_to_keep=5),
-            tf.train.CheckpointManager(decoder_ckpt, decoder_checkpoint_path, max_to_keep=5),
+            tf.train.CheckpointManager(
+                encoder_ckpt, encoder_checkpoint_path, max_to_keep=5
+            ),
+            tf.train.CheckpointManager(
+                decoder_ckpt, decoder_checkpoint_path, max_to_keep=5
+            ),
         ]
     else:
         ckpt = tf.train.Checkpoint(model)
-        ckpt_managers = [tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)]
+        ckpt_managers = [
+            tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
+        ]
 
     # Call training loop
     history = train_loop(
