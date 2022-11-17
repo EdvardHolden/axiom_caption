@@ -65,8 +65,7 @@ def get_caption_conjecture_tokenizers(model_params, proof_data, context, train_i
         train_id_file, str(context), proof_data, model_params.target_vocab_size
     )
     # Update size of the model output
-    # model_params.target_vocab_size = caption_vocab_size
-    # TODO
+    model_params.target_vocab_size = caption_vocab_size
 
     if model_params.encoder_input is EncoderInput.SEQUENCE:
         conjecture_tokenizer, conjecture_vocab_size = get_tokenizer(
@@ -74,7 +73,6 @@ def get_caption_conjecture_tokenizers(model_params, proof_data, context, train_i
         )
         # Update the size of the input layer
         model_params.input_vocab_size = conjecture_vocab_size
-        # TODO
     else:
         conjecture_tokenizer = None
 
