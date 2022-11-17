@@ -287,7 +287,9 @@ class RNNEncoder(tf.keras.layers.Layer):
         if isinstance(self.rnn, LSTM):
             # LSTM also returns the cell state, which we do not use
             # TODO is this right?? - should I have joined the states?
-            x, hidden, _ = self.rnn(x, training=training)
+            # x, hidden, _ = self.rnn(x, training=training)
+            x, hidden_h, hidden_c = self.rnn(x, training=training)
+            hidden = [hidden_h, hidden_c]
         else:
             # GRU does not return the cell state
             x, hidden = self.rnn(x, training=training)
