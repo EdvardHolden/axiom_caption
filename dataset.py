@@ -44,8 +44,18 @@ def get_tokenizer(id_file, tokenizer_mode, tokenizer_data_path, vocab_word_limit
 
         check_call(cmd, shell=True, stdout=None)
 
-    # Load and return (tokenizer,  vocab limit)
-    return load_tokenizer(tokenizer_path)
+    # Load the tokenizer
+    tokenizer = load_tokenizer(tokenizer_path)
+
+    # Get the actual vocab size
+    if tokenizer.num_words is None:
+        vocab_size = len(tokenizer.word_index)
+    else:
+        # Assume that vocab_word_limit is not none as it is not none in the tokenizer.
+        vocab_size = min(len(tokenizer.word_index), vocab_word_limit)
+
+    # Load and return (tokenizer,  vocab size)
+    return tokenizer, vocab_size
 
 
 def get_caption_conjecture_tokenizers(model_params, proof_data, context, train_id_file, problem_features):
@@ -85,16 +95,10 @@ def load_tokenizer(tokenizer_path, verbose=1):
     with open(tokenizer_path) as f:
         tokenizer = tokenizer_from_json(json.load(f))
 
-    # Get the vocab size - might not already be set
-    vocab_size = tokenizer.num_words
-    if vocab_size is None:
-        vocab_size = len(tokenizer.word_index)
-
     if verbose > 0:
         print(f"Loaded tokenizer from path {tokenizer_path}")
-        print(f"Vocabulary Size: {vocab_size}")
 
-    return tokenizer, vocab_size
+    return tokenizer
 
 
 def load_doc(filename):
@@ -521,7 +525,7 @@ def main():
 
     # Function for testing the dataset creation
     tokenizer_path = os.path.join(os.path.dirname(config.train_id_file), "tokenizer.json")
-    tokenizer, _ = load_tokenizer(tokenizer_path)
+    tokenizer = load_tokenizer(tokenizer_path)
 
     """
     # Test with validation file as we want this to run quicker
@@ -579,7 +583,7 @@ def main():
     )
     """
 
-    conj_tokenizer, n = load_tokenizer("data/deepmath/tokenizer_conj_word_debug_4000.json")
+    conj_tokenizer = load_tokenizer("data/deepmath/tokenizer_conj_word_debug_4000.json")
     d = load_conjecture_tokens_dict(
         "data/raw/deepmath_conjectures.pkl",
         # "data/deepmath/tokenizer_conjecture_None.json",
