@@ -286,6 +286,7 @@ class RNNEncoder(tf.keras.layers.Layer):
         # Process the input sequence
         if isinstance(self.rnn, LSTM):
             # LSTM also returns the cell state, which we do not use
+            # TODO is this right?? - should I have joined the states?
             x, hidden, _ = self.rnn(x, training=training)
         else:
             # GRU does not return the cell state
@@ -446,6 +447,7 @@ class InjectDecoder(tf.keras.Model):
         if self.attention is None and len(image_emb.shape) > 2:
             image_emb = self.flatten(image_emb)
         # Run Bahdanau attention if set
+        # TODO add check for unknown attention type
         elif self.attention is not None and (
             isinstance(self.attention, BahdanauAttention) or isinstance(self.attention, AdditiveFlatAttention)
         ):
