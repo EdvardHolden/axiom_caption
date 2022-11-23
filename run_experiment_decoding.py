@@ -83,8 +83,12 @@ def main():
         res = launch_evaluation_job_decoding(args)
         results[sampler_tag] = res
 
+    """
     for k, v in results.items():
         print(k, v)
+    """
+    for stat in ["coverage", "jaccard", "avg_size"]:
+        print(stat, results[stat])
 
     print("# Finito")
     # """
