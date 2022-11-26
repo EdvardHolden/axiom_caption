@@ -432,7 +432,9 @@ def get_dataset(
     )
 
     # We only load the captions once with one order for non-training, even if more orders are supplied
-    if not training_dataset:
+    if axiom_order is None:  # Handle as list - used in evaluation
+        axiom_order = [None]
+    elif not training_dataset:
         axiom_order = axiom_order[:1]
 
     # Compute the caption sets and allow for data augmentation for the orders
