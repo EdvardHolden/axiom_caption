@@ -13,7 +13,13 @@ from evaluate import generate_step, get_model
 from parser import get_generate_parser
 import config
 
-from process_problem import save_problem, get_problems_from_path, load_and_process_problem, push_conjecture_to_front, order_formulae
+from process_problem import (
+    save_problem,
+    get_problems_from_path,
+    load_and_process_problem,
+    push_conjecture_to_front,
+    order_formulae,
+)
 
 random.seed(7)
 
@@ -22,7 +28,7 @@ random.seed(7)
 # BASE_RES_DIR = "generated_problems/merged/"
 # BASE_RES_DIR = "generated_problems/skolem/"
 BASE_RES_DIR = "generated_problems/analysis/"
-#BASE_RES_DIR = "generated_problems/fix/merged/"
+# BASE_RES_DIR = "generated_problems/fix/merged/"
 
 
 def extract_rare_axioms(tokenizer, axioms):
@@ -46,10 +52,21 @@ def extract_rare_axioms(tokenizer, axioms):
 
 
 def compute_caption(
-    tokenizer, model, problem_feature, caption, sampler, max_length, no_samples, sampler_temperature, sampler_top_k, axiom_remapping, warmstart_input
+    tokenizer,
+    model,
+    problem_feature,
+    caption,
+    sampler,
+    max_length,
+    no_samples,
+    sampler_temperature,
+    sampler_top_k,
+    axiom_remapping,
+    warmstart_input,
 ):
 
     import tensorflow as tf
+
     # Run the model to get the predicted tokens
     axiom_caption = generate_step(
         tokenizer,
@@ -62,7 +79,7 @@ def compute_caption(
         sampler_temperature,
         sampler_top_k,
         axiom_remapping,
-        warmstart_input=warmstart_input
+        warmstart_input=warmstart_input,
     )
 
     # Remove non-axiom tokens
@@ -100,7 +117,7 @@ def get_result_dir(
     conjecture_position,
     warmstart,
     prefix=None,
-    postfix=None
+    postfix=None,
 ):
     # Add sampler arguments
 
@@ -171,7 +188,16 @@ def validate_input_arguments(args):
 
 
 def standard_process_problem(
-    prob_path, mode, sine_st, sine_sd, result_dir, extra_axioms, deepmath, output_format, unquote, conjecture_position
+    prob_path,
+    mode,
+    sine_st,
+    sine_sd,
+    result_dir,
+    extra_axioms,
+    deepmath,
+    output_format,
+    unquote,
+    conjecture_position,
 ):
     # Load problem formulae as a list
     prob = load_and_process_problem(prob_path, deepmath=deepmath)
@@ -288,7 +314,12 @@ def main():
     if args.debug:
         print("Debug mode: Limiting to K random problems")
         problem_paths = random.sample(problem_paths, k=5)
-        problem_paths = ['/shareddata/home/holden/gnn-entailment-caption/merged_problems/t62_chord', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t24_laplace', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t36_tsep_1', '/shareddata/home/holden/gnn-entailment-caption/merged_problems/t6_jordan']
+        problem_paths = [
+            "/shareddata/home/holden/gnn-entailment-caption/merged_problems/t62_chord",
+            "/shareddata/home/holden/gnn-entailment-caption/merged_problems/t24_laplace",
+            "/shareddata/home/holden/gnn-entailment-caption/merged_problems/t36_tsep_1",
+            "/shareddata/home/holden/gnn-entailment-caption/merged_problems/t6_jordan",
+        ]
         print("Debug problems: ", problem_paths)
 
     # If captioning, load all the required resources
@@ -309,20 +340,39 @@ def main():
         # Extract the ids for use in function calls below
         ids = [Path(p).name for p in problem_paths]
 
-        problem_features, caching = load_entity_features(model_params.encoder_input, args.feature_path, ids, conjecture_tokenizer, model_params.conjecture_input_length)
+        problem_features, caching = load_entity_features(
+            model_params.encoder_input,
+            args.feature_path,
+            ids,
+            conjecture_tokenizer,
+            model_params.conjecture_input_length,
+        )
         if caching:
             raise ValueError("Caching not yet supported for problem generation.")
 
         # Get the captions - this is needed for functionality such as axiom remapping
-        caption_dict, _ = load_caption_dict(config.proof_data, ids, model_params.axiom_order, None, caption_tokenizer, None, model_params.remove_unknown)
+        caption_dict, _ = load_caption_dict(
+            config.proof_data, ids, None, None, caption_tokenizer, None, model_params.remove_unknown
+        )
 
         # Load the data used to warmstart the prediction model - if set
         if args.warmstart is not None:
             print("# Computing warmstart data")
             from dataset import load_warmstart_data
             from train import get_axiom_frequency
-            axiom_frequency = get_axiom_frequency(model_params.axiom_order, config.train_id_file, config.proof_data)
-            warmstart_input_dict = load_warmstart_data(ids, args.warmstart, caption_tokenizer, model_params.axiom_order, model_params.remove_unknown, axiom_frequency, args.workers)
+
+            axiom_frequency = get_axiom_frequency(
+                model_params.axiom_order, config.train_id_file, config.proof_data
+            )
+            warmstart_input_dict = load_warmstart_data(
+                ids,
+                args.warmstart,
+                caption_tokenizer,
+                model_params.axiom_order,
+                model_params.remove_unknown,
+                axiom_frequency,
+                args.workers,
+            )
         else:
             warmstart_input_dict = None
 
@@ -357,7 +407,7 @@ def main():
                 deepmath,
                 args.output_format,
                 args.unquote,
-                args.conjecture_position
+                args.conjecture_position,
             )
             for prob_path in problem_paths
         ]
