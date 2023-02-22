@@ -86,7 +86,7 @@ def get_sampler_parser():
         "--axiom_remapping",
         default=False,
         action="store_true",
-        help="Map predictions to the most similar axioms in the problem according to their embedding"
+        help="Map predictions to the most similar axioms in the problem according to their embedding",
     )
 
     parser.add_argument("--max_length", default=22, type=int, help="The maximum length of the predictions")
@@ -193,13 +193,20 @@ def get_generate_parser():
         "--result_prefix", default=None, help="File name prefix of the result dir (if result_dir is not set)"
     )
     parser.add_argument(
-        "--result_postfix", default=None, help="File name postfix of the result dir (if result_dir is not set)"
+        "--result_postfix",
+        default=None,
+        help="File name postfix of the result dir (if result_dir is not set)",
     )
 
-    parser.add_argument('--unquote', default=False, action="store_true",
-                        help="Do not quote the digits in a formula (usualy paired with original output)")
+    parser.add_argument(
+        "--unquote",
+        default=False,
+        action="store_true",
+        help="Do not quote the digits in a formula (usualy paired with original output)",
+    )
 
     if socket.gethostname() == "kontor":
+        # TODO use dpath?
         default_problem_dir = "/home/eholden/gnn-entailment-caption/nndata"
     else:
         default_problem_dir = "/shareddata/home/holden/gnn-entailment-caption/nndata"
@@ -215,8 +222,7 @@ def get_generate_parser():
         help="Number of extra axioms to add to each generated problem is set.",
     )
 
-    parser.add_argument("--proof_data", default=config.proof_data,
-                        help="Path to the proof data")
+    parser.add_argument("--proof_data", default=config.proof_data, help="Path to the proof data")
     parser.add_argument(
         "--feature_path",
         default=config.problem_features,
@@ -251,14 +257,18 @@ def get_generate_parser():
         help="Axioms for axiom tokenizer mode, and words for natural language (for the tokenizer).",
     )
 
-    parser.add_argument('--conjecture_position',
-                        choices=["standard", "first", "last"],
-                        default="first",
-                        help="Where to put the conejcture in the generated problem (or when presented to the claussifier). First is on top of the file. Last in the file. Standard is where it fits in lexicographiil (usually dependant on the name)")
+    parser.add_argument(
+        "--conjecture_position",
+        choices=["standard", "first", "last"],
+        default="first",
+        help="Where to put the conejcture in the generated problem (or when presented to the claussifier). First is on top of the file. Last in the file. Standard is where it fits in lexicographiil (usually dependant on the name)",
+    )
 
-    parser.add_argument("--warmstart",
-                        default=None,
-                        help="Path to folder containing problem axioms which are supposed to warm-start the prediction model.")
+    parser.add_argument(
+        "--warmstart",
+        default=None,
+        help="Path to folder containing problem axioms which are supposed to warm-start the prediction model.",
+    )
 
     return parser
 
@@ -299,7 +309,7 @@ def get_embedding_exp_parser():
 
 
 def get_hyperparam_parser():
-    """ This function extends the training parser with the parameters
+    """This function extends the training parser with the parameters
     required for tuning the hyperparameters.
     """
 

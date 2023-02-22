@@ -211,7 +211,8 @@ class ImageEncoder(tf.keras.Model):  # TODO possible issue here?
         else:
             self.batch_norm = None
 
-        self.fe2 = Dense(params.no_dense_units, activation="relu")
+        self.fe2 = Dense(params.no_dense_units, activation="relu", input_shape=(400,))
+        #self.fe2 = Dense(params.no_dense_units, activation="relu")
         self.d2 = Dropout(params.dropout_rate)
 
     def call(self, inputs, training=None):
@@ -230,6 +231,7 @@ class ImageEncoder(tf.keras.Model):  # TODO possible issue here?
         if self.batch_norm:
             x = self.batch_norm(x, training=training)
 
+        x = tf.convert_to_tensor(x) # TODO HACK
         x = self.fe2(x)
         x = self.d2(x, training=training)
         return x

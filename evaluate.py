@@ -204,7 +204,7 @@ def generate_step(
     hidden = get_hidden_state(model, caption.shape[0])
 
     # Get start token - supply dummy for computing target shapes
-    dec_input = get_initial_decoder_input(tokenizer, tf.random.uniform([1, max_len + 1]), sequence=sequence)
+    dec_input = get_initial_decoder_input(tokenizer, tf.random.uniform([1, max_len]), sequence=sequence)
 
     # Placeholder for mask if not used
     input_mask = None
@@ -235,7 +235,7 @@ def generate_step(
         # Call the decoder/model to produce the final predictions
         pred, hidden = call_model_decoder(model, img_tensor, dec_input, input_mask, hidden, training=False)
 
-        # Sample the next token(s)
+        # Sample the next token(s) - FIXME could be a dict/ function
         if sampler == "greedy":
             predictions = greedy_sampler(pred, no_samples)
         elif sampler == "temperature":
@@ -267,14 +267,15 @@ def generate_step(
             return result
 
         # Set the top predicted word as the next model input
-        next_token = predictions[0]
-        if sequence:
-            new_dec_input = tf.TensorArray(
-                dtype=tf.int32, size=dec_input.shape[0], name="decoder_sequence_input"
-            ).unstack(dec_input)
-            dec_input = new_dec_input.write(i, [next_token]).stack()
-        else:
-            dec_input = tf.expand_dims([next_token], 0)
+        if i < max_len:
+            next_token = predictions[0]
+            if sequence:
+                new_dec_input = tf.TensorArray(
+                    dtype=tf.int32, size=dec_input.shape[0], name="decoder_sequence_input"
+                ).unstack(dec_input)
+                dec_input = new_dec_input.write(i, [next_token]).stack()
+            else:
+                dec_input = tf.expand_dims([next_token], 0)
 
     if isinstance(dec_input, tf.TensorArray):
         dec_input.close()

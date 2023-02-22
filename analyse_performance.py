@@ -37,19 +37,26 @@ CONFIGS = {
 
 
 # Other papers experiments
+# OLD problems
+# CONFIGS = {
+#    115591: "generated_problems/analysis/output_original_caption/",
+#    117026: "generated_problems/analysis/output_original_clean_gnn_entailment_merged",
+#    # 117027: 'generated_problems/analysis/output_original_clean_stateful_rnn/',  Experiment with nearly all UNK tokens in the prediction output..
+#    117029: "generated_problems/analysis/output_original_clean_stateful_rnn/",
+#    117028: "generated_problems/analysis/output_original_clean_stateful_transformer",
+# }
 CONFIGS = {
-    115591: "generated_problems/analysis/output_original_caption/",
-    117026: "generated_problems/analysis/output_original_clean_gnn_entailment_merged",
-    # 117027: 'generated_problems/analysis/output_original_clean_stateful_rnn/',  Experiment with nearly all UNK tokens in the prediction output..
-    117029: "generated_problems/analysis/output_original_clean_stateful_rnn/",
-    117028: "generated_problems/analysis/output_original_clean_stateful_transformer",
+    117251: "generated_problems/analysis/thesis_output_original_caption_greedy_no_samples_4_length_22_conjecture_position_first/",
+    117026: "generated_problems/analysis/output_original_clean_conjecture_position_first_gnn_entailment_merged",
+    117028: "generated_problems/analysis/output_original_clean_conjecture_position_first_stateful_transformer_merged",
+    117029: "generated_problems/analysis/output_original_clean_conjecture_position_first_stateful_rnn_merged",
 }
 
 # Compare GNN and Caption performance on the Deepmath dataset (non-merged)
-CONFIGS = {
-    117030: "generated_problems/analysis/output_original_caption_deepmath",
-    117025: "generated_problems/analysis/output_original_gnn_entailment_deepmath/",
-}
+# CONFIGS = {
+#    117030: "generated_problems/analysis/output_original_caption_deepmath",
+#    117025: "generated_problems/analysis/output_original_gnn_entailment_deepmath/",
+# }
 
 """
 # Compare remapped not non-mapped
@@ -114,6 +121,16 @@ CONFIGS = {
 }
 """
 
+CONFIGS = {
+    # TODO : need to be in original format..
+    117342: "generated_problems/thesis_attention/output_clausified_sine_2.5_2_conjecture_position_first",
+    117343: "generated_problems/thesis_attention/output_clausified_transformer_greedy_no_samples_4_length_22_axiom_remapping_conjecture_position_first_sine_2.5_2_conjecture_position_first",
+    117345: "generated_problems/thesis_attention/output_clausified_transformer_greedy_no_samples_4_length_22_conjecture_position_first_sine_2.5_2_conjecture_position_first",
+    117350: "generated_problems/thesis_attention/transformer/output_clausified_transformer_greedy_no_samples_4_length_22_axiom_remapping_conjecture_position_first",
+    117351: "generated_problems/thesis_attention/transformer/output_clausified_transformer_greedy_no_samples_4_length_22_conjecture_position_first",
+}
+
+
 # Base config used to compute the ratio of the problem selected (output_original_clean -> clean)
 BASE_CONFIG = "clean"
 BASE_CONFIG_DICT = {115507: "generated_problems/analysis/output_original_clean/"}
@@ -162,7 +179,6 @@ else:
 
 
 def load_generated_problem(problem_path):
-
     # Load generated problem
     prob = load_and_process_problem(problem_path, deepmath=False)
     if len(prob) < 1:
@@ -177,7 +193,6 @@ def load_generated_problem(problem_path):
 
 
 def load_proof_axioms(problem_name, unquoted=False):
-
     # Load proof axioms
     if unquoted:
         proof = load_and_process_problem(os.path.join(PROOF_AXIOMS_UNQUOTED, problem_name), deepmath=False)
@@ -191,7 +206,6 @@ def load_proof_axioms(problem_name, unquoted=False):
 
 
 def get_metrics(problem_paths):
-
     results = {}
 
     for problem_path in problem_paths:
@@ -212,7 +226,6 @@ def get_metrics(problem_paths):
 
 
 def analyse_partition_metrics(config, df):
-
     query_columns = [f"{config}_jaccard", f"{config}_coverage", f"{config}_length", f"{config}_ratio"]
 
     if "caption" in config:
@@ -230,7 +243,6 @@ def analyse_partition_metrics(config, df):
 
 
 def get_performance_stats(exp_id):
-
     # Get problem ID and runtime of the solved problems in the experiment(LTB)
     res = get_solved_problem_name_time(exp_id)
 
@@ -258,7 +270,6 @@ def run_basic_analysis(configs, df):
 
 
 def get_in_training_set_metric(result):
-
     train_ids = load_ids(TRAINING_SET_PATH)
     for prob in result:
         if prob in train_ids:
@@ -270,7 +281,6 @@ def get_in_training_set_metric(result):
 
 
 def compute_rare_proportion(tokenizer, proof):
-
     no_rare = 0
     # If the clause is known to use, but not in the top words, it is positively rare
     for formula in proof:
@@ -282,7 +292,6 @@ def compute_rare_proportion(tokenizer, proof):
 
 
 def compute_predictable_proportion(tokenizer, proof):
-
     no_predictable = 0
     # If the clause is known to use, but not in the top words, it is predictable
     for formula in proof:
@@ -302,7 +311,6 @@ def get_tokenizer_metrics(result):
     tokenizer = load_tokenizer(TOKENIZER_PATH)
 
     for prob in result:
-
         # Load proof - need to make sure that these are unquoted like in the tokenizer
         proof = load_proof_axioms(prob, unquoted=True)
 
@@ -325,13 +333,11 @@ def get_tokenizer_metrics(result):
 
 
 def get_performance_coverage_data(config_experiments, common_substring=""):
-
     result = {}
     config_tags = []
 
     # Get the base metrics and store them in a dict - quick hack to always include the clean config
     for exp_id, problem_dir in {**config_experiments, **BASE_CONFIG_DICT}.items():
-
         conf = Path(problem_dir).name.replace(common_substring, "")
         if exp_id in config_experiments:  # Hack to not include clean if not in experiment config
             config_tags += [conf]
@@ -382,7 +388,6 @@ def get_performance_coverage_data(config_experiments, common_substring=""):
 
 
 def print_avg_stats(df, base, other):
-
     print(f"Avg coverage base : {np.average(df[f'{base}_coverage']):.2f}")
     print(f"Avg jaccard  base : {np.average(df[f'{base}_jaccard']):.2f}")
     print(f"Avg length   base : {np.average(df[f'{base}_length']):.2f}")
@@ -401,7 +406,6 @@ def print_avg_stats(df, base, other):
 
 
 def print_detailed_overview(df, base, other):
-
     query_columns = [
         f"{base}_coverage",
         f"{base}_jaccard",
@@ -417,7 +421,6 @@ def print_detailed_overview(df, base, other):
 
 
 def print_similar_problems_overview(df, base, other):
-
     query_columns = [f"{base}_coverage", f"{base}_jaccard", f"{base}_length", f"{base}_time"]
     if "caption" in base or "caption" in other:
         query_columns += ["tokenizer_rare", "tokenizer_predictable", "in_training"]
@@ -426,7 +429,6 @@ def print_similar_problems_overview(df, base, other):
 
 
 def compare_versions(df, base, other):
-
     print(f"### Comparing {base} to {other}")
     print(f"{base} solved: {len(df.loc[df[base+'_solved']])}")
     print(f"{other} solved: {len(df.loc[df[other+'_solved']])}")
@@ -469,7 +471,6 @@ def compare_versions(df, base, other):
 
 
 def compute_solved_set(configs, df):
-
     solved_all = set()
     solved_method = set()
 
@@ -492,7 +493,6 @@ def compute_solved_set(configs, df):
 
 
 def compute_problems_lost_by_combination(df, print_df=False):
-
     # Compute the set difference
     diff_problems = (
         set(df.loc[df["sine_3_0_solved"]].index).union(set(df.loc[df["caption_solved"]].index))
@@ -518,7 +518,6 @@ def compute_problems_lost_by_combination(df, print_df=False):
 
 
 def _get_solved_set(df, configs):
-
     # Compute set of solved problems
     solved = set()
     for conf in configs:
@@ -527,7 +526,6 @@ def _get_solved_set(df, configs):
 
 
 def compute_uniquely_solved(df, configs):
-
     for conf in configs:
         solved_others = _get_solved_set(df, set(configs).difference(set([conf])))
         unique = set(df.loc[df[f"{conf}_solved"]].index).difference(solved_others)
@@ -536,26 +534,23 @@ def compute_uniquely_solved(df, configs):
 
 def compute_perfect_coverage(df, configs):
     for conf in configs:
-
         perf_cov = sum(df[f"{conf}_coverage"] == 1.0)
         print(f"{conf:16} : {perf_cov}")
 
 
 def report_greedy_min_cover(df, configs):
-
     query = [f"{c}_solved" for c in configs]
-    cover, _ = compute_greedy_min_cover(df[query].astype(int).replace({0: -1}))
+    cover_pair = compute_greedy_min_cover(df[query].astype(int).replace({0: -1}))
 
     print("# # Greedy Min Cover")
-    print("Length of cover: {0}".format(len(cover[0])))
+    print("Length of cover: {0}".format(len(cover_pair[0])))
     print("Order of contribution:")
-    for r in zip(*cover):
+    for r in zip(cover_pair):
         print(*r, sep=" : ")
     print()
 
 
 def report_solved_diff_best_experiment(df, configs):
-
     print("# # Solved difference to the best experiment")
     # Compute best heuristic
     best_config = None
@@ -581,7 +576,6 @@ def report_solved_diff_best_experiment(df, configs):
 
 
 def check_combined_solved(df):
-
     # Get problem solved by neither caption or sine, but by the combination
     # This can be important due to the diversity of the problems solved
     solved_combination = set(df.loc[df["caption_sine_3_0_solved"]].index)
@@ -619,7 +613,6 @@ def check_combined_solved(df):
 
 
 def main():
-
     print("#", args)
     print()
 
