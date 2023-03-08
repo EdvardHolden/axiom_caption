@@ -4,21 +4,20 @@ import re
 
 
 def order_formulae(prob, conjecture_position):
-
     # Standard jsut return all lexicographically
     if conjecture_position == "standard":
         return sorted(prob)
 
     # Split on the conjecture
     conj, *ax = push_conjecture_to_front(prob)
-    ax = sorted(ax) # Ensure that the axioms are sorted
+    ax = sorted(ax)  # Ensure that the axioms are sorted
 
     if conjecture_position == "first":
         return [conj] + ax
     elif conjecture_position == "last":
         return ax + [conj]
     else:
-        raise ValueError(f"Incorrect value given for conjecture position: \'{conjecture_position}\'")
+        raise ValueError(f"Incorrect value given for conjecture position: '{conjecture_position}'")
 
 
 def save_problem(dir_name, prob_name, problem_string):
@@ -31,7 +30,6 @@ def save_problem(dir_name, prob_name, problem_string):
 
 
 def get_problems_from_path(problem_dir, limit=None, verbose=1):
-
     # Get path to all problems
     problem_paths = glob.glob(os.path.join(problem_dir, "") + "*")
 
@@ -46,11 +44,9 @@ def get_problems_from_path(problem_dir, limit=None, verbose=1):
 
 
 def _include_axiom_files(problem_path, axioms, deepmath):
-
     # By convention, inclusion happens in the first n lines only
     no_axiom_files = 0
     for n, ax in enumerate(axioms):
-
         # Skip commented lines
         if ax[0] == "%":
             continue
@@ -77,11 +73,8 @@ def _include_axiom_files(problem_path, axioms, deepmath):
     return axioms
 
 
-
-
 def push_conjecture_to_front(formulae):
-
-    if isinstance(formulae, tuple):
+    if isinstance(formulae, tuple) or isinstance(formulae, set):
         formulae = list(formulae)
 
     for n, f in enumerate(formulae):
@@ -136,7 +129,6 @@ def load_and_process_problem(path, deepmath=False):
 
     # Need to ensure that the first entry is the conjecture
     if not deepmath and len(formulae) > 0 and "conjecture" not in formulae[0]:
-
         # Find the conjecture and push it to the front - Assumes only one FOF conjecture
         formulae = push_conjecture_to_front(formulae)
 
