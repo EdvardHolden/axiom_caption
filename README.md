@@ -1,9 +1,17 @@
 # Axiom Caption - Captioning conjectures with axioms
 
 Project for premise selection in first-order theorem proving by drawing parallels to the task of image captioning.
-The conjecture (+surrounding axioms) are encoded into a graph and embedded as features. These problem vectors
-are given to a generative ML model. The model is fed a \<start\> token which start the generation process. 
+The conjecture and surrounding axioms are encoded into a graph and embedded as features. These problem vectors
+are given to a generative ML model. The model is fed a \<start\> token which starts the generation process. 
 This terminates when the model predicts the \<end\> token or the maximum prediction length is reached.
+
+
+The parallel to image captioning is shows depicted bellow:
+<img src="figs/Axiom Captioning Parallel.png" class="center">
+
+The following Figure overview the system:
+<img src="figs/Axiom Captioning Overview.png" class="center">
+
 
 # Installation 
 
